@@ -605,7 +605,40 @@ void VulkanRendererBackend::createRayTracingDescriptorSet()
     write2.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     write2.pBufferInfo = &desc2;
 
-    VkWriteDescriptorSet writeInfos[] = { write0, write1, write2 };
+    // Descriptor(binding = 3), VkBuffer for vertex storage buffer
+    VkDescriptorBufferInfo desc3{
+        .buffer = vertexPositionBuffer,
+        .offset = 0,
+        .range = VK_WHOLE_SIZE,
+    };
+    VkWriteDescriptorSet write3 = write_temp;
+    write3.dstBinding = 3;
+    write3.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    write3.pBufferInfo = &desc3;
+    
+    // Descriptor(binding = 4), VkBuffer for vertex storage buffer
+    VkDescriptorBufferInfo desc4{
+        .buffer = vertexAttributeBuffer,
+        .offset = 0,
+        .range = VK_WHOLE_SIZE,
+    };
+    VkWriteDescriptorSet write4 = write_temp;
+    write4.dstBinding = 4;
+    write4.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    write4.pBufferInfo = &desc4;
+
+    // Descriptor(binding = 5), VkBuffer for index storage buffer
+    VkDescriptorBufferInfo desc5{
+        .buffer = indexBuffer,
+        .offset = 0,
+        .range = VK_WHOLE_SIZE,
+    };
+    VkWriteDescriptorSet write5 = write_temp;
+    write5.dstBinding = 5;
+    write5.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    write5.pBufferInfo = &desc5;
+
+    VkWriteDescriptorSet writeInfos[] = { write0, write1, write2, write3, write4, write5 };
     vkUpdateDescriptorSets( device, sizeof( writeInfos ) / sizeof( writeInfos[ 0 ] ), writeInfos, 0, VK_NULL_HANDLE );
     /*
     [VUID-VkWriteDescriptorSet-descriptorType-00336]
@@ -716,7 +749,7 @@ void VulkanRendererBackend::createImguiRenderPass( int32 screenWidth, int32 scre
         {
             .format = swapChainImageFormat,
             .samples = VK_SAMPLE_COUNT_1_BIT,
-            .loadOp = VK_ATTACHMENT_LOAD_OP_LOAD,
+            .loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
             .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
             .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
             .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
@@ -1022,16 +1055,8 @@ inline VkDeviceAddress VulkanRendererBackend::getDeviceAddressOf( VkAcceleration
     return vkGetAccelerationStructureDeviceAddressKHR( device, &info );
 }
 
-VkAccelerationStructureKHR VulkanRendererBackend::createBLAS( const std::vector<Vertex>& vertexData, const std::vector<uint32>& indexData )
+VkAccelerationStructureKHR VulkanRendererBackend::createBLAS( const std::vector<VertexPosition>& positionData, const std::vector<VertexAttributes>& attributeData, const std::vector<uint32>& indexData )
 {
-    /*float vertices[][ 3 ] = {
-        { -1.0f, -1.0f, 0.0f },
-        {  1.0f, -1.0f, 0.0f },
-        {  1.0f,  1.0f, 0.0f },
-        { -1.0f,  1.0f, 0.0f },
-    };
-    uint32_t indices[] = { 0, 1, 3, 1, 2, 3 };*/
-
     VkTransformMatrixKHR geoTransforms[] = {
         {
             1.0f, 0.0f, 0.0f, -2.0f,
@@ -1045,14 +1070,28 @@ VkAccelerationStructureKHR VulkanRendererBackend::createBLAS( const std::vector<
         },
     };
 
-    auto [vertexBuffer, vertexBufferMem] = createBuffer(
-        vertexData.size() * sizeof( Vertex ),
-        VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR,
+    std::tie( vertexPositionBuffer, vertexPositionBufferMem ) = createBuffer(
+        positionData.size() * sizeof( VertexPosition ),
+        VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | 
+        VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | 
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | 
+        VK_BUFFER_USAGE_TRANSFER_DST_BIT,
         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT );
 
-    auto [indexBuffer, indexBufferMem] = createBuffer(
+    std::tie( vertexAttributeBuffer, vertexAttributeBufferMem ) = createBuffer(
+        attributeData.size() * sizeof( VertexAttributes ),
+        VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
+        VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR |
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+        VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT );
+
+    std::tie( indexBuffer, indexBufferMem ) = createBuffer(
         indexData.size() * sizeof( uint32 ),
-        VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR,
+        VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
+        VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR |
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+        VK_BUFFER_USAGE_TRANSFER_DST_BIT,
         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT );
 
     auto [geoTransformBuffer, geoTransformBufferMem] = createBuffer(
@@ -1062,9 +1101,13 @@ VkAccelerationStructureKHR VulkanRendererBackend::createBLAS( const std::vector<
 
     void* dst;
 
-    vkMapMemory( device, vertexBufferMem, 0, vertexData.size() * sizeof( Vertex ), 0, &dst );
-    memcpy( dst, vertexData.data(), vertexData.size() * sizeof(Vertex));
-    vkUnmapMemory( device, vertexBufferMem );
+    vkMapMemory( device, vertexPositionBufferMem, 0, positionData.size() * sizeof( VertexPosition ), 0, &dst );
+    memcpy( dst, positionData.data(), positionData.size() * sizeof( VertexPosition ));
+    vkUnmapMemory( device, vertexPositionBufferMem );
+
+    vkMapMemory( device, vertexAttributeBufferMem, 0, attributeData.size() * sizeof( VertexAttributes ), 0, &dst );
+    memcpy( dst, attributeData.data(), attributeData.size() * sizeof( VertexAttributes ) );
+    vkUnmapMemory( device, vertexAttributeBufferMem );
 
     vkMapMemory( device, indexBufferMem, 0, indexData.size() * sizeof( uint32 ), 0, &dst );
     memcpy( dst, indexData.data(), indexData.size() * sizeof(uint32));
@@ -1081,9 +1124,9 @@ VkAccelerationStructureKHR VulkanRendererBackend::createBLAS( const std::vector<
             .triangles = {
                 .sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_TRIANGLES_DATA_KHR,
                 .vertexFormat = VK_FORMAT_R32G32B32_SFLOAT,
-                .vertexData = {.deviceAddress = getDeviceAddressOf( vertexBuffer ) },
-                .vertexStride = sizeof( Vertex ),
-				.maxVertex = ( uint32 )vertexData.size() - 1,
+                .vertexData = {.deviceAddress = getDeviceAddressOf( vertexPositionBuffer ) },
+                .vertexStride = sizeof( VertexPosition ),
+				.maxVertex = ( uint32 )positionData.size() - 1,
                 .indexType = VK_INDEX_TYPE_UINT32,
                 .indexData = {.deviceAddress = getDeviceAddressOf( indexBuffer ) },
                 .transformData = {.deviceAddress = getDeviceAddressOf( geoTransformBuffer ) },
@@ -1093,8 +1136,8 @@ VkAccelerationStructureKHR VulkanRendererBackend::createBLAS( const std::vector<
     };
     VkAccelerationStructureGeometryKHR geometries[] = { geometry0, geometry0 };
 
-    uint32_t triangleCount0 = indexData.size() / 3;
-    uint32_t triangleCounts[] = { triangleCount0, triangleCount0 };
+    uint32 triangleCount0 = indexData.size() / 3;
+    uint32 triangleCounts[] = { triangleCount0, triangleCount0 };
 
     VkAccelerationStructureBuildGeometryInfoKHR buildBlasInfo{
         .sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR,
@@ -1154,8 +1197,6 @@ VkAccelerationStructureKHR VulkanRendererBackend::createBLAS( const std::vector<
             VkAccelerationStructureBuildGeometryInfoKHR buildBlasInfos[] = { buildBlasInfo };
             VkAccelerationStructureBuildRangeInfoKHR* buildBlasRangeInfos[] = { buildBlasRangeInfo };
             vkCmdBuildAccelerationStructuresKHR( commandBuffers[ imageIndex ], 1, buildBlasInfos, buildBlasRangeInfos );
-            // vkCmdBuildAccelerationStructuresKHR(commandBuffer, 1, &buildBlasInfo, 
-            // (const VkAccelerationStructureBuildRangeInfoKHR *const *)&buildBlasRangeInfo);
         }
         vkEndCommandBuffer( commandBuffers[ imageIndex ] );
 
@@ -1169,12 +1210,8 @@ VkAccelerationStructureKHR VulkanRendererBackend::createBLAS( const std::vector<
     }
 
     vkFreeMemory( device, scratchBufferMem, nullptr );
-    vkFreeMemory( device, vertexBufferMem, nullptr );
-    vkFreeMemory( device, indexBufferMem, nullptr );
     vkFreeMemory( device, geoTransformBufferMem, nullptr );
     vkDestroyBuffer( device, scratchBuffer, nullptr );
-    vkDestroyBuffer( device, vertexBuffer, nullptr );
-    vkDestroyBuffer( device, indexBuffer, nullptr );
     vkDestroyBuffer( device, geoTransformBuffer, nullptr );
 
     return blas;
@@ -1299,7 +1336,7 @@ void VulkanRendererBackend::createTLAS()
 
 void VulkanRendererBackend::createOutImage()
 {
-    VkFormat format = VK_FORMAT_R8G8B8A8_UNORM; //VK_FORMAT_R8G8B8A8_SRGB, VK_FORMAT_B8G8R8A8_SRGB(==swapChainImageFormat)
+    VkFormat format = VK_FORMAT_B8G8R8A8_UNORM; //VK_FORMAT_R8G8B8A8_SRGB, VK_FORMAT_B8G8R8A8_SRGB(==swapChainImageFormat)
     std::tie( outImage, outImageMem ) = createImage(
         { RenderSettings::screenWidth, RenderSettings::screenHeight },
         format,
@@ -1418,6 +1455,23 @@ const char* chit_src = R"(
 #version 460
 #extension GL_EXT_ray_tracing : enable
 
+struct VertexAttributes {
+    vec3 norm;
+    vec2 uv;
+};
+
+layout(std430, binding = 3) buffer VertexPosition {
+    vec4 vPosBuffer[];
+};
+
+layout(std430, binding = 4) buffer VertexAttribute {
+    VertexAttributes vAttribBuffer[];
+};
+
+layout(std430, binding = 5) buffer Indices {
+    uint idxBuffer[];
+};
+
 layout(shaderRecordEXT) buffer CustomData
 {
     vec3 color;
@@ -1428,6 +1482,17 @@ hitAttributeEXT vec2 attribs;
 
 void main()
 {
+    uvec3 indices = uvec3(idxBuffer[gl_PrimitiveID * 3 + 0], idxBuffer[gl_PrimitiveID * 3 + 1], idxBuffer[gl_PrimitiveID * 3 + 2]);
+
+    vec3 v0 = vPosBuffer[indices.x].xyz;
+    vec3 v1 = vPosBuffer[indices.y].xyz;
+    vec3 v2 = vPosBuffer[indices.z].xyz;
+    
+    const vec3 barycentrics = vec3(1.0f - attribs.x - attribs.y, attribs.x, attribs.y);
+
+    vec3 localPos = v0 * barycentrics.x + v1 * barycentrics.y + v2 * barycentrics.z;
+    vec3 worldPos = (gl_ObjectToWorldEXT * vec4(localPos, 1.0)).xyz;
+
     if (gl_PrimitiveID == 1 && 
         gl_InstanceID == 1 && 
         gl_InstanceCustomIndexEXT == 100 && 
@@ -1435,7 +1500,7 @@ void main()
         hitValue = vec3(1.0f - attribs.x - attribs.y, attribs.x, attribs.y);
     }
     else {
-        hitValue = color;
+        hitValue = worldPos;
     }
 })";
 
@@ -1459,6 +1524,24 @@ void VulkanRendererBackend::createRayTracingPipeline()
             .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
             .descriptorCount = 1,
             .stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR,
+        },
+        {
+            .binding = 3,
+            .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+            .descriptorCount = 1,
+            .stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR,
+        },
+        {
+            .binding = 4,
+            .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+            .descriptorCount = 1,
+            .stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR,
+        },
+        {
+            .binding = 5,
+            .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+            .descriptorCount = 1,
+            .stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR,
         },
     };
 

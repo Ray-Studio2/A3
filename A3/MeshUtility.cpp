@@ -28,44 +28,46 @@ void Utility::loadMeshFile( MeshResource& outMesh, const std::string& filePath )
         std::cout << "TinyObjReader: " << tinyObjReader.Warning();
     }
 
-    const auto& attrib = tinyObjReader.GetAttrib();
-    const auto& shapes = tinyObjReader.GetShapes();
+    const tinyobj::attrib_t& attrib = tinyObjReader.GetAttrib();
+    const std::vector<tinyobj::shape_t>& shapes = tinyObjReader.GetShapes();
 
     for( const auto& shape : shapes )
     {
-        outMesh.vertexData.reserve( shape.mesh.indices.size() + outMesh.vertexData.size() );
-        outMesh.indexData.reserve( shape.mesh.indices.size() + outMesh.indexData.size() );
+        outMesh.positions.reserve( shape.mesh.indices.size() + outMesh.positions.size() );
+        outMesh.indices.reserve( shape.mesh.indices.size() + outMesh.indices.size() );
 
         for( const auto& index : shape.mesh.indices )
         {
-            Vertex v = {};
+            VertexPosition positions;
+            VertexAttributes attributes;
 
-            v.position[ 0 ] = attrib.vertices[ 3 * index.vertex_index + 0 ];
-            v.position[ 1 ] = attrib.vertices[ 3 * index.vertex_index + 1 ];
-            v.position[ 2 ] = attrib.vertices[ 3 * index.vertex_index + 2 ];
+            positions.x = attrib.vertices[ 3 * index.vertex_index + 0 ];
+            positions.y = attrib.vertices[ 3 * index.vertex_index + 1 ];
+            positions.z = attrib.vertices[ 3 * index.vertex_index + 2 ];
 
             if( !attrib.normals.empty() && index.normal_index >= 0 )
             {
-                v.normal[ 0 ] = attrib.normals[ 3 * index.normal_index + 0 ];
-                v.normal[ 1 ] = attrib.normals[ 3 * index.normal_index + 1 ];
-                v.normal[ 2 ] = attrib.normals[ 3 * index.normal_index + 2 ];
+                attributes.normals[ 0 ] = attrib.normals[ 3 * index.normal_index + 0 ];
+                attributes.normals[ 1 ] = attrib.normals[ 3 * index.normal_index + 1 ];
+                attributes.normals[ 2 ] = attrib.normals[ 3 * index.normal_index + 2 ];
             }
 
-            if( !attrib.colors.empty() )
+            /*if( !attrib.colors.empty() )
             {
                 v.color[ 0 ] = attrib.colors[ 3 * index.vertex_index + 0 ];
                 v.color[ 1 ] = attrib.colors[ 3 * index.vertex_index + 1 ];
                 v.color[ 2 ] = attrib.colors[ 3 * index.vertex_index + 2 ];
-            }
+            }*/
 
             if( !attrib.texcoords.empty() && index.texcoord_index >= 0 )
             {
-                v.uv[ 0 ] = attrib.texcoords[ 2 * index.texcoord_index + 0 ];
-                v.uv[ 1 ] = attrib.texcoords[ 2 * index.texcoord_index + 1 ];
+                attributes.uvs[ 0 ] = attrib.texcoords[ 2 * index.texcoord_index + 0 ];
+                attributes.uvs[ 1 ] = attrib.texcoords[ 2 * index.texcoord_index + 1 ];
             }
 
-            outMesh.vertexData.push_back( v );
-            outMesh.indexData.push_back( static_cast< uint32_t >( outMesh.indexData.size() ) ); // TODO: repeated vertex
+            outMesh.positions.push_back( positions );
+            outMesh.attributes.push_back( attributes );
+            outMesh.indices.push_back( static_cast< uint32 >( outMesh.indices.size() ) ); // TODO: repeated vertex
         }
     }
 }

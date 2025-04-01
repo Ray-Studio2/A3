@@ -5,17 +5,21 @@
 
 namespace A3
 {
-struct Vertex
+struct VertexPosition
 {
-    float position[ 4 ];
-    float normal[ 4 ];
-    float color[ 4 ];
-    float uv[ 4 ];
+    float x, y, z, w;
+};
+
+struct VertexAttributes
+{
+    float normals[ 4 ];
+    float uvs[ 4 ];
 };
 
 struct MeshResource
 {
-    std::vector<Vertex> vertexData;
-    std::vector<uint32> indexData;
+    std::vector<VertexPosition> positions;
+    std::vector<VertexAttributes> attributes;
+    std::vector<uint32> indices;
 };
 }

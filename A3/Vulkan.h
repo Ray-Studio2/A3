@@ -19,7 +19,8 @@ const bool ON_DEBUG = true;
 
 namespace A3
 {
-struct Vertex;
+struct VertexPosition;
+struct VertexAttributes;
 
 class VulkanRendererBackend
 {
@@ -45,7 +46,7 @@ public:
     void rebuildAccelerationStructure();
 
     //@TODO: Move to renderer
-    VkAccelerationStructureKHR createBLAS( const std::vector<Vertex>& vertexData, const std::vector<uint32>& indexData );
+    VkAccelerationStructureKHR createBLAS( const std::vector<VertexPosition>& vertexData, const std::vector<VertexAttributes>& attributeData, const std::vector<uint32>& indexData );
     void createTLAS();
     void createOutImage();
     void createUniformBuffer();
@@ -148,6 +149,15 @@ private:
 
     VkBuffer uniformBuffer;
     VkDeviceMemory uniformBufferMem;
+
+    VkBuffer vertexPositionBuffer;
+    VkDeviceMemory vertexPositionBufferMem;
+
+    VkBuffer vertexAttributeBuffer;
+    VkDeviceMemory vertexAttributeBufferMem;
+
+    VkBuffer indexBuffer;
+    VkDeviceMemory indexBufferMem;
 
     VkDescriptorSetLayout descriptorSetLayout;
     VkPipelineLayout pipelineLayout;

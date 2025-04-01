@@ -39,5 +39,5 @@ void PathTracingRenderer::buildBlas( MeshObject* meshObject ) const
 {
     MeshResource* resource = meshObject->getResource();
     
-    VkAccelerationStructureKHR blas = backend->createBLAS( resource->vertexData, resource->indexData );
+    VkAccelerationStructureKHR blas = backend->createBLAS( resource->positions, resource->attributes, resource->indices );
 }

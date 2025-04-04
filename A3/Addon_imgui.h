@@ -8,18 +8,18 @@ struct ImGui_ImplVulkanH_Window;
 
 namespace A3
 {
-class VulkanRendererBackend;
+class VulkanRenderBackend;
 
 class Addon_imgui
 {
 public:
-	Addon_imgui( GLFWwindow* window, VulkanRendererBackend* vulkan, int32 screenWidth, int32 screenHeight );
+	Addon_imgui( GLFWwindow* window, VulkanRenderBackend* vulkan, int32 screenWidth, int32 screenHeight );
 
-	void renderFrame( GLFWwindow* window, VulkanRendererBackend* vulkan );
+	void renderFrame( GLFWwindow* window, VulkanRenderBackend* vulkan );
 
 private:
 	// @FIXME: Temporary. Remove later.
-	void CleanupVulkan( VulkanRendererBackend* vulkan );
-	void CleanupVulkanWindow( VulkanRendererBackend* vulkan );
+	void CleanupVulkan( VulkanRenderBackend* vulkan );
+	void CleanupVulkanWindow( VulkanRenderBackend* vulkan );
 };
 }

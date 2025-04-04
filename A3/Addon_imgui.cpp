@@ -63,7 +63,7 @@ static void check_vk_result( VkResult err )
         abort();
 }
 
-void Addon_imgui::CleanupVulkan( VulkanRendererBackend* vulkan )
+void Addon_imgui::CleanupVulkan( VulkanRenderBackend* vulkan )
 {
     vkDestroyDescriptorPool( vulkan->device, vulkan->descriptorPool, vulkan->allocator );
 
@@ -77,7 +77,7 @@ void Addon_imgui::CleanupVulkan( VulkanRendererBackend* vulkan )
     vkDestroyInstance( vulkan->instance, vulkan->allocator );
 }
 
-void Addon_imgui::CleanupVulkanWindow( VulkanRendererBackend* vulkan )
+void Addon_imgui::CleanupVulkanWindow( VulkanRenderBackend* vulkan )
 {
     ImGui_ImplVulkanH_DestroyWindow( vulkan->instance, vulkan->device, &g_MainWindowData, vulkan->allocator );
 }
@@ -87,7 +87,7 @@ static void FrameRender( VkDevice& device, VkQueue& gfxQueue, ImGui_ImplVulkanH_
     
 }
 
-Addon_imgui::Addon_imgui( GLFWwindow* window, VulkanRendererBackend* vulkan, int32 screenWidth, int32 screenHeight )
+Addon_imgui::Addon_imgui( GLFWwindow* window, VulkanRenderBackend* vulkan, int32 screenWidth, int32 screenHeight )
 {
     // Create Framebuffers
     ImGui_ImplVulkanH_Window* wd = &g_MainWindowData;
@@ -175,7 +175,7 @@ Addon_imgui::Addon_imgui( GLFWwindow* window, VulkanRendererBackend* vulkan, int
     ImGui_ImplVulkan_Init( &init_info );
 }
 
-void Addon_imgui::renderFrame( GLFWwindow* window, VulkanRendererBackend* vulkan )
+void Addon_imgui::renderFrame( GLFWwindow* window, VulkanRenderBackend* vulkan )
 {
     // Our state
     static bool show_demo_window = true;

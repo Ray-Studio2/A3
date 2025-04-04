@@ -4,22 +4,23 @@
 
 namespace A3
 {
-class VulkanRendererBackend;
+class VulkanRenderBackend;
 class Scene;
 class MeshObject;
 
 class PathTracingRenderer
 {
 public:
-	PathTracingRenderer( VulkanRendererBackend* inBackend );
+	PathTracingRenderer( VulkanRenderBackend* inBackend );
 
 	void beginFrame( int32 screenWidth, int32 screenHeight ) const;
 	void render( const Scene& scene ) const;
 	void endFrame() const;
 
-	void buildBlas( MeshObject* meshObject ) const;
+private:
+	void buildAccelerationStructure( const Scene& scene ) const;
 
 private:
-	VulkanRendererBackend* backend;
+	VulkanRenderBackend* backend;
 };
 }

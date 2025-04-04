@@ -53,7 +53,7 @@ void Engine::Run()
     glfwGetFramebufferSize( window, &screenWidth, &screenHeight );
 
     {
-        VulkanRendererBackend gfxBackend( window, extensions, screenWidth, screenHeight );
+        VulkanRenderBackend gfxBackend( window, extensions, screenWidth, screenHeight );
 
         Scene scene;
 

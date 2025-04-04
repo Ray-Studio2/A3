@@ -5,10 +5,12 @@
 #include "ThirdParty/imgui/imgui_impl_glfw.h"
 #include "ThirdParty/imgui/imgui_impl_vulkan.h"
 #include "MeshResource.h"
+#include "VulkanResource.h"
+#include "AccelerationStructure.h"
 
 using namespace A3;
 
-VulkanRendererBackend::VulkanRendererBackend( GLFWwindow* window, std::vector<const char*>& extensions, int32 screenWidth, int32 screenHeight )
+VulkanRenderBackend::VulkanRenderBackend( GLFWwindow* window, std::vector<const char*>& extensions, int32 screenWidth, int32 screenHeight )
 {
     createVkInstance( extensions );
     createVkPhysicalDevice();
@@ -20,7 +22,7 @@ VulkanRendererBackend::VulkanRendererBackend( GLFWwindow* window, std::vector<co
     createCommandCenter();
 }
 
-VulkanRendererBackend::~VulkanRendererBackend()
+VulkanRenderBackend::~VulkanRenderBackend()
 {
     // @TODO: restore
     //vkDeviceWaitIdle( device );
@@ -100,7 +102,7 @@ static bool IsExtensionAvailable( const std::vector<VkExtensionProperties>& prop
 }
 ////////////////////////////////////////////////
 
-void VulkanRendererBackend::beginFrame( int32 screenWidth, int32 screenHeight )
+void VulkanRenderBackend::beginFrame( int32 screenWidth, int32 screenHeight )
 {
     VkSemaphore image_acquired_semaphore = imageAvailableSemaphores[ semaphoreIndex ];
     VkSemaphore render_complete_semaphore = renderFinishedSemaphores[ semaphoreIndex ];
@@ -115,7 +117,7 @@ void VulkanRendererBackend::beginFrame( int32 screenWidth, int32 screenHeight )
     }
 }
 
-void VulkanRendererBackend::endFrame()
+void VulkanRenderBackend::endFrame()
 {
     VkPresentInfoKHR presentInfo{
         .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
@@ -131,7 +133,7 @@ void VulkanRendererBackend::endFrame()
     semaphoreIndex = ( semaphoreIndex + 1 ) % 3;
 }
 
-void VulkanRendererBackend::beginRaytracingPipeline()
+void VulkanRenderBackend::beginRaytracingPipeline()
 {
     VkCommandBufferBeginInfo info{
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
@@ -212,9 +214,8 @@ void VulkanRendererBackend::beginRaytracingPipeline()
     }
 }
 
-void VulkanRendererBackend::rebuildAccelerationStructure()
+void VulkanRenderBackend::rebuildAccelerationStructure()
 {
-    createTLAS();
     createOutImage();
     createUniformBuffer();
     createRayTracingPipeline();
@@ -222,7 +223,7 @@ void VulkanRendererBackend::rebuildAccelerationStructure()
     createShaderBindingTable();
 }
 
-void VulkanRendererBackend::loadDeviceExtensionFunctions( VkDevice device )
+void VulkanRenderBackend::loadDeviceExtensionFunctions( VkDevice device )
 {
     vkGetBufferDeviceAddressKHR = ( PFN_vkGetBufferDeviceAddressKHR )( vkGetDeviceProcAddr( device, "vkGetBufferDeviceAddressKHR" ) );
     vkGetAccelerationStructureDeviceAddressKHR = ( PFN_vkGetAccelerationStructureDeviceAddressKHR )( vkGetDeviceProcAddr( device, "vkGetAccelerationStructureDeviceAddressKHR" ) );
@@ -246,7 +247,7 @@ void VulkanRendererBackend::loadDeviceExtensionFunctions( VkDevice device )
     }
 }
 
-VKAPI_ATTR VkBool32 VKAPI_CALL VulkanRendererBackend::debugCallback(
+VKAPI_ATTR VkBool32 VKAPI_CALL VulkanRenderBackend::debugCallback(
     VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
     VkDebugUtilsMessageTypeFlagsEXT messageType,
     const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
@@ -275,7 +276,7 @@ VKAPI_ATTR VkBool32 VKAPI_CALL VulkanRendererBackend::debugCallback(
     return VK_FALSE;
 }
 
-bool VulkanRendererBackend::checkValidationLayerSupport( std::vector<const char*>& reqestNames )
+bool VulkanRenderBackend::checkValidationLayerSupport( std::vector<const char*>& reqestNames )
 {
     uint32_t count;
     vkEnumerateInstanceLayerProperties( &count, nullptr );
@@ -304,7 +305,7 @@ bool VulkanRendererBackend::checkValidationLayerSupport( std::vector<const char*
     return true;
 }
 
-bool VulkanRendererBackend::checkDeviceExtensionSupport( VkPhysicalDevice device, std::vector<const char*>& reqestNames )
+bool VulkanRenderBackend::checkDeviceExtensionSupport( VkPhysicalDevice device, std::vector<const char*>& reqestNames )
 {
     uint32_t count;
     vkEnumerateDeviceExtensionProperties( device, nullptr, &count, nullptr );
@@ -333,7 +334,7 @@ bool VulkanRendererBackend::checkDeviceExtensionSupport( VkPhysicalDevice device
     return true;
 }
 
-void VulkanRendererBackend::createVkInstance( std::vector<const char*>& extensions )
+void VulkanRenderBackend::createVkInstance( std::vector<const char*>& extensions )
 {
     VkResult err;
 
@@ -406,7 +407,7 @@ void VulkanRendererBackend::createVkInstance( std::vector<const char*>& extensio
     }
 }
 
-void VulkanRendererBackend::createVkSurface( GLFWwindow* window )
+void VulkanRenderBackend::createVkSurface( GLFWwindow* window )
 {
     if( glfwCreateWindowSurface( instance, window, allocator, &surface ) != VK_SUCCESS )
     {
@@ -434,7 +435,7 @@ std::vector<const char*> deviceExtensions = {
     VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME,
 };
 
-void VulkanRendererBackend::createVkPhysicalDevice()
+void VulkanRenderBackend::createVkPhysicalDevice()
 {
     physicalDevice = VK_NULL_HANDLE;
 
@@ -458,7 +459,7 @@ void VulkanRendererBackend::createVkPhysicalDevice()
     }
 }
 
-void VulkanRendererBackend::createVkQueueFamily()
+void VulkanRenderBackend::createVkQueueFamily()
 {
     uint32_t queueFamilyCount = 0;
     vkGetPhysicalDeviceQueueFamilyProperties( physicalDevice, &queueFamilyCount, nullptr );
@@ -526,7 +527,7 @@ void VulkanRendererBackend::createVkQueueFamily()
     loadDeviceExtensionFunctions( device );
 }
 
-void VulkanRendererBackend::createVkDescriptorPools()
+void VulkanRenderBackend::createVkDescriptorPools()
 {
     VkDescriptorPoolSize poolSizes[] = {
         { VK_DESCRIPTOR_TYPE_SAMPLER, 1000 },
@@ -557,7 +558,7 @@ void VulkanRendererBackend::createVkDescriptorPools()
     }
 }
  
-void VulkanRendererBackend::createRayTracingDescriptorSet()
+void VulkanRenderBackend::createRayTracingDescriptorSet()
 {
     VkDescriptorSetAllocateInfo allocateInfo{
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
@@ -647,7 +648,7 @@ void VulkanRendererBackend::createRayTracingDescriptorSet()
     */
 }
 
-void VulkanRendererBackend::createSwapChain()
+void VulkanRenderBackend::createSwapChain()
 {
     VkSurfaceCapabilitiesKHR capabilities;
     vkGetPhysicalDeviceSurfaceCapabilitiesKHR( physicalDevice, surface, &capabilities );
@@ -739,7 +740,7 @@ void VulkanRendererBackend::createSwapChain()
     }
 }
 
-void VulkanRendererBackend::createImguiRenderPass( int32 screenWidth, int32 screenHeight )
+void VulkanRenderBackend::createImguiRenderPass( int32 screenWidth, int32 screenHeight )
 {
     VkResult err;
 
@@ -837,7 +838,7 @@ void VulkanRendererBackend::createImguiRenderPass( int32 screenWidth, int32 scre
     }
 }
 
-void VulkanRendererBackend::createCommandCenter()
+void VulkanRenderBackend::createCommandCenter()
 {
     VkCommandPoolCreateInfo poolInfo{
         .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
@@ -885,7 +886,7 @@ void VulkanRendererBackend::createCommandCenter()
     }
 }
 
-uint32 VulkanRendererBackend::findMemoryType( uint32_t memoryTypeBits, VkMemoryPropertyFlags reqMemProps )
+uint32 VulkanRenderBackend::findMemoryType( uint32_t memoryTypeBits, VkMemoryPropertyFlags reqMemProps )
 {
     uint32 memTypeIndex = 0;
     std::bitset<32> isSuppoted( memoryTypeBits );
@@ -904,7 +905,7 @@ uint32 VulkanRendererBackend::findMemoryType( uint32_t memoryTypeBits, VkMemoryP
     return memTypeIndex;
 }
 
-std::tuple<VkBuffer, VkDeviceMemory> VulkanRendererBackend::createBuffer(
+std::tuple<VkBuffer, VkDeviceMemory> VulkanRenderBackend::createBuffer(
     VkDeviceSize size,
     VkBufferUsageFlags usage,
     VkMemoryPropertyFlags reqMemProps )
@@ -950,7 +951,7 @@ std::tuple<VkBuffer, VkDeviceMemory> VulkanRendererBackend::createBuffer(
     return { buffer, bufferMemory };
 }
 
-std::tuple<VkImage, VkDeviceMemory> VulkanRendererBackend::createImage(
+std::tuple<VkImage, VkDeviceMemory> VulkanRenderBackend::createImage(
     VkExtent2D extent,
     VkFormat format,
     VkImageUsageFlags usage,
@@ -995,7 +996,7 @@ std::tuple<VkImage, VkDeviceMemory> VulkanRendererBackend::createImage(
     return { image, imageMemory };
 }
 
-void VulkanRendererBackend::setImageLayout(
+void VulkanRenderBackend::setImageLayout(
     VkCommandBuffer cmdbuffer,
     VkImage image,
     VkImageLayout oldImageLayout,
@@ -1037,7 +1038,7 @@ void VulkanRendererBackend::setImageLayout(
         0, nullptr, 0, nullptr, 1, &barrier );
 }
 
-inline VkDeviceAddress VulkanRendererBackend::getDeviceAddressOf( VkBuffer buffer )
+inline VkDeviceAddress VulkanRenderBackend::getDeviceAddressOf( VkBuffer buffer )
 {
     VkBufferDeviceAddressInfoKHR info{
         .sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO,
@@ -1046,7 +1047,7 @@ inline VkDeviceAddress VulkanRendererBackend::getDeviceAddressOf( VkBuffer buffe
     return vkGetBufferDeviceAddressKHR( device, &info );
 }
 
-inline VkDeviceAddress VulkanRendererBackend::getDeviceAddressOf( VkAccelerationStructureKHR as )
+inline VkDeviceAddress VulkanRenderBackend::getDeviceAddressOf( VkAccelerationStructureKHR as )
 {
     VkAccelerationStructureDeviceAddressInfoKHR info{
         .sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR,
@@ -1055,20 +1056,14 @@ inline VkDeviceAddress VulkanRendererBackend::getDeviceAddressOf( VkAcceleration
     return vkGetAccelerationStructureDeviceAddressKHR( device, &info );
 }
 
-VkAccelerationStructureKHR VulkanRendererBackend::createBLAS( const std::vector<VertexPosition>& positionData, const std::vector<VertexAttributes>& attributeData, const std::vector<uint32>& indexData )
+// @TODO: Support more than 1 geometry
+IAccelerationStructureRef VulkanRenderBackend::createBLAS(
+    const std::vector<VertexPosition>& positionData, 
+    const std::vector<VertexAttributes>& attributeData, 
+    const std::vector<uint32>& indexData, 
+    const Mat3x4& transformData )
 {
-    VkTransformMatrixKHR geoTransforms[] = {
-        {
-            1.0f, 0.0f, 0.0f, -2.0f,
-            0.0f, 1.0f, 0.0f, 0.0f,
-            0.0f, 0.0f, 1.0f, 0.0f
-        },
-        {
-            1.0f, 0.0f, 0.0f, 2.0f,
-            0.0f, 1.0f, 0.0f, 0.0f,
-            0.0f, 0.0f, 1.0f, 0.0f
-        },
-    };
+    VulkanAccelerationStructure* outBlas = new VulkanAccelerationStructure();
 
     std::tie( vertexPositionBuffer, vertexPositionBufferMem ) = createBuffer(
         positionData.size() * sizeof( VertexPosition ),
@@ -1095,7 +1090,7 @@ VkAccelerationStructureKHR VulkanRendererBackend::createBLAS( const std::vector<
         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT );
 
     auto [geoTransformBuffer, geoTransformBufferMem] = createBuffer(
-        sizeof( geoTransforms ),
+        sizeof( Mat3x4 ),
         VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR,
         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT );
 
@@ -1110,11 +1105,11 @@ VkAccelerationStructureKHR VulkanRendererBackend::createBLAS( const std::vector<
     vkUnmapMemory( device, vertexAttributeBufferMem );
 
     vkMapMemory( device, indexBufferMem, 0, indexData.size() * sizeof( uint32 ), 0, &dst );
-    memcpy( dst, indexData.data(), indexData.size() * sizeof(uint32));
+    memcpy( dst, indexData.data(), indexData.size() * sizeof( uint32 ) );
     vkUnmapMemory( device, indexBufferMem );
 
-    vkMapMemory( device, geoTransformBufferMem, 0, sizeof( geoTransforms ), 0, &dst );
-    memcpy( dst, geoTransforms, sizeof( geoTransforms ) );
+    vkMapMemory( device, geoTransformBufferMem, 0, sizeof( Mat3x4 ), 0, &dst );
+    memcpy( dst, &transformData, sizeof( Mat3x4 ) );
     vkUnmapMemory( device, geoTransformBufferMem );
 
     VkAccelerationStructureGeometryKHR geometry0{
@@ -1134,16 +1129,16 @@ VkAccelerationStructureKHR VulkanRendererBackend::createBLAS( const std::vector<
         },
         .flags = VK_GEOMETRY_OPAQUE_BIT_KHR,
     };
-    VkAccelerationStructureGeometryKHR geometries[] = { geometry0, geometry0 };
+    VkAccelerationStructureGeometryKHR geometries[] = { geometry0 };
 
     uint32 triangleCount0 = indexData.size() / 3;
-    uint32 triangleCounts[] = { triangleCount0, triangleCount0 };
+    uint32 triangleCounts[] = { triangleCount0 };
 
     VkAccelerationStructureBuildGeometryInfoKHR buildBlasInfo{
         .sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR,
         .type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR,
         .flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR,
-        .geometryCount = sizeof( geometries ) / sizeof( geometries[ 0 ] ),
+        .geometryCount = 1,
         .pGeometries = geometries,
     };
 
@@ -1155,7 +1150,7 @@ VkAccelerationStructureKHR VulkanRendererBackend::createBLAS( const std::vector<
         triangleCounts,
         &requiredSize );
 
-    std::tie( blasBuffer, blasBufferMem ) = createBuffer(
+    std::tie( outBlas->descriptor, outBlas->memory ) = createBuffer(
         requiredSize.accelerationStructureSize,
         VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT );
@@ -1169,11 +1164,11 @@ VkAccelerationStructureKHR VulkanRendererBackend::createBLAS( const std::vector<
     {
         VkAccelerationStructureCreateInfoKHR asCreateInfo{
             .sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR,
-            .buffer = blasBuffer,
+            .buffer = outBlas->descriptor,
             .size = requiredSize.accelerationStructureSize,
             .type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR,
         };
-        vkCreateAccelerationStructureKHR( device, &asCreateInfo, nullptr, &blas );
+        vkCreateAccelerationStructureKHR( device, &asCreateInfo, nullptr, &outBlas->handle );
     }
 
     // Build BLAS using GPU operations
@@ -1181,16 +1176,13 @@ VkAccelerationStructureKHR VulkanRendererBackend::createBLAS( const std::vector<
         vkResetCommandBuffer( commandBuffers[ imageIndex ], 0 );
         vkBeginCommandBuffer( commandBuffers[ imageIndex ], &beginInfo );
         {
-            buildBlasInfo.dstAccelerationStructure = blas;
+            buildBlasInfo.dstAccelerationStructure = outBlas->handle;
             buildBlasInfo.scratchData.deviceAddress = getDeviceAddressOf( scratchBuffer );
-            VkAccelerationStructureBuildRangeInfoKHR buildBlasRangeInfo[] = {
+            VkAccelerationStructureBuildRangeInfoKHR buildBlasRangeInfo[] =
+            {
                 {
                     .primitiveCount = triangleCounts[ 0 ],
                     .transformOffset = 0,
-                },
-                {
-                    .primitiveCount = triangleCounts[ 1 ],
-                    .transformOffset = sizeof( geoTransforms[ 0 ] ),
                 }
             };
 
@@ -1214,44 +1206,44 @@ VkAccelerationStructureKHR VulkanRendererBackend::createBLAS( const std::vector<
     vkDestroyBuffer( device, scratchBuffer, nullptr );
     vkDestroyBuffer( device, geoTransformBuffer, nullptr );
 
-    return blas;
+    return IAccelerationStructureRef( outBlas );
 }
 
-void VulkanRendererBackend::createTLAS()
+// @TODO: Support more than 1 instance
+void VulkanRenderBackend::createTLAS( const std::vector<BLASBatch*>& batches )
 {
-    VkTransformMatrixKHR insTransforms[] = {
-        {
-            1.0f, 0.0f, 0.0f, 0.0f,
-            0.0f, 1.0f, 0.0f, 2.0f,
-            0.0f, 0.0f, 1.0f, 0.0f
-        },
-        {
-            1.0f, 0.0f, 0.0f, 0.0f,
-            0.0f, 1.0f, 0.0f, -2.0f,
-            0.0f, 0.0f, 1.0f, 0.0f
-        },
-    };
+    std::vector<VkAccelerationStructureInstanceKHR> instanceData;
 
-    VkAccelerationStructureInstanceKHR instance0{
-        .instanceCustomIndex = 100,
-        .mask = 0xFF,
-        .instanceShaderBindingTableRecordOffset = 0,
-        .flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR,
-        .accelerationStructureReference = getDeviceAddressOf( blas ),
-    };
-    VkAccelerationStructureInstanceKHR instanceData[] = { instance0, instance0 };
-    instanceData[ 0 ].transform = insTransforms[ 0 ];
-    instanceData[ 1 ].transform = insTransforms[ 1 ];
-    instanceData[ 1 ].instanceShaderBindingTableRecordOffset = 2; // 2 geometry (in instance0) + 2 geometry (in instance1)
+    for( int32 batchIndex = 0; batchIndex < batches.size(); ++batchIndex )
+    {
+        BLASBatch* batch = batches[ batchIndex ];
+        VulkanAccelerationStructure* blas = static_cast<VulkanAccelerationStructure*>( batch->blas.get() );
+
+        VkAccelerationStructureInstanceKHR instance{};
+        instance.instanceCustomIndex = 100;
+        instance.mask = 0xFF;
+        instance.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
+        instance.accelerationStructureReference = getDeviceAddressOf( blas->handle );
+
+        for( int32 instanceIndex = 0; instanceIndex < batch->transforms.size(); ++instanceIndex )
+        {
+            instance.instanceShaderBindingTableRecordOffset = instanceData.size();
+            memcpy( &instance, &batch->transforms[ instanceIndex ], sizeof( Mat3x4 ) );
+
+            instanceData.push_back( instance );
+        }
+    }
+
+    const int64 instanceDataByteSize = instanceData.size() * sizeof( VkAccelerationStructureInstanceKHR );
 
     auto [instanceBuffer, instanceBufferMem] = createBuffer(
-        sizeof( instanceData ),
+        instanceDataByteSize,
         VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR,
         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT );
 
     void* dst;
-    vkMapMemory( device, instanceBufferMem, 0, sizeof( instanceData ), 0, &dst );
-    memcpy( dst, instanceData, sizeof( instanceData ) );
+    vkMapMemory( device, instanceBufferMem, 0, instanceDataByteSize, 0, &dst );
+    memcpy( dst, instanceData.data(), instanceDataByteSize );
     vkUnmapMemory( device, instanceBufferMem );
 
     VkAccelerationStructureGeometryKHR instances{
@@ -1266,7 +1258,7 @@ void VulkanRendererBackend::createTLAS()
         .flags = VK_GEOMETRY_OPAQUE_BIT_KHR,
     };
 
-    uint32_t instanceCount = 2;
+    uint32_t instanceCount = instanceData.size();
 
     VkAccelerationStructureBuildGeometryInfoKHR buildTlasInfo{
         .sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR,
@@ -1334,7 +1326,7 @@ void VulkanRendererBackend::createTLAS()
     vkDestroyBuffer( device, instanceBuffer, nullptr );
 }
 
-void VulkanRendererBackend::createOutImage()
+void VulkanRenderBackend::createOutImage()
 {
     VkFormat format = VK_FORMAT_B8G8R8A8_UNORM; //VK_FORMAT_R8G8B8A8_SRGB, VK_FORMAT_B8G8R8A8_SRGB(==swapChainImageFormat)
     std::tie( outImage, outImageMem ) = createImage(
@@ -1383,7 +1375,7 @@ void VulkanRendererBackend::createOutImage()
     vkQueueWaitIdle( graphicsQueue );
 }
 
-void VulkanRendererBackend::createUniformBuffer()
+void VulkanRenderBackend::createUniformBuffer()
 {
     struct Data
     {
@@ -1504,7 +1496,7 @@ void main()
     }
 })";
 
-void VulkanRendererBackend::createRayTracingPipeline()
+void VulkanRenderBackend::createRayTracingPipeline()
 {
     VkDescriptorSetLayoutBinding bindings[] = {
         {
@@ -1625,7 +1617,7 @@ As shown in the vulkan spec 40.3.1. Indexing Rules,
     pHitShaderBindingTable->deviceAddress + pHitShaderBindingTable->stride ¡¿ (
     instanceShaderBindingTableRecordOffset + geometryIndex ¡¿ sbtRecordStride + sbtRecordOffset )
 */
-void VulkanRendererBackend::createShaderBindingTable()
+void VulkanRenderBackend::createShaderBindingTable()
 {
     auto alignTo = []( auto value, auto alignment ) -> decltype( value )
         {

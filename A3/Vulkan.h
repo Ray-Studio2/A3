@@ -8,8 +8,12 @@
 #include <tuple>
 #include <bitset>
 #include <span>
+#include <memory>
 #include "EngineTypes.h"
 #include "RenderSettings.h"
+#include "RenderBackend.h"
+#include "RenderResource.h"
+#include "Matrix.h"
 
 #ifdef NDEBUG
 const bool ON_DEBUG = false;
@@ -22,32 +26,26 @@ namespace A3
 struct VertexPosition;
 struct VertexAttributes;
 
-class VulkanRendererBackend
+class VulkanRenderBackend : public IRenderBackend
 {
 public:
-    VulkanRendererBackend( GLFWwindow* window, std::vector<const char*>& extensions, int32 screenWidth, int32 screenHeight );
-    ~VulkanRendererBackend();
+    VulkanRenderBackend( GLFWwindow* window, std::vector<const char*>& extensions, int32 screenWidth, int32 screenHeight );
+    ~VulkanRenderBackend();
 
-    void beginFrame( int32 screenWidth, int32 screenHeight );
-    void endFrame();
+    virtual void beginFrame( int32 screenWidth, int32 screenHeight ) override;
+    virtual void endFrame() override;
 
-    void beginRaytracingPipeline();
+    virtual void beginRaytracingPipeline() override;
 
-    // @TODO: Make private
-    void createVkInstance( std::vector<const char*>& extensions );
-    void createVkSurface( GLFWwindow* window );
-    void createVkPhysicalDevice();
-    void createVkQueueFamily();
-    void createVkDescriptorPools();
-    void createSwapChain();
-    void createImguiRenderPass( int32 screenWidth, int32 screenHeight );
-    void createCommandCenter();
-
-    void rebuildAccelerationStructure();
+    virtual void rebuildAccelerationStructure() override;
 
     //@TODO: Move to renderer
-    VkAccelerationStructureKHR createBLAS( const std::vector<VertexPosition>& vertexData, const std::vector<VertexAttributes>& attributeData, const std::vector<uint32>& indexData );
-    void createTLAS();
+    virtual IAccelerationStructureRef createBLAS(
+        const std::vector<VertexPosition>& positionData,
+        const std::vector<VertexAttributes>& attributeData,
+        const std::vector<uint32>& indexData,
+        const Mat3x4& transformData ) override;
+    virtual void createTLAS( const std::vector<BLASBatch*>& batches ) override;
     void createOutImage();
     void createUniformBuffer();
     void createRayTracingPipeline();
@@ -56,6 +54,15 @@ public:
     //////////////////////////
 
 private:
+    void createVkInstance( std::vector<const char*>& extensions );
+    void createVkPhysicalDevice();
+    void createVkSurface( GLFWwindow* window );
+    void createVkQueueFamily();
+    void createVkDescriptorPools();
+    void createSwapChain();
+    void createImguiRenderPass( int32 screenWidth, int32 screenHeight );
+    void createCommandCenter();
+
     void loadDeviceExtensionFunctions( VkDevice device );
 
     static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
@@ -134,10 +141,6 @@ private:
     std::vector<VkFence> fences;
     uint32 semaphoreIndex;
     uint32 imageIndex;
-
-    VkBuffer blasBuffer;
-    VkDeviceMemory blasBufferMem;
-    VkAccelerationStructureKHR blas;
 
     VkBuffer tlasBuffer;
     VkDeviceMemory tlasBufferMem;

@@ -7,6 +7,7 @@
 #include "MeshResource.h"
 #include "VulkanResource.h"
 #include "AccelerationStructure.h"
+#include "Shader.h"
 
 using namespace A3;
 
@@ -1394,108 +1395,6 @@ void VulkanRenderBackend::createUniformBuffer()
     vkUnmapMemory( device, uniformBufferMem );
 }
 
-const char* raygen_src = R"(
-#version 460
-#extension GL_EXT_ray_tracing : enable
-
-layout(binding = 0) uniform accelerationStructureEXT topLevelAS;
-layout(binding = 1, rgba8) uniform image2D image;
-layout(binding = 2) uniform CameraProperties 
-{
-    vec3 cameraPos;
-    float yFov_degree;
-} g;
-
-layout(location = 0) rayPayloadEXT vec3 hitValue;
-
-void main() 
-{
-    const vec3 cameraX = vec3(1, 0, 0);
-    const vec3 cameraY = vec3(0, -1, 0);
-    const vec3 cameraZ = vec3(0, 0, -1);
-    const float aspect_y = tan(radians(g.yFov_degree) * 0.5);
-    const float aspect_x = aspect_y * float(gl_LaunchSizeEXT.x) / float(gl_LaunchSizeEXT.y);
-
-    const vec2 screenCoord = vec2(gl_LaunchIDEXT.xy) + vec2(0.5);
-    const vec2 ndc = screenCoord/vec2(gl_LaunchSizeEXT.xy) * 2.0 - 1.0;
-    vec3 rayDir = ndc.x*aspect_x*cameraX + ndc.y*aspect_y*cameraY + cameraZ;
-
-    hitValue = vec3(0.0);
-
-    traceRayEXT(
-        topLevelAS,                         // topLevel
-        gl_RayFlagsOpaqueEXT, 0xff,         // rayFlags, cullMask
-        0, 1, 0,                            // sbtRecordOffset, sbtRecordStride, missIndex
-        g.cameraPos, 0.0, rayDir, 100.0,    // origin, tmin, direction, tmax
-        0);                                 // payload
-
-    imageStore(image, ivec2(gl_LaunchIDEXT.xy), vec4(hitValue, 0.0));
-})";
-
-const char* miss_src = R"(
-#version 460
-#extension GL_EXT_ray_tracing : enable
-
-layout(location = 0) rayPayloadInEXT vec3 hitValue;
-
-void main()
-{
-    hitValue = vec3(0.0, 0.0, 0.2);
-})";
-
-const char* chit_src = R"(
-#version 460
-#extension GL_EXT_ray_tracing : enable
-
-struct VertexAttributes {
-    vec3 norm;
-    vec2 uv;
-};
-
-layout(std430, binding = 3) buffer VertexPosition {
-    vec4 vPosBuffer[];
-};
-
-layout(std430, binding = 4) buffer VertexAttribute {
-    VertexAttributes vAttribBuffer[];
-};
-
-layout(std430, binding = 5) buffer Indices {
-    uint idxBuffer[];
-};
-
-layout(shaderRecordEXT) buffer CustomData
-{
-    vec3 color;
-};
-
-layout(location = 0) rayPayloadInEXT vec3 hitValue;
-hitAttributeEXT vec2 attribs;
-
-void main()
-{
-    uvec3 indices = uvec3(idxBuffer[gl_PrimitiveID * 3 + 0], idxBuffer[gl_PrimitiveID * 3 + 1], idxBuffer[gl_PrimitiveID * 3 + 2]);
-
-    vec3 v0 = vPosBuffer[indices.x].xyz;
-    vec3 v1 = vPosBuffer[indices.y].xyz;
-    vec3 v2 = vPosBuffer[indices.z].xyz;
-    
-    const vec3 barycentrics = vec3(1.0f - attribs.x - attribs.y, attribs.x, attribs.y);
-
-    vec3 localPos = v0 * barycentrics.x + v1 * barycentrics.y + v2 * barycentrics.z;
-    vec3 worldPos = (gl_ObjectToWorldEXT * vec4(localPos, 1.0)).xyz;
-
-    if (gl_PrimitiveID == 1 && 
-        gl_InstanceID == 1 && 
-        gl_InstanceCustomIndexEXT == 100 && 
-        gl_GeometryIndexEXT == 1) {
-        hitValue = vec3(1.0f - attribs.x - attribs.y, attribs.x, attribs.y);
-    }
-    else {
-        hitValue = worldPos;
-    }
-})";
-
 void VulkanRenderBackend::createRayTracingPipeline()
 {
     VkDescriptorSetLayoutBinding bindings[] = {
@@ -1503,7 +1402,7 @@ void VulkanRenderBackend::createRayTracingPipeline()
             .binding = 0,
             .descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR,
             .descriptorCount = 1,
-            .stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR,
+            .stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR,
         },
         {
             .binding = 1,
@@ -1554,7 +1453,8 @@ void VulkanRenderBackend::createRayTracingPipeline()
     ShaderModule<VK_SHADER_STAGE_RAYGEN_BIT_KHR> raygenModule( device, raygen_src );
     ShaderModule<VK_SHADER_STAGE_MISS_BIT_KHR> missModule( device, miss_src );
     ShaderModule<VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR> chitModule( device, chit_src );
-    VkPipelineShaderStageCreateInfo stages[] = { raygenModule, missModule, chitModule };
+    ShaderModule<VK_SHADER_STAGE_MISS_BIT_KHR> shadowMissModule( device, shadow_miss_src );
+    VkPipelineShaderStageCreateInfo stages[] = { raygenModule, missModule, chitModule, shadowMissModule };
 
     VkRayTracingShaderGroupCreateInfoKHR shaderGroups[] = {
         {
@@ -1578,6 +1478,14 @@ void VulkanRenderBackend::createRayTracingPipeline()
             .type = VK_RAY_TRACING_SHADER_GROUP_TYPE_TRIANGLES_HIT_GROUP_KHR,
             .generalShader = VK_SHADER_UNUSED_KHR,
             .closestHitShader = 2,
+            .anyHitShader = VK_SHADER_UNUSED_KHR,
+            .intersectionShader = VK_SHADER_UNUSED_KHR,
+        },
+        {
+            .sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR,
+            .type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR,
+            .generalShader = 3,
+            .closestHitShader = VK_SHADER_UNUSED_KHR,
             .anyHitShader = VK_SHADER_UNUSED_KHR,
             .intersectionShader = VK_SHADER_UNUSED_KHR,
         },
@@ -1624,19 +1532,20 @@ void VulkanRenderBackend::createShaderBindingTable()
             return ( value + ( decltype( value ) )alignment - 1 ) & ~( ( decltype( value ) )alignment - 1 );
         };
     const uint32_t handleSize = RenderSettings::shaderGroupHandleSize;
-    const uint32_t groupCount = 3; // 1 raygen, 1 miss, 1 hit group
+    const uint32_t groupCount = 4; // 1 raygen, 2 miss, 1 hit group
     std::vector<ShaderGroupHandle> handles( groupCount );
     vkGetRayTracingShaderGroupHandlesKHR( device, pipeline, 0, groupCount, handleSize * groupCount, handles.data() );
     ShaderGroupHandle rgenHandle = handles[ 0 ];
     ShaderGroupHandle missHandle = handles[ 1 ];
     ShaderGroupHandle hitgHandle = handles[ 2 ];
+    ShaderGroupHandle shadowMissHandle = handles[ 3 ];
 
     const uint32_t rgenStride = alignTo( handleSize, rtProperties.shaderGroupHandleAlignment );
     rgenSbt = { 0, rgenStride, rgenStride };
 
     const uint64_t missOffset = alignTo( rgenSbt.size, rtProperties.shaderGroupBaseAlignment );
     const uint32_t missStride = alignTo( handleSize, rtProperties.shaderGroupHandleAlignment );
-    missSbt = { 0, missStride, missStride };
+    missSbt = { 0, missStride, missStride * 2 };
 
     const uint32_t hitgCustomDataSize = sizeof( HitgCustomData );
     const uint32_t geometryCount = 4;
@@ -1663,7 +1572,8 @@ void VulkanRenderBackend::createShaderBindingTable()
     vkMapMemory( device, sbtBufferMem, 0, sbtSize, 0, ( void** )&dst );
     {
         *( ShaderGroupHandle* )dst = rgenHandle;
-        *( ShaderGroupHandle* )( dst + missOffset ) = missHandle;
+        *( ShaderGroupHandle* )( dst + missOffset + 0 * missStride ) = missHandle;
+        *( ShaderGroupHandle* )( dst + missOffset + 1 * missStride ) = shadowMissHandle;
 
         *( ShaderGroupHandle* )( dst + hitgOffset + 0 * hitgStride ) = hitgHandle;
         *( HitgCustomData* )( dst + hitgOffset + 0 * hitgStride + handleSize ) = { 0.6f, 0.1f, 0.2f }; // Deep Red Wine

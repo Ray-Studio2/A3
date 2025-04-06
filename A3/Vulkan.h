@@ -12,7 +12,6 @@
 #include "EngineTypes.h"
 #include "RenderSettings.h"
 #include "RenderBackend.h"
-#include "RenderResource.h"
 #include "Matrix.h"
 
 #ifdef NDEBUG
@@ -46,6 +45,7 @@ public:
         const std::vector<uint32>& indexData,
         const Mat3x4& transformData ) override;
     virtual void createTLAS( const std::vector<BLASBatch*>& batches ) override;
+    virtual IShaderModuleRef createShaderModule( const ShaderDesc& desc ) override;
     void createOutImage();
     void createUniformBuffer();
     void createRayTracingPipeline();

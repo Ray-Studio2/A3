@@ -8,6 +8,8 @@ struct MeshResource;
 
 namespace Utility
 {
-void loadMeshFile( struct MeshResource& outMesh, const std::string& filePath );
+void loadMeshFile( MeshResource& outMesh, const std::string& filePath );
+
+void loadTextFile( std::string& outText, const std::string& filePath );
 }
 }

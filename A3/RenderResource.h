@@ -8,6 +8,11 @@ struct IAccelerationStructure
 {
 	virtual ~IAccelerationStructure() {}
 };
-
 using IAccelerationStructureRef = std::unique_ptr<IAccelerationStructure>;
+
+struct IShaderModule
+{
+	virtual ~IShaderModule() {}
+};
+using IShaderModuleRef = std::unique_ptr<IShaderModule>;
 }

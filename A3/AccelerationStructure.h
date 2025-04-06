@@ -1,5 +1,6 @@
 #pragma once
 
+#include "RenderResource.h"
 #include <vector>
 
 namespace A3

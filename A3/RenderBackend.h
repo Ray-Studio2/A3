@@ -2,6 +2,7 @@
 
 #include "RenderResource.h"
 #include "MeshResource.h"
+#include "Shader.h"
 #include "Matrix.h"
 
 namespace A3
@@ -25,5 +26,7 @@ public:
         const Mat3x4& transformData ) = 0;
 
     virtual void createTLAS( const std::vector<BLASBatch*>& batches ) = 0;
+
+    virtual IShaderModuleRef createShaderModule( const ShaderDesc& desc ) = 0;
 };
 }

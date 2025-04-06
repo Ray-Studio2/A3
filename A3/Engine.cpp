@@ -15,13 +15,6 @@
 
 namespace A3
 {
-GLFWwindow* createWindow()
-{
-    glfwWindowHint( GLFW_CLIENT_API, GLFW_NO_API );
-    glfwWindowHint( GLFW_RESIZABLE, GLFW_FALSE );
-    return glfwCreateWindow( RenderSettings::screenWidth, RenderSettings::screenHeight, "Vulkan", nullptr, nullptr );
-}
-
 static void glfw_error_callback( int error, const char* description )
 {
     fprintf( stderr, "GLFW Error %d: %s\n", error, description );
@@ -32,9 +25,6 @@ void Engine::Run()
     glfwSetErrorCallback( glfw_error_callback );
     glfwInit();
 
-    // Create window with Vulkan context
-    glfwWindowHint( GLFW_CLIENT_API, GLFW_NO_API );
-    //GLFWwindow* window = glfwCreateWindow( 1280, 720, "Dear ImGui GLFW+Vulkan example", nullptr, nullptr );
     if( !glfwVulkanSupported() )
     {
         printf( "GLFW: Vulkan Not Supported\n" );
@@ -47,7 +37,9 @@ void Engine::Run()
         extensions.push_back( glfw_extensions[ i ] );
     if( ON_DEBUG ) extensions.push_back( VK_EXT_DEBUG_UTILS_EXTENSION_NAME );
 
-    GLFWwindow* window = createWindow();
+    glfwWindowHint( GLFW_CLIENT_API, GLFW_NO_API );
+    glfwWindowHint( GLFW_RESIZABLE, GLFW_FALSE );
+    GLFWwindow* window = glfwCreateWindow( RenderSettings::screenWidth, RenderSettings::screenHeight, "Vulkan", nullptr, nullptr );
 
     int32 screenWidth, screenHeight;
     glfwGetFramebufferSize( window, &screenWidth, &screenHeight );

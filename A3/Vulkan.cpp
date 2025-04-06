@@ -1,5 +1,5 @@
 #include "Vulkan.h"
-#include "shader_module.h"
+//#include "shader_module.h"
 #include "RenderSettings.h"
 #include "ThirdParty/imgui/imgui.h"
 #include "ThirdParty/imgui/imgui_impl_glfw.h"
@@ -339,10 +339,11 @@ void VulkanRenderBackend::createVkInstance( std::vector<const char*>& extensions
 {
     VkResult err;
 
-    VkApplicationInfo appInfo{
-    .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
-    .pApplicationName = "Hello Triangle",
-    .apiVersion = VK_API_VERSION_1_3
+    VkApplicationInfo appInfo
+    {
+        .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
+        .pApplicationName = "Hello Triangle",
+        .apiVersion = VK_API_VERSION_1_3
     };
 
     std::vector<const char*> validationLayers;
@@ -1395,6 +1396,24 @@ void VulkanRenderBackend::createUniformBuffer()
     vkUnmapMemory( device, uniformBufferMem );
 }
 
+VkShaderStageFlagBits getVulkanShaderStage( ELogicalShaderType shaderType )
+{
+    switch( shaderType )
+    {
+        case LST_Vertex:            return VK_SHADER_STAGE_VERTEX_BIT;
+        case LST_Fragment:             return VK_SHADER_STAGE_FRAGMENT_BIT;
+        case LST_Compute:           return VK_SHADER_STAGE_COMPUTE_BIT;
+        case LST_RayGeneration:     return VK_SHADER_STAGE_RAYGEN_BIT_KHR;
+        case LST_AnyHit:            return VK_SHADER_STAGE_ANY_HIT_BIT_KHR;
+        case LST_ClosestHit:        return VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
+        case LST_Miss_Background:
+        case LST_Miss_Shadow:       return VK_SHADER_STAGE_MISS_BIT_KHR;
+    }
+
+    // Should not reach here
+    return VK_SHADER_STAGE_ALL;
+}
+
 void VulkanRenderBackend::createRayTracingPipeline()
 {
     VkDescriptorSetLayoutBinding bindings[] = {
@@ -1450,11 +1469,65 @@ void VulkanRenderBackend::createRayTracingPipeline()
     };
     vkCreatePipelineLayout( device, &ci1, nullptr, &pipelineLayout );
 
-    ShaderModule<VK_SHADER_STAGE_RAYGEN_BIT_KHR> raygenModule( device, raygen_src );
-    ShaderModule<VK_SHADER_STAGE_MISS_BIT_KHR> missModule( device, miss_src );
-    ShaderModule<VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR> chitModule( device, chit_src );
-    ShaderModule<VK_SHADER_STAGE_MISS_BIT_KHR> shadowMissModule( device, shadow_miss_src );
-    VkPipelineShaderStageCreateInfo stages[] = { raygenModule, missModule, chitModule, shadowMissModule };
+    // @TODO: Generalize
+    ShaderDesc raygenDesc =
+    {
+        .type = LST_RayGeneration,
+        .fileName = "SampleRaytracing.glsl"
+    };
+    ShaderDesc chitDesc =
+    {
+        .type = LST_ClosestHit,
+        .fileName = "SampleRaytracing.glsl"
+    };
+    ShaderDesc bgMissDesc =
+    {
+        .type = LST_Miss_Background,
+        .fileName = "SampleRaytracing.glsl"
+    };
+    ShaderDesc shadowMissDesc =
+    {
+        .type = LST_Miss_Shadow,
+        .fileName = "SampleRaytracing.glsl"
+    };
+    IShaderModuleRef raygenModule = createShaderModule( raygenDesc );
+    IShaderModuleRef chitModule = createShaderModule( chitDesc );
+    IShaderModuleRef missModule = createShaderModule( bgMissDesc );
+    IShaderModuleRef shadowMissModule = createShaderModule( shadowMissDesc );
+    VulkanShaderModule* vkRaygenModule = static_cast< VulkanShaderModule* >( raygenModule.get() );
+    VulkanShaderModule* vkChitModule = static_cast< VulkanShaderModule* >( chitModule.get() );
+    VulkanShaderModule* vkMissModule = static_cast< VulkanShaderModule* >( missModule.get() );
+    VulkanShaderModule* vkShadowMissModule = static_cast< VulkanShaderModule* >( shadowMissModule.get() );
+    VkPipelineShaderStageCreateInfo raygenCreateInfo
+    {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+        .stage = getVulkanShaderStage( raygenDesc.type ),
+        .module = vkRaygenModule->module,
+        .pName = "main",
+    };
+    VkPipelineShaderStageCreateInfo chitCreateInfo
+    {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+        .stage = getVulkanShaderStage( chitDesc.type ),
+        .module = vkChitModule->module,
+        .pName = "main",
+    };
+    VkPipelineShaderStageCreateInfo missCreateInfo
+    {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+        .stage = getVulkanShaderStage( bgMissDesc.type ),
+        .module = vkMissModule->module,
+        .pName = "main",
+    };
+    VkPipelineShaderStageCreateInfo shadowMissCreateInfo
+    {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+        .stage = getVulkanShaderStage( shadowMissDesc.type ),
+        .module = vkShadowMissModule->module,
+        .pName = "main",
+    };
+
+    VkPipelineShaderStageCreateInfo stages[] = { raygenCreateInfo, missCreateInfo, chitCreateInfo, shadowMissCreateInfo };
 
     VkRayTracingShaderGroupCreateInfoKHR shaderGroups[] = {
         {
@@ -1505,7 +1578,7 @@ void VulkanRenderBackend::createRayTracingPipeline()
 
 struct ShaderGroupHandle
 {
-    uint8_t data[ RenderSettings::shaderGroupHandleSize ];
+    uint8 data[ RenderSettings::shaderGroupHandleSize ];
 };
 
 struct HitgCustomData
@@ -1531,8 +1604,8 @@ void VulkanRenderBackend::createShaderBindingTable()
         {
             return ( value + ( decltype( value ) )alignment - 1 ) & ~( ( decltype( value ) )alignment - 1 );
         };
-    const uint32_t handleSize = RenderSettings::shaderGroupHandleSize;
-    const uint32_t groupCount = 4; // 1 raygen, 2 miss, 1 hit group
+    const uint32 handleSize = RenderSettings::shaderGroupHandleSize;
+    const uint32 groupCount = 4; // 1 raygen, 2 miss, 1 hit group
     std::vector<ShaderGroupHandle> handles( groupCount );
     vkGetRayTracingShaderGroupHandlesKHR( device, pipeline, 0, groupCount, handleSize * groupCount, handles.data() );
     ShaderGroupHandle rgenHandle = handles[ 0 ];
@@ -1540,20 +1613,20 @@ void VulkanRenderBackend::createShaderBindingTable()
     ShaderGroupHandle hitgHandle = handles[ 2 ];
     ShaderGroupHandle shadowMissHandle = handles[ 3 ];
 
-    const uint32_t rgenStride = alignTo( handleSize, rtProperties.shaderGroupHandleAlignment );
+    const uint32 rgenStride = alignTo( handleSize, rtProperties.shaderGroupHandleAlignment );
     rgenSbt = { 0, rgenStride, rgenStride };
 
-    const uint64_t missOffset = alignTo( rgenSbt.size, rtProperties.shaderGroupBaseAlignment );
-    const uint32_t missStride = alignTo( handleSize, rtProperties.shaderGroupHandleAlignment );
+    const uint64 missOffset = alignTo( rgenSbt.size, rtProperties.shaderGroupBaseAlignment );
+    const uint32 missStride = alignTo( handleSize, rtProperties.shaderGroupHandleAlignment );
     missSbt = { 0, missStride, missStride * 2 };
 
-    const uint32_t hitgCustomDataSize = sizeof( HitgCustomData );
-    const uint32_t geometryCount = 4;
-    const uint64_t hitgOffset = alignTo( missOffset + missSbt.size, rtProperties.shaderGroupBaseAlignment );
-    const uint32_t hitgStride = alignTo( handleSize + hitgCustomDataSize, rtProperties.shaderGroupHandleAlignment );
+    const uint32 hitgCustomDataSize = sizeof( HitgCustomData );
+    const uint32 geometryCount = 4;
+    const uint64 hitgOffset = alignTo( missOffset + missSbt.size, rtProperties.shaderGroupBaseAlignment );
+    const uint32 hitgStride = alignTo( handleSize + hitgCustomDataSize, rtProperties.shaderGroupHandleAlignment );
     hitgSbt = { 0, hitgStride, hitgStride * geometryCount };
 
-    const uint64_t sbtSize = hitgOffset + hitgSbt.size;
+    const uint64 sbtSize = hitgOffset + hitgSbt.size;
     std::tie( sbtBuffer, sbtBufferMem ) = createBuffer(
         sbtSize,
         VK_BUFFER_USAGE_SHADER_BINDING_TABLE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
@@ -1568,7 +1641,7 @@ void VulkanRenderBackend::createShaderBindingTable()
     missSbt.deviceAddress = sbtAddress + missOffset;
     hitgSbt.deviceAddress = sbtAddress + hitgOffset;
 
-    uint8_t* dst;
+    uint8* dst;
     vkMapMemory( device, sbtBufferMem, 0, sbtSize, 0, ( void** )&dst );
     {
         *( ShaderGroupHandle* )dst = rgenHandle;

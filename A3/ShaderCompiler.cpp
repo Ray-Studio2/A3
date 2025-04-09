@@ -76,45 +76,49 @@ std::vector<uint32_t> glsl2spv( glslang_stage_t stage, const char* shaderSource 
     return spvBirary;
 }
 
-glslang_stage_t getGLSLangStage( ELogicalShaderType shaderType )
+glslang_stage_t getGLSLangStage( EShaderStage stage )
 {
-    switch( shaderType )
+    switch( stage )
     {
-        case LST_Vertex:            return GLSLANG_STAGE_VERTEX;
-        case LST_Fragment:          return GLSLANG_STAGE_FRAGMENT;
-        case LST_Compute:           return GLSLANG_STAGE_COMPUTE;
-        case LST_RayGeneration:     return GLSLANG_STAGE_RAYGEN;
-        case LST_AnyHit:            return GLSLANG_STAGE_ANYHIT;
-        case LST_ClosestHit:        return GLSLANG_STAGE_CLOSESTHIT;
-        case LST_Miss_Background:
-        case LST_Miss_Shadow:       return GLSLANG_STAGE_MISS;
+        case SS_Vertex:         return GLSLANG_STAGE_VERTEX;
+        case SS_Fragment:       return GLSLANG_STAGE_FRAGMENT;
+        case SS_Compute:        return GLSLANG_STAGE_COMPUTE;
+        case SS_RayGeneration:  return GLSLANG_STAGE_RAYGEN;
+        case SS_Miss:           return GLSLANG_STAGE_MISS;
+        case SS_AnyHit:         return GLSLANG_STAGE_ANYHIT;
+        case SS_ClosestHit:     return GLSLANG_STAGE_CLOSESTHIT;
     }
 
     // Should not reach here
     return GLSLANG_STAGE_VERTEX;
 }
 
-std::string translateShaderType( ELogicalShaderType shaderType )
+std::string translateShaderType( const ShaderDesc& desc )
 {
-    switch( shaderType )
+    std::string outType;
+    if( !desc.prefix.empty() )
     {
-        case LST_Vertex:            return "VERTEX_SHADER";
-        case LST_Fragment:          return "FRAGMENT_SHADER";
-        case LST_Compute:           return "COMPUTE_SHADER";
-        case LST_RayGeneration:     return "RAY_GENERATION_SHADER";
-        case LST_AnyHit:            return "ANY_HIT_SHADER";
-        case LST_ClosestHit:        return "CLOSEST_HIT_SHADER";
-        case LST_Miss_Background:   return "BACKGROUND_MISS_SHADER";
-        case LST_Miss_Shadow:       return "SHADOW_MISS_SHADER";
+        outType = std::format( "{0}_", desc.prefix );
+    }
+
+    switch( desc.type )
+    {
+        case SS_Vertex:         return outType.append( "VERTEX_SHADER" );
+        case SS_Fragment:       return outType.append( "FRAGMENT_SHADER" );
+        case SS_Compute:        return outType.append( "COMPUTE_SHADER" );
+        case SS_RayGeneration:  return outType.append( "RAY_GENERATION_SHADER" );
+        case SS_ClosestHit:     return outType.append( "CLOSEST_HIT_SHADER" );
+        case SS_AnyHit:         return outType.append( "ANY_HIT_SHADER" );
+        case SS_Miss:           return outType.append( "MISS_SHADER" );
     }
 
     // Should not reach here
-    return {};
+    return outType;
 }
 
 std::string insertPredefines( const std::string& shaderText, const ShaderDesc& desc )
 {
-    std::string outText = std::format( "#version 460\n#define {0} 1\n", translateShaderType( desc.type ) );
+    std::string outText = std::format( "#version 460\n#define {0} 1\n", translateShaderType( desc ) );
     outText.append( shaderText );
 
     return outText;

@@ -39,9 +39,9 @@ void main()
 }
 #endif
 
-#if BACKGROUND_MISS_SHADER
+#if ENVIRONMENT_MISS_SHADER
 //=========================
-//	BACKGROUND MISS SHADER
+//	ENVIRONMENT MISS SHADER
 //=========================
 layout( location = 0 ) rayPayloadInEXT vec3 hitValue;
 
@@ -61,17 +61,17 @@ struct VertexAttributes
 	vec4 uv;
 };
 
-layout( std430, binding = 3 ) buffer VertexPosition
+layout( binding = 3 ) buffer VertexPosition
 {
 	vec4 vPosBuffer[];
 };
 
-layout( std430, binding = 4 ) buffer VertexAttribute
+layout( binding = 4 ) buffer VertexAttribute
 {
 	VertexAttributes vAttribBuffer[];
 };
 
-layout( std430, binding = 5 ) buffer Indices
+layout( binding = 5 ) buffer Indices
 {
 	uint idxBuffer[];
 };

@@ -15,4 +15,10 @@ struct IShaderModule
 	virtual ~IShaderModule() {}
 };
 using IShaderModuleRef = std::unique_ptr<IShaderModule>;
+
+struct IRenderPipeline
+{
+	virtual ~IRenderPipeline() {}
+};
+using IRenderPipelineRef = std::unique_ptr<IRenderPipeline>;
 }

@@ -8,6 +8,7 @@
 #include "VulkanResource.h"
 #include "AccelerationStructure.h"
 #include "Shader.h"
+#include "PipelineStateObject.h"
 
 using namespace A3;
 
@@ -134,18 +135,20 @@ void VulkanRenderBackend::endFrame()
     semaphoreIndex = ( semaphoreIndex + 1 ) % 3;
 }
 
-void VulkanRenderBackend::beginRaytracingPipeline()
+void VulkanRenderBackend::beginRaytracingPipeline( IRenderPipeline* inPipeline )
 {
+    VulkanPipeline* pipeline = static_cast< VulkanPipeline* >( inPipeline );
+
     VkCommandBufferBeginInfo info{
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
         .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
     };
     vkBeginCommandBuffer( commandBuffers[ imageIndex ], &info );
 
-    vkCmdBindPipeline( commandBuffers[ imageIndex ], VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, pipeline );
+    vkCmdBindPipeline( commandBuffers[ imageIndex ], VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, pipeline->pipeline );
     vkCmdBindDescriptorSets(
         commandBuffers[ imageIndex ], VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR,
-        pipelineLayout, 0, 1, &descriptorSet, 0, 0 );
+        pipeline->pipelineLayout, 0, 1, &pipeline->descriptorSet, 0, 0 );
 
     vkCmdTraceRaysKHR(
         commandBuffers[ imageIndex ],
@@ -219,9 +222,6 @@ void VulkanRenderBackend::rebuildAccelerationStructure()
 {
     createOutImage();
     createUniformBuffer();
-    createRayTracingPipeline();
-    createRayTracingDescriptorSet();
-    createShaderBindingTable();
 }
 
 void VulkanRenderBackend::loadDeviceExtensionFunctions( VkDevice device )
@@ -560,96 +560,6 @@ void VulkanRenderBackend::createVkDescriptorPools()
     }
 }
  
-void VulkanRenderBackend::createRayTracingDescriptorSet()
-{
-    VkDescriptorSetAllocateInfo allocateInfo{
-        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
-        .descriptorPool = descriptorPool,
-        .descriptorSetCount = 1,
-        .pSetLayouts = &descriptorSetLayout,
-    };
-    vkAllocateDescriptorSets( device, &allocateInfo, &descriptorSet );
-
-    VkWriteDescriptorSet write_temp{
-        .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-        .dstSet = descriptorSet,
-        .descriptorCount = 1,
-    };
-
-    // Descriptor(binding = 0), VkAccelerationStructure
-    VkWriteDescriptorSetAccelerationStructureKHR desc0{
-        .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR,
-        .accelerationStructureCount = 1,
-        .pAccelerationStructures = &tlas,
-    };
-    VkWriteDescriptorSet write0 = write_temp;
-    write0.pNext = &desc0;
-    write0.dstBinding = 0;
-    write0.descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
-
-    // Descriptor(binding = 1), VkImage for output
-    VkDescriptorImageInfo desc1{
-        .imageView = outImageView,
-        .imageLayout = VK_IMAGE_LAYOUT_GENERAL,
-    };
-    VkWriteDescriptorSet write1 = write_temp;
-    write1.dstBinding = 1;
-    write1.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-    write1.pImageInfo = &desc1;
-
-    // Descriptor(binding = 2), VkBuffer for uniform
-    VkDescriptorBufferInfo desc2{
-        .buffer = uniformBuffer,
-        .offset = 0,
-        .range = VK_WHOLE_SIZE,
-    };
-    VkWriteDescriptorSet write2 = write_temp;
-    write2.dstBinding = 2;
-    write2.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    write2.pBufferInfo = &desc2;
-
-    // Descriptor(binding = 3), VkBuffer for vertex storage buffer
-    VkDescriptorBufferInfo desc3{
-        .buffer = vertexPositionBuffer,
-        .offset = 0,
-        .range = VK_WHOLE_SIZE,
-    };
-    VkWriteDescriptorSet write3 = write_temp;
-    write3.dstBinding = 3;
-    write3.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    write3.pBufferInfo = &desc3;
-    
-    // Descriptor(binding = 4), VkBuffer for vertex storage buffer
-    VkDescriptorBufferInfo desc4{
-        .buffer = vertexAttributeBuffer,
-        .offset = 0,
-        .range = VK_WHOLE_SIZE,
-    };
-    VkWriteDescriptorSet write4 = write_temp;
-    write4.dstBinding = 4;
-    write4.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    write4.pBufferInfo = &desc4;
-
-    // Descriptor(binding = 5), VkBuffer for index storage buffer
-    VkDescriptorBufferInfo desc5{
-        .buffer = indexBuffer,
-        .offset = 0,
-        .range = VK_WHOLE_SIZE,
-    };
-    VkWriteDescriptorSet write5 = write_temp;
-    write5.dstBinding = 5;
-    write5.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    write5.pBufferInfo = &desc5;
-
-    VkWriteDescriptorSet writeInfos[] = { write0, write1, write2, write3, write4, write5 };
-    vkUpdateDescriptorSets( device, sizeof( writeInfos ) / sizeof( writeInfos[ 0 ] ), writeInfos, 0, VK_NULL_HANDLE );
-    /*
-    [VUID-VkWriteDescriptorSet-descriptorType-00336]
-    If descriptorType is VK_DESCRIPTOR_TYPE_STORAGE_IMAGE or VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT,
-    the imageView member of each element of pImageInfo must have been created with the identity swizzle.
-    */
-}
-
 void VulkanRenderBackend::createSwapChain()
 {
     VkSurfaceCapabilitiesKHR capabilities;
@@ -1396,210 +1306,232 @@ void VulkanRenderBackend::createUniformBuffer()
     vkUnmapMemory( device, uniformBufferMem );
 }
 
-VkShaderStageFlagBits getVulkanShaderStage( ELogicalShaderType shaderType )
+VkShaderStageFlagBits getVulkanShaderStage( EShaderStage stage )
 {
-    switch( shaderType )
+    switch( stage )
     {
-        case LST_Vertex:            return VK_SHADER_STAGE_VERTEX_BIT;
-        case LST_Fragment:             return VK_SHADER_STAGE_FRAGMENT_BIT;
-        case LST_Compute:           return VK_SHADER_STAGE_COMPUTE_BIT;
-        case LST_RayGeneration:     return VK_SHADER_STAGE_RAYGEN_BIT_KHR;
-        case LST_AnyHit:            return VK_SHADER_STAGE_ANY_HIT_BIT_KHR;
-        case LST_ClosestHit:        return VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
-        case LST_Miss_Background:
-        case LST_Miss_Shadow:       return VK_SHADER_STAGE_MISS_BIT_KHR;
+        case SS_Vertex:         return VK_SHADER_STAGE_VERTEX_BIT;
+        case SS_Fragment:       return VK_SHADER_STAGE_FRAGMENT_BIT;
+        case SS_Compute:        return VK_SHADER_STAGE_COMPUTE_BIT;
+        case SS_RayGeneration:  return VK_SHADER_STAGE_RAYGEN_BIT_KHR;
+        case SS_AnyHit:         return VK_SHADER_STAGE_ANY_HIT_BIT_KHR;
+        case SS_ClosestHit:     return VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
+        case SS_Miss:           return VK_SHADER_STAGE_MISS_BIT_KHR;
     }
 
     // Should not reach here
     return VK_SHADER_STAGE_ALL;
 }
 
-void VulkanRenderBackend::createRayTracingPipeline()
+VkRayTracingShaderGroupTypeKHR getVulkanShaderGroup( EShaderStage stage )
 {
-    VkDescriptorSetLayoutBinding bindings[] = {
-        {
-            .binding = 0,
-            .descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR,
-            .descriptorCount = 1,
-            .stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR,
-        },
-        {
-            .binding = 1,
-            .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
-            .descriptorCount = 1,
-            .stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR,
-        },
-        {
-            .binding = 2,
-            .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-            .descriptorCount = 1,
-            .stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR,
-        },
-        {
-            .binding = 3,
-            .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-            .descriptorCount = 1,
-            .stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR,
-        },
-        {
-            .binding = 4,
-            .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-            .descriptorCount = 1,
-            .stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR,
-        },
-        {
-            .binding = 5,
-            .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-            .descriptorCount = 1,
-            .stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR,
-        },
-    };
+    switch( stage )
+    {
+        case SS_AnyHit:
+        case SS_ClosestHit:
+            return VK_RAY_TRACING_SHADER_GROUP_TYPE_TRIANGLES_HIT_GROUP_KHR;
+    }
 
-    VkDescriptorSetLayoutCreateInfo ci0{
-        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-        .bindingCount = sizeof( bindings ) / sizeof( bindings[ 0 ] ),
-        .pBindings = bindings,
-    };
-    vkCreateDescriptorSetLayout( device, &ci0, nullptr, &descriptorSetLayout );
-
-    VkPipelineLayoutCreateInfo ci1{
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-        .setLayoutCount = 1,
-        .pSetLayouts = &descriptorSetLayout,
-    };
-    vkCreatePipelineLayout( device, &ci1, nullptr, &pipelineLayout );
-
-    // @TODO: Generalize
-    ShaderDesc raygenDesc =
-    {
-        .type = LST_RayGeneration,
-        .fileName = "SampleRaytracing.glsl"
-    };
-    ShaderDesc chitDesc =
-    {
-        .type = LST_ClosestHit,
-        .fileName = "SampleRaytracing.glsl"
-    };
-    ShaderDesc bgMissDesc =
-    {
-        .type = LST_Miss_Background,
-        .fileName = "SampleRaytracing.glsl"
-    };
-    ShaderDesc shadowMissDesc =
-    {
-        .type = LST_Miss_Shadow,
-        .fileName = "SampleRaytracing.glsl"
-    };
-    IShaderModuleRef raygenModule = createShaderModule( raygenDesc );
-    IShaderModuleRef chitModule = createShaderModule( chitDesc );
-    IShaderModuleRef missModule = createShaderModule( bgMissDesc );
-    IShaderModuleRef shadowMissModule = createShaderModule( shadowMissDesc );
-    VulkanShaderModule* vkRaygenModule = static_cast< VulkanShaderModule* >( raygenModule.get() );
-    VulkanShaderModule* vkChitModule = static_cast< VulkanShaderModule* >( chitModule.get() );
-    VulkanShaderModule* vkMissModule = static_cast< VulkanShaderModule* >( missModule.get() );
-    VulkanShaderModule* vkShadowMissModule = static_cast< VulkanShaderModule* >( shadowMissModule.get() );
-    VkPipelineShaderStageCreateInfo raygenCreateInfo
-    {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-        .stage = getVulkanShaderStage( raygenDesc.type ),
-        .module = vkRaygenModule->module,
-        .pName = "main",
-    };
-    VkPipelineShaderStageCreateInfo chitCreateInfo
-    {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-        .stage = getVulkanShaderStage( chitDesc.type ),
-        .module = vkChitModule->module,
-        .pName = "main",
-    };
-    VkPipelineShaderStageCreateInfo missCreateInfo
-    {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-        .stage = getVulkanShaderStage( bgMissDesc.type ),
-        .module = vkMissModule->module,
-        .pName = "main",
-    };
-    VkPipelineShaderStageCreateInfo shadowMissCreateInfo
-    {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-        .stage = getVulkanShaderStage( shadowMissDesc.type ),
-        .module = vkShadowMissModule->module,
-        .pName = "main",
-    };
-
-    VkPipelineShaderStageCreateInfo stages[] = { raygenCreateInfo, missCreateInfo, chitCreateInfo, shadowMissCreateInfo };
-
-    VkRayTracingShaderGroupCreateInfoKHR shaderGroups[] = {
-        {
-            .sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR,
-            .type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR,
-            .generalShader = 0,
-            .closestHitShader = VK_SHADER_UNUSED_KHR,
-            .anyHitShader = VK_SHADER_UNUSED_KHR,
-            .intersectionShader = VK_SHADER_UNUSED_KHR,
-        },
-        {
-            .sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR,
-            .type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR,
-            .generalShader = 1,
-            .closestHitShader = VK_SHADER_UNUSED_KHR,
-            .anyHitShader = VK_SHADER_UNUSED_KHR,
-            .intersectionShader = VK_SHADER_UNUSED_KHR,
-        },
-        {
-            .sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR,
-            .type = VK_RAY_TRACING_SHADER_GROUP_TYPE_TRIANGLES_HIT_GROUP_KHR,
-            .generalShader = VK_SHADER_UNUSED_KHR,
-            .closestHitShader = 2,
-            .anyHitShader = VK_SHADER_UNUSED_KHR,
-            .intersectionShader = VK_SHADER_UNUSED_KHR,
-        },
-        {
-            .sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR,
-            .type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR,
-            .generalShader = 3,
-            .closestHitShader = VK_SHADER_UNUSED_KHR,
-            .anyHitShader = VK_SHADER_UNUSED_KHR,
-            .intersectionShader = VK_SHADER_UNUSED_KHR,
-        },
-    };
-
-    VkRayTracingPipelineCreateInfoKHR ci2{
-        .sType = VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_CREATE_INFO_KHR,
-        .stageCount = sizeof( stages ) / sizeof( stages[ 0 ] ),
-        .pStages = stages,
-        .groupCount = sizeof( shaderGroups ) / sizeof( shaderGroups[ 0 ] ),
-        .pGroups = shaderGroups,
-        .maxPipelineRayRecursionDepth = 1,
-        .layout = pipelineLayout,
-    };
-    vkCreateRayTracingPipelinesKHR( device, VK_NULL_HANDLE, VK_NULL_HANDLE, 1, &ci2, nullptr, &pipeline );
+    return VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR;
 }
 
-struct ShaderGroupHandle
+VkDescriptorType getVulkanShaderDescriptorType( EShaderResourceDescriptor type )
 {
-    uint8 data[ RenderSettings::shaderGroupHandleSize ];
-};
+    switch( type )
+    {
+        case SRD_AccelerationStructure: return VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
+        case SRD_StorageBuffer:         return VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        case SRD_StorageImage:          return VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+        case SRD_UniformBuffer:         return VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    }
 
-struct HitgCustomData
+    // Should not reach here
+    return VK_DESCRIPTOR_TYPE_MAX_ENUM;
+}
+
+bool isVulkanClosestHitShader( EShaderStage stage ) { return stage == SS_ClosestHit; }
+bool isVulkanAnyHitShader( EShaderStage stage ) { return stage == SS_AnyHit; }
+bool isVulkanIntersectionShader( EShaderStage stage ) { return stage == SS_Intersection; }
+bool isVulkanGeneralShader( EShaderStage stage ) { return !isVulkanClosestHitShader( stage ) && !isVulkanAnyHitShader( stage ) && !isVulkanIntersectionShader( stage ); }
+
+IRenderPipelineRef VulkanRenderBackend::createRayTracingPipeline( const RaytracingPSODesc& psoDesc, RaytracingPSO* pso )
 {
-    float color[ 3 ];
-};
+    VulkanPipeline* outPipeline = new VulkanPipeline();
 
-/*
-In the vulkan spec,
-[VUID-vkCmdTraceRaysKHR-stride-03686] pMissShaderBindingTable->stride must be a multiple of VkPhysicalDeviceRayTracingPipelinePropertiesKHR::shaderGroupHandleAlignment
-[VUID-vkCmdTraceRaysKHR-stride-03690] pHitShaderBindingTable->stride must be a multiple of VkPhysicalDeviceRayTracingPipelinePropertiesKHR::shaderGroupHandleAlignment
-[VUID-vkCmdTraceRaysKHR-pRayGenShaderBindingTable-03682] pRayGenShaderBindingTable->deviceAddress must be a multiple of VkPhysicalDeviceRayTracingPipelinePropertiesKHR::shaderGroupBaseAlignment
-[VUID-vkCmdTraceRaysKHR-pMissShaderBindingTable-03685] pMissShaderBindingTable->deviceAddress must be a multiple of VkPhysicalDeviceRayTracingPipelinePropertiesKHR::shaderGroupBaseAlignment
-[VUID-vkCmdTraceRaysKHR-pHitShaderBindingTable-03689] pHitShaderBindingTable->deviceAddress must be a multiple of VkPhysicalDeviceRayTracingPipelinePropertiesKHR::shaderGroupBaseAlignment
+    //==========================================================
+    // Pipeline layout
+    //==========================================================
+    std::vector<VkDescriptorSetLayoutBinding> bindings( 6 );
+    for( const ShaderDesc& shaderDesc : psoDesc.shaders )
+    {
+        for( const ShaderResourceDescriptor& descriptor : shaderDesc.descriptors )
+        {
+            VkDescriptorSetLayoutBinding& binding = bindings[ descriptor.index ];
+            binding.binding = descriptor.index;
+            binding.descriptorType = getVulkanShaderDescriptorType( descriptor.type );
+            binding.descriptorCount = 1;
+            binding.stageFlags |= getVulkanShaderStage( shaderDesc.type );
+        }
+    }
 
-As shown in the vulkan spec 40.3.1. Indexing Rules,
-    pHitShaderBindingTable->deviceAddress + pHitShaderBindingTable->stride ¡¿ (
-    instanceShaderBindingTableRecordOffset + geometryIndex ¡¿ sbtRecordStride + sbtRecordOffset )
-*/
-void VulkanRenderBackend::createShaderBindingTable()
-{
+    VkDescriptorSetLayoutCreateInfo descriptorLayoutCreateInfo
+    {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+        .bindingCount = ( uint32 )bindings.size(),
+        .pBindings = bindings.data(),
+    };
+    vkCreateDescriptorSetLayout( device, &descriptorLayoutCreateInfo, nullptr, &outPipeline->descriptorSetLayout );
+
+    VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo
+    {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+        .setLayoutCount = 1,
+        .pSetLayouts = &outPipeline->descriptorSetLayout,
+    };
+    vkCreatePipelineLayout( device, &pipelineLayoutCreateInfo, nullptr, &outPipeline->pipelineLayout );
+
+    //==========================================================
+    // Pipeline 
+    //==========================================================
+    std::vector<VkPipelineShaderStageCreateInfo> stages( psoDesc.shaders.size() );
+    std::vector<VkRayTracingShaderGroupCreateInfoKHR> groups( psoDesc.shaders.size() );
+    for( int32 index = 0; index < stages.size(); ++index )
+    {
+        VulkanShaderModule* vkModule = static_cast< VulkanShaderModule* >( pso->shaders[ index ] );
+        const ShaderDesc& desc = psoDesc.shaders[ index ];
+
+        stages[ index ] = VkPipelineShaderStageCreateInfo
+        {
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+            .stage = getVulkanShaderStage( desc.type ),
+            .module = vkModule->module,
+            .pName = "main",
+        };
+
+        groups[ index ] = VkRayTracingShaderGroupCreateInfoKHR
+        {
+            .sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR,
+            .type = getVulkanShaderGroup( desc.type ),
+            .generalShader = isVulkanGeneralShader( desc.type ) ? index : VK_SHADER_UNUSED_KHR,
+            .closestHitShader = isVulkanClosestHitShader( desc.type ) ? index : VK_SHADER_UNUSED_KHR,
+            .anyHitShader = isVulkanAnyHitShader( desc.type ) ? index : VK_SHADER_UNUSED_KHR,
+            .intersectionShader = isVulkanIntersectionShader( desc.type ) ? index : VK_SHADER_UNUSED_KHR,
+        };
+    }
+
+    VkRayTracingPipelineCreateInfoKHR pipelineCreateInfo
+    {
+        .sType = VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_CREATE_INFO_KHR,
+        .stageCount = ( uint32 )stages.size(),
+        .pStages = stages.data(),
+        .groupCount = ( uint32 )groups.size(),
+        .pGroups = groups.data(),
+        .maxPipelineRayRecursionDepth = 1,
+        .layout = outPipeline->pipelineLayout,
+    };
+    vkCreateRayTracingPipelinesKHR( device, VK_NULL_HANDLE, VK_NULL_HANDLE, 1, &pipelineCreateInfo, nullptr, &outPipeline->pipeline );
+
+    //==========================================================
+    // Descriptor set 
+    //==========================================================
+	VkDescriptorSetAllocateInfo allocateInfo
+    {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+        .descriptorPool = descriptorPool,
+        .descriptorSetCount = 1,
+        .pSetLayouts = &outPipeline->descriptorSetLayout,
+	};
+    vkAllocateDescriptorSets( device, &allocateInfo, &outPipeline->descriptorSet );
+
+    {
+        struct ScopedWriteDescriptorSets
+        {
+            std::vector<VkWriteDescriptorSet> descriptors;
+
+            std::vector<VkWriteDescriptorSetAccelerationStructureKHR> accelerationStructures;
+            std::vector<VkDescriptorImageInfo> images;
+            std::vector<VkDescriptorBufferInfo> buffers;
+        };
+
+        ScopedWriteDescriptorSets writeDescriptorSets;
+
+        { // @TODO: Deterministic resize
+            writeDescriptorSets.descriptors.resize( bindings.size() );
+            writeDescriptorSets.accelerationStructures.reserve( bindings.size() );
+            writeDescriptorSets.images.reserve( bindings.size() );
+            writeDescriptorSets.buffers.reserve( bindings.size() );
+        }
+
+        // @TODO: Move to scene level
+        std::vector<VkBuffer> storageBuffers = { nullptr, nullptr, uniformBuffer, vertexPositionBuffer, vertexAttributeBuffer, indexBuffer };
+
+        for( int32 index = 0; index < bindings.size(); ++index )
+        {
+            const VkDescriptorSetLayoutBinding& binding = bindings[ index ];
+
+            VkWriteDescriptorSet& descriptor = writeDescriptorSets.descriptors[ index ];
+            descriptor.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            descriptor.dstSet = outPipeline->descriptorSet;
+            descriptor.descriptorCount = 1;
+            descriptor.dstBinding = index;
+            descriptor.descriptorType = binding.descriptorType;
+
+            if( binding.descriptorType == VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR )
+            {
+                writeDescriptorSets.accelerationStructures.emplace_back(
+                    VkWriteDescriptorSetAccelerationStructureKHR
+                    {
+                        .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR,
+                        .accelerationStructureCount = 1,
+                        .pAccelerationStructures = &tlas
+                    }
+                );
+
+                descriptor.pNext = &writeDescriptorSets.accelerationStructures.back();
+            }
+            else if( binding.descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE )
+            {
+                writeDescriptorSets.images.emplace_back(
+                    VkDescriptorImageInfo
+                    {
+                        .imageView = outImageView,
+                        .imageLayout = VK_IMAGE_LAYOUT_GENERAL
+                    }
+                );
+
+                descriptor.pImageInfo = &writeDescriptorSets.images.back();
+            }
+            else if( binding.descriptorType == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER || binding.descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER )
+            {
+                writeDescriptorSets.buffers.emplace_back(
+                    VkDescriptorBufferInfo
+                    {
+                        .buffer = storageBuffers[ index ],
+                        .offset = 0,
+                        .range = VK_WHOLE_SIZE
+                    }
+                );
+
+                descriptor.pBufferInfo = &writeDescriptorSets.buffers.back();
+            }
+        }
+
+        vkUpdateDescriptorSets( device, writeDescriptorSets.descriptors.size(), writeDescriptorSets.descriptors.data(), 0, VK_NULL_HANDLE );
+    }
+
+    //==========================================================
+    // Shader binding table 
+    //==========================================================
+    struct ShaderGroupHandle
+    {
+        uint8 data[ RenderSettings::shaderGroupHandleSize ];
+    };
+
+    struct HitgCustomData
+    {
+        float color[ 3 ];
+    };
+
     auto alignTo = []( auto value, auto alignment ) -> decltype( value )
         {
             return ( value + ( decltype( value ) )alignment - 1 ) & ~( ( decltype( value ) )alignment - 1 );
@@ -1607,7 +1539,7 @@ void VulkanRenderBackend::createShaderBindingTable()
     const uint32 handleSize = RenderSettings::shaderGroupHandleSize;
     const uint32 groupCount = 4; // 1 raygen, 2 miss, 1 hit group
     std::vector<ShaderGroupHandle> handles( groupCount );
-    vkGetRayTracingShaderGroupHandlesKHR( device, pipeline, 0, groupCount, handleSize * groupCount, handles.data() );
+    vkGetRayTracingShaderGroupHandlesKHR( device, outPipeline->pipeline, 0, groupCount, handleSize* groupCount, handles.data() );
     ShaderGroupHandle rgenHandle = handles[ 0 ];
     ShaderGroupHandle missHandle = handles[ 1 ];
     ShaderGroupHandle hitgHandle = handles[ 2 ];
@@ -1658,4 +1590,19 @@ void VulkanRenderBackend::createShaderBindingTable()
         *( HitgCustomData* )( dst + hitgOffset + 3 * hitgStride + handleSize ) = { 0.3f, 0.6f, 0.9f }; // Dawn Sky Blue
     }
     vkUnmapMemory( device, sbtBufferMem );
+
+    return IRenderPipelineRef( outPipeline );
 }
+
+/*
+In the vulkan spec,
+[VUID-vkCmdTraceRaysKHR-stride-03686] pMissShaderBindingTable->stride must be a multiple of VkPhysicalDeviceRayTracingPipelinePropertiesKHR::shaderGroupHandleAlignment
+[VUID-vkCmdTraceRaysKHR-stride-03690] pHitShaderBindingTable->stride must be a multiple of VkPhysicalDeviceRayTracingPipelinePropertiesKHR::shaderGroupHandleAlignment
+[VUID-vkCmdTraceRaysKHR-pRayGenShaderBindingTable-03682] pRayGenShaderBindingTable->deviceAddress must be a multiple of VkPhysicalDeviceRayTracingPipelinePropertiesKHR::shaderGroupBaseAlignment
+[VUID-vkCmdTraceRaysKHR-pMissShaderBindingTable-03685] pMissShaderBindingTable->deviceAddress must be a multiple of VkPhysicalDeviceRayTracingPipelinePropertiesKHR::shaderGroupBaseAlignment
+[VUID-vkCmdTraceRaysKHR-pHitShaderBindingTable-03689] pHitShaderBindingTable->deviceAddress must be a multiple of VkPhysicalDeviceRayTracingPipelinePropertiesKHR::shaderGroupBaseAlignment
+
+As shown in the vulkan spec 40.3.1. Indexing Rules,
+    pHitShaderBindingTable->deviceAddress + pHitShaderBindingTable->stride ¡¿ (
+    instanceShaderBindingTableRecordOffset + geometryIndex ¡¿ sbtRecordStride + sbtRecordOffset )
+*/

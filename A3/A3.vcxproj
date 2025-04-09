@@ -165,6 +165,7 @@
     <ClInclude Include="AccelerationStructure.h" />
     <ClInclude Include="Addon_imgui.h" />
     <ClInclude Include="CameraObject.h" />
+    <ClInclude Include="PipelineStateObject.h" />
     <ClInclude Include="RenderResource.h" />
     <ClInclude Include="Matrix.h" />
     <ClInclude Include="MeshObject.h" />

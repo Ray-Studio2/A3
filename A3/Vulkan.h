@@ -34,7 +34,7 @@ public:
     virtual void beginFrame( int32 screenWidth, int32 screenHeight ) override;
     virtual void endFrame() override;
 
-    virtual void beginRaytracingPipeline() override;
+    virtual void beginRaytracingPipeline( IRenderPipeline* inPipeline ) override;
 
     virtual void rebuildAccelerationStructure() override;
 
@@ -46,11 +46,9 @@ public:
         const Mat3x4& transformData ) override;
     virtual void createTLAS( const std::vector<BLASBatch*>& batches ) override;
     virtual IShaderModuleRef createShaderModule( const ShaderDesc& desc ) override;
+    virtual IRenderPipelineRef createRayTracingPipeline( const RaytracingPSODesc& psoDesc, RaytracingPSO* pso ) override;
     void createOutImage();
     void createUniformBuffer();
-    void createRayTracingPipeline();
-    void createRayTracingDescriptorSet();
-    void createShaderBindingTable();
     //////////////////////////
 
 private:
@@ -162,12 +160,7 @@ private:
     VkBuffer indexBuffer;
     VkDeviceMemory indexBufferMem;
 
-    VkDescriptorSetLayout descriptorSetLayout;
-    VkPipelineLayout pipelineLayout;
-    VkPipeline pipeline;
-
     VkDescriptorPool descriptorPool;
-    VkDescriptorSet descriptorSet;
 
     VkBuffer sbtBuffer;
     VkDeviceMemory sbtBufferMem;

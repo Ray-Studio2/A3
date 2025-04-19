@@ -50,10 +50,12 @@ void PathTracingRenderer::buildSamplePSO()
         psoDesc.shaders.emplace_back( SS_Miss, "SampleRaytracing.glsl", "ENVIRONMENT" );
         psoDesc.shaders.emplace_back( SS_ClosestHit, "SampleRaytracing.glsl" );
         psoDesc.shaders.emplace_back( SS_Miss, "SampleRaytracing.glsl", "SHADOW" );
+
         ShaderDesc& rayGeneration = psoDesc.shaders[ 0 ];
         rayGeneration.descriptors.emplace_back( SRD_AccelerationStructure, 0 );
         rayGeneration.descriptors.emplace_back( SRD_StorageImage, 1 );
         rayGeneration.descriptors.emplace_back( SRD_UniformBuffer, 2 );
+
         ShaderDesc& closestHit = psoDesc.shaders[ 2 ];
         closestHit.descriptors.emplace_back( SRD_AccelerationStructure, 0 );
         closestHit.descriptors.emplace_back( SRD_StorageBuffer, 3 );

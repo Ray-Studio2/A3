@@ -41,9 +41,9 @@ void Utility::loadMeshFile( MeshResource& outMesh, const std::string& filePath )
             VertexPosition positions;
             VertexAttributes attributes;
 
-            positions.x = attrib.vertices[ 3 * index.vertex_index + 0 ];
-            positions.y = attrib.vertices[ 3 * index.vertex_index + 1 ];
-            positions.z = attrib.vertices[ 3 * index.vertex_index + 2 ];
+            positions.x = attrib.vertices[ 3 * index.vertex_index + 0 ] * 0.02f;
+            positions.y = attrib.vertices[ 3 * index.vertex_index + 1 ] * 0.02f;
+            positions.z = attrib.vertices[ 3 * index.vertex_index + 2 ] * 0.02f;
 
             if( !attrib.normals.empty() && index.normal_index >= 0 )
             {
@@ -68,6 +68,53 @@ void Utility::loadMeshFile( MeshResource& outMesh, const std::string& filePath )
             outMesh.positions.push_back( positions );
             outMesh.attributes.push_back( attributes );
             outMesh.indices.push_back( static_cast< uint32 >( outMesh.indices.size() ) ); // TODO: repeated vertex
+        }
+
+        if (attrib.normals.empty()) {
+            for (size_t f = 0; f < shape.mesh.indices.size() / 3; f++) {
+                tinyobj::index_t idx0 = shape.mesh.indices[3 * f + 0];
+                tinyobj::index_t idx1 = shape.mesh.indices[3 * f + 1];
+                tinyobj::index_t idx2 = shape.mesh.indices[3 * f + 2];
+
+                float v0[3] = {
+                    attrib.vertices[3 * idx0.vertex_index + 0],
+                    attrib.vertices[3 * idx0.vertex_index + 1],
+                    attrib.vertices[3 * idx0.vertex_index + 2]
+                };
+                float v1[3] = {
+                    attrib.vertices[3 * idx1.vertex_index + 0],
+                    attrib.vertices[3 * idx1.vertex_index + 1],
+                    attrib.vertices[3 * idx1.vertex_index + 2]
+                };
+                float v2[3] = {
+                    attrib.vertices[3 * idx2.vertex_index + 0],
+                    attrib.vertices[3 * idx2.vertex_index + 1],
+                    attrib.vertices[3 * idx2.vertex_index + 2]
+                };
+
+                float e1[3] = { v1[0] - v0[0], v1[1] - v0[1], v1[2] - v0[2] };
+                float e2[3] = { v2[0] - v0[0], v2[1] - v0[1], v2[2] - v0[2] };
+                float normal[3] = {
+                    e1[1] * e2[2] - e1[2] * e2[1],
+                    e1[2] * e2[0] - e1[0] * e2[2],
+                    e1[0] * e2[1] - e1[1] * e2[0]
+                };
+
+                float len = sqrt(normal[0] * normal[0] + normal[1] * normal[1] + normal[2] * normal[2]);
+                if (len > 0) {
+                    normal[0] /= len;
+                    normal[1] /= len;
+                    normal[2] /= len;
+                }
+
+                for (int i = 0; i < 3; i++) {
+                    VertexAttributes& attr = outMesh.attributes[outMesh.indices.size() - 3 + i];
+                    attr.normals[0] = normal[0];
+                    attr.normals[1] = normal[1];
+                    attr.normals[2] = normal[2];
+                    attr.normals[3] = 0.0f;
+                }
+            }
         }
     }
 }

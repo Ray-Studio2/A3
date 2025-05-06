@@ -41,9 +41,9 @@ void Utility::loadMeshFile( MeshResource& outMesh, const std::string& filePath )
             VertexPosition positions;
             VertexAttributes attributes;
 
-            positions.x = attrib.vertices[ 3 * index.vertex_index + 0 ] * 0.02f;
-            positions.y = attrib.vertices[ 3 * index.vertex_index + 1 ] * 0.02f;
-            positions.z = attrib.vertices[ 3 * index.vertex_index + 2 ] * 0.02f;
+            positions.x = attrib.vertices[ 3 * index.vertex_index + 0 ];
+            positions.y = attrib.vertices[ 3 * index.vertex_index + 1 ];
+            positions.z = attrib.vertices[ 3 * index.vertex_index + 2 ];
 
             if( !attrib.normals.empty() && index.normal_index >= 0 )
             {
@@ -70,7 +70,7 @@ void Utility::loadMeshFile( MeshResource& outMesh, const std::string& filePath )
             outMesh.indices.push_back( static_cast< uint32 >( outMesh.indices.size() ) ); // TODO: repeated vertex
         }
 
-        if (attrib.normals.empty()) {
+        /*if (attrib.normals.empty()) {
             for (size_t f = 0; f < shape.mesh.indices.size() / 3; f++) {
                 tinyobj::index_t idx0 = shape.mesh.indices[3 * f + 0];
                 tinyobj::index_t idx1 = shape.mesh.indices[3 * f + 1];
@@ -115,6 +115,6 @@ void Utility::loadMeshFile( MeshResource& outMesh, const std::string& filePath )
                     attr.normals[3] = 0.0f;
                 }
             }
-        }
+        }*/
     }
 }

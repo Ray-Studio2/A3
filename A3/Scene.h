@@ -2,17 +2,25 @@
 
 #include <vector>
 #include <memory>
+#include <string>
+#include <unordered_map>
 
 namespace A3
 {
 class SceneObject;
 class MeshObject;
+struct MeshResource;
+
 
 class Scene
 {
 public:
 	Scene();
 	~Scene();
+
+public:
+	void load(const std::string &path);
+    void save(const std::string &path) const;
 
 	void beginFrame();
 	void endFrame();
@@ -25,6 +33,7 @@ public:
 private:
 	bool bSceneDirty;
 
-	std::vector<std::unique_ptr<SceneObject>> objects;
+    std::unordered_map<std::string, std::unique_ptr<MeshResource>> resources;
+    std::vector<std::unique_ptr<SceneObject>> objects;
 };
 }

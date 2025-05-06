@@ -1,0 +1,26 @@
+{
+  "camera": {
+    "position": [ 0.0, 0.0, 10.0 ],
+    "rotation": [ 0.0, 0.0, 0.0 ],
+    "yFovDeg": 60
+  },
+  "objects": [
+    {
+      "name": "teapot1",
+      "type": "mesh",
+      "position": [ -2.0, 0.0, 0.0 ],
+      "rotation": [ 0.0, 0.0, 0.0 ],
+      "scale": [ 4.0, 4.0, 4.0 ],
+      "mesh": "teapot",
+      "material": ""
+    },
+    {
+      "name": "teapot2",
+      "position": [ 2.0, 0.0, 0.0 ],
+      "rotation": [ 0.0, 0.0, 0.0 ],
+      "scale": [ 4.0, 4.0, 4.0 ],
+      "mesh": "teapot",
+      "material": ""
+    }
+  ]
+}

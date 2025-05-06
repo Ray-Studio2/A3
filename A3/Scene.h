@@ -33,7 +33,7 @@ public:
 private:
 	bool bSceneDirty;
 
-    std::unordered_map<std::string, std::unique_ptr<MeshResource>> resources;
+    std::unordered_map<std::string, MeshResource*> resources;
     std::vector<std::unique_ptr<SceneObject>> objects;
 };
 }

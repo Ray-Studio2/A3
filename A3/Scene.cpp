@@ -14,17 +14,21 @@ using Json = nlohmann::json;
 Scene::Scene()
 	: bSceneDirty( true )
 {
-	static MeshResource resource;
-	Utility::loadMeshFile( resource, "teapot.obj" );
-	MeshObject* mo0 = new MeshObject( &resource );
-	MeshObject* mo1 = new MeshObject( &resource );
-	mo0->setPosition( Vec3( -2, 0, 0 ) );
-	mo1->setPosition( Vec3( 2, 0, 0 ) );
-	objects.emplace_back( mo0 );
-	objects.emplace_back( mo1 );
+	// static MeshResource resource;
+	// Utility::loadMeshFile( resource, "bunny.obj" );
+	// MeshObject* mo0 = new MeshObject( &resource );
+	// MeshObject* mo1 = new MeshObject( &resource );
+	// mo0->setPosition( Vec3( -2, 0, 0 ) );
+	// mo1->setPosition( Vec3( 2, 0, 0 ) );
+	// objects.emplace_back( mo0 );
+	// objects.emplace_back( mo1 );
 }
 
-Scene::~Scene() {}
+Scene::~Scene() {
+    for (auto &resource : resources) {
+        delete resource.second;
+    }
+}
 
 void Scene::load(const std::string &path) {
 	std::ifstream file(path);
@@ -55,12 +59,14 @@ void Scene::load(const std::string &path) {
                 if (resources.find(mesh) == resources.end()) {
                     MeshResource resource;
                     Utility::loadMeshFile(resource, ((std::string) mesh) + ".obj");
-                    resources[mesh] = std::make_unique<MeshResource>(resource);
+                    resources[mesh] = new MeshResource(resource);
                 }
 
-                MeshObject *mo = new MeshObject(resources[mesh].get());
+                MeshObject *mo = new MeshObject(resources[mesh]);
                 mo->setPosition(Vec3(position[0], position[1], position[2]));
                 this->objects.emplace_back(mo);
+            } else {
+                throw std::runtime_error("unknown object type: " + type.get<std::string>());
             }
         }
 	}

@@ -9,6 +9,8 @@
 
 #include "Json.hpp"
 
+#include "Json.hpp"
+
 using namespace A3;
 using Json = nlohmann::json;
 
@@ -76,6 +78,48 @@ void Scene::load(const std::string &path) {
 			//     throw std::runtime_error("unknown object type: " + type.get<std::string>());
 			// }
 		}
+	}
+}
+
+void Scene::save(const std::string &path) const {}
+
+void Scene::load(const std::string &path) {
+	std::ifstream file(path);
+	if (!file.is_open()) {
+		throw std::runtime_error("failed to open file!: " + path);
+	}
+
+	Json data = Json::parse(file);
+
+	// TODO: camera
+	auto &camera = data["camera"];
+    if (camera.is_object()) {
+        auto &position = camera["position"];
+        auto &rotation = camera["rotation"];
+    }
+
+	auto &objects = data["objects"];
+	if (objects.is_array()) {
+        for (auto &object : objects) {
+            auto &type = object["type"];
+            if (type == "mesh") {
+                auto &name = object["name"];
+                auto &mesh = object["mesh"];
+                auto &position = object["position"];
+                auto &rotation = object["rotation"];
+                auto &material = object["material"];
+
+                if (resources.find(mesh) == resources.end()) {
+                    MeshResource resource;
+                    Utility::loadMeshFile(resource, ((std::string) mesh) + ".obj");
+                    resources[mesh] = std::make_unique<MeshResource>(resource);
+                }
+
+                MeshObject *mo = new MeshObject(resources[mesh].get());
+                mo->setPosition(Vec3(position[0], position[1], position[2]));
+                this->objects.emplace_back(mo);
+            }
+        }
 	}
 }
 

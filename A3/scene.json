@@ -1,0 +1,27 @@
+{
+  "camera": {
+    "position": [ 0.0, 0.0, 10.0 ],
+    "rotation": [ 0.0, 0.0, 0.0 ],
+    "yFovDeg": 60
+  },
+  "objects": [
+    {
+      "name": "bunny1",
+      "type": "mesh",
+      "position": [ -2.0, 0.0, 0.0 ],
+      "rotation": [ 0.0, 0.0, 0.0 ],
+      "scale": [ 4.0, 4.0, 4.0 ],
+      "mesh": "bunny",
+      "material": ""
+    },
+    {
+      "name": "bunny2",
+      "type": "mesh",
+      "position": [ 2.0, 0.0, 0.0 ],
+      "rotation": [ 0.0, 0.0, 0.0 ],
+      "scale": [ 4.0, 4.0, 4.0 ],
+      "mesh": "bunny",
+      "material": ""
+    }
+  ]
+}

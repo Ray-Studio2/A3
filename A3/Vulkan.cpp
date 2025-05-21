@@ -1589,13 +1589,17 @@ IRenderPipelineRef VulkanRenderBackend::createRayTracingPipeline( const Raytraci
         *( ShaderGroupHandle* )( dst + missOffset + 0 * missStride ) = missHandle;
         *( ShaderGroupHandle* )( dst + missOffset + 1 * missStride ) = shadowMissHandle;
 
-        static HitgCustomData sampleColorTable[] =
+        const HitgCustomData sampleColorTable[] =
         { 
             { 0.6f, 0.1f, 0.2f }  // Deep Red Wine
             , { 0.1f, 0.8f, 0.4f } // Emerald Green
             , { 0.9f, 0.7f, 0.1f } // Golden Yellow
             , { 0.3f, 0.6f, 0.9f } // Dawn Sky Blue
         };
+
+        std::random_device rd;
+        std::mt19937 gen(rd());
+        std::uniform_real_distribution<float> dist(0.0f, 1.0f);
 
         for (size_t i = 0; i < geometryCount; ++i)
         {
@@ -1606,9 +1610,6 @@ IRenderPipelineRef VulkanRenderBackend::createRayTracingPipeline( const Raytraci
             }
             else
             {
-                std::random_device rd;
-                std::mt19937 gen(rd());
-                std::uniform_real_distribution<float> dist(0.0f, 1.0f);
                 color.color[0] = dist(gen);
                 color.color[1] = dist(gen);
 				color.color[2] = dist(gen);

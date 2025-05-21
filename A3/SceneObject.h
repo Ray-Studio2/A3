@@ -22,6 +22,20 @@ public:
 		localToWorld.m13 = position.y;
 		localToWorld.m23 = position.z;
 	}
+	void setScale(const Vec3& scale)
+	{
+		localToWorld.m00 *= scale.x;
+		localToWorld.m01 *= scale.x;
+		localToWorld.m02 *= scale.x;
+
+		localToWorld.m10 *= scale.y;
+		localToWorld.m11 *= scale.y;
+		localToWorld.m12 *= scale.y;
+
+		localToWorld.m20 *= scale.z;
+		localToWorld.m21 *= scale.z;
+		localToWorld.m22 *= scale.z;
+	}
 
 protected:
 	Mat3x4 localToWorld;

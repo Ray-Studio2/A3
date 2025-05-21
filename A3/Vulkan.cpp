@@ -9,6 +9,7 @@
 #include "AccelerationStructure.h"
 #include "Shader.h"
 #include "PipelineStateObject.h"
+#include <random>
 
 using namespace A3;
 
@@ -1287,6 +1288,8 @@ void VulkanRenderBackend::createOutImage()
     vkQueueWaitIdle( graphicsQueue );
 }
 
+#include "CameraObject.h"
+#include "Scene.h"
 void VulkanRenderBackend::createUniformBuffer()
 {
     struct Data
@@ -1300,9 +1303,14 @@ void VulkanRenderBackend::createUniformBuffer()
         VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT );
 
+    CameraObject* co = tempScenePointer->getCamera();
+    const Vec3& pos = co->getPosition();
+    float cameraPos[3] = { pos.x, pos.y, pos.z };
+    float fov = co->getFov();
+
     void* dst;
     vkMapMemory( device, uniformBufferMem, 0, sizeof( dataSrc ), 0, &dst );
-    *( Data* )dst = { 0, 0, 10, 60 };
+    *( Data* )dst = { cameraPos[0], cameraPos[1], cameraPos[2], fov};
     vkUnmapMemory( device, uniformBufferMem );
 }
 
@@ -1552,8 +1560,9 @@ IRenderPipelineRef VulkanRenderBackend::createRayTracingPipeline( const Raytraci
     const uint32 missStride = alignTo( handleSize, rtProperties.shaderGroupHandleAlignment );
     missSbt = { 0, missStride, missStride * 2 };
 
+    std::vector<MeshObject*> objects = tempScenePointer->collectMeshObjects();
     const uint32 hitgCustomDataSize = sizeof( HitgCustomData );
-    const uint32 geometryCount = 4;
+    const uint32 geometryCount = objects.size();
     const uint64 hitgOffset = alignTo( missOffset + missSbt.size, rtProperties.shaderGroupBaseAlignment );
     const uint32 hitgStride = alignTo( handleSize + hitgCustomDataSize, rtProperties.shaderGroupHandleAlignment );
     hitgSbt = { 0, hitgStride, hitgStride * geometryCount };
@@ -1580,14 +1589,34 @@ IRenderPipelineRef VulkanRenderBackend::createRayTracingPipeline( const Raytraci
         *( ShaderGroupHandle* )( dst + missOffset + 0 * missStride ) = missHandle;
         *( ShaderGroupHandle* )( dst + missOffset + 1 * missStride ) = shadowMissHandle;
 
-        *( ShaderGroupHandle* )( dst + hitgOffset + 0 * hitgStride ) = hitgHandle;
-        *( HitgCustomData* )( dst + hitgOffset + 0 * hitgStride + handleSize ) = { 0.6f, 0.1f, 0.2f }; // Deep Red Wine
-        *( ShaderGroupHandle* )( dst + hitgOffset + 1 * hitgStride ) = hitgHandle;
-        *( HitgCustomData* )( dst + hitgOffset + 1 * hitgStride + handleSize ) = { 0.1f, 0.8f, 0.4f }; // Emerald Green
-        *( ShaderGroupHandle* )( dst + hitgOffset + 2 * hitgStride ) = hitgHandle;
-        *( HitgCustomData* )( dst + hitgOffset + 2 * hitgStride + handleSize ) = { 0.9f, 0.7f, 0.1f }; // Golden Yellow
-        *( ShaderGroupHandle* )( dst + hitgOffset + 3 * hitgStride ) = hitgHandle;
-        *( HitgCustomData* )( dst + hitgOffset + 3 * hitgStride + handleSize ) = { 0.3f, 0.6f, 0.9f }; // Dawn Sky Blue
+        const HitgCustomData sampleColorTable[] =
+        { 
+            { 0.6f, 0.1f, 0.2f }  // Deep Red Wine
+            , { 0.1f, 0.8f, 0.4f } // Emerald Green
+            , { 0.9f, 0.7f, 0.1f } // Golden Yellow
+            , { 0.3f, 0.6f, 0.9f } // Dawn Sky Blue
+        };
+
+        std::random_device rd;
+        std::mt19937 gen(rd());
+        std::uniform_real_distribution<float> dist(0.0f, 1.0f);
+
+        for (size_t i = 0; i < geometryCount; ++i)
+        {
+            HitgCustomData color;
+            if (i < IM_ARRAYSIZE(sampleColorTable))
+            {
+                color = sampleColorTable[i];
+            }
+            else
+            {
+                color.color[0] = dist(gen);
+                color.color[1] = dist(gen);
+				color.color[2] = dist(gen);
+            }
+            *(ShaderGroupHandle*)(dst + hitgOffset + i * hitgStride) = hitgHandle;
+            *(HitgCustomData*)(dst + hitgOffset + i * hitgStride + handleSize) = color;
+        }
     }
     vkUnmapMemory( device, sbtBufferMem );
 
@@ -1603,6 +1632,6 @@ In the vulkan spec,
 [VUID-vkCmdTraceRaysKHR-pHitShaderBindingTable-03689] pHitShaderBindingTable->deviceAddress must be a multiple of VkPhysicalDeviceRayTracingPipelinePropertiesKHR::shaderGroupBaseAlignment
 
 As shown in the vulkan spec 40.3.1. Indexing Rules,
-    pHitShaderBindingTable->deviceAddress + pHitShaderBindingTable->stride ¡¿ (
-    instanceShaderBindingTableRecordOffset + geometryIndex ¡¿ sbtRecordStride + sbtRecordOffset )
+    pHitShaderBindingTable->deviceAddress + pHitShaderBindingTable->stride ï¿½ï¿½ (
+    instanceShaderBindingTableRecordOffset + geometryIndex ï¿½ï¿½ sbtRecordStride + sbtRecordOffset )
 */

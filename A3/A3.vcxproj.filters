@@ -179,10 +179,14 @@
     <ClInclude Include="PipelineStateObject.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="Json.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="SampleRaytracing.glsl">
       <Filter>Resource Files</Filter>
     </None>
+    <None Include="scene.json" />
   </ItemGroup>
 </Project>

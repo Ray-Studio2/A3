@@ -26,6 +26,8 @@ void PathTracingRenderer::render( const Scene& scene )
 {
     if( scene.isSceneDirty() )
     {
+        // temp
+        backend->tempScenePointer = &scene;
         buildAccelerationStructure( scene );
 
         buildSamplePSO();

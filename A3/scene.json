@@ -2,26 +2,71 @@
   "camera": {
     "position": [ 0.0, 0.0, 10.0 ],
     "rotation": [ 0.0, 0.0, 0.0 ],
-    "yFovDeg": 60
+    "yFovDeg": 80
   },
   "objects": [
     {
-      "name": "bunny1",
-      "type": "mesh",
-      "position": [ -2.0, 0.0, 0.0 ],
+      "name": "cornell_box_ceiling",
+      "type":  "mesh",
+      "position": [ 0.0, -4.0, 0.0 ],
       "rotation": [ 0.0, 0.0, 0.0 ],
       "scale": [ 4.0, 4.0, 4.0 ],
-      "mesh": "bunny",
-      "material": ""
+      "mesh": "ceiling",
+      "material": "lambertian"
     },
     {
-      "name": "bunny2",
+      "name": "cornell_box_floor",
       "type": "mesh",
-      "position": [ 2.0, 0.0, 0.0 ],
+      "position": [ 0.0, -4.0, 0.0 ],
       "rotation": [ 0.0, 0.0, 0.0 ],
       "scale": [ 4.0, 4.0, 4.0 ],
-      "mesh": "bunny",
-      "material": ""
+      "mesh": "floor",
+      "material": "lambertian"
+    },
+    {
+      "name": "cornell_box_left",
+      "type": "mesh",
+      "position": [ 0.0, -4.0, 0.0 ],
+      "rotation": [ 0.0, 0.0, 0.0 ],
+      "scale": [ 4.0, 4.0, 4.0 ],
+      "mesh": "left",
+      "material": "lambertian_red"
+    },
+    {
+      "name": "cornell_box_right",
+      "type": "mesh",
+      "position": [ 0.0, -4.0, 0.0 ],
+      "rotation": [ 0.0, 0.0, 0.0 ],
+      "scale": [ 4.0, 4.0, 4.0 ],
+      "mesh": "right",
+      "material": "lambertian_green"
+    },
+    {
+      "name": "cornell_box_back",
+      "type": "mesh",
+      "position": [ 0.0, -4.0, 0.0 ],
+      "rotation": [ 0.0, 0.0, 0.0 ],
+      "scale": [ 4.0, 4.0, 4.0 ],
+      "mesh": "back",
+      "material": "lambertian"
+    },
+    {
+      "name": "teapot",
+      "type": "mesh",
+      "position": [ 0.0, 0.0, 0.0 ],
+      "rotation": [ 0.0, 0.0, 0.0 ],
+      "scale": [ 0.2, 0.2, 0.2 ],
+      "mesh": "teapot",
+      "material": "lambertian"
+    },
+    {
+      "name": "light_sphere",
+      "type": "mesh",
+      "position": [ 3.0, 2.0, -1.0 ],
+      "rotation": [ 0.0, 0.0, 0.0 ],
+      "scale": [ 0.1, 0.1, 0.1 ],
+      "mesh": "sphere",
+      "material": "light"
     }
   ]
 }

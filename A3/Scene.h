@@ -9,6 +9,7 @@ namespace A3
 {
 class SceneObject;
 class MeshObject;
+class CameraObject;
 struct MeshResource;
 
 
@@ -26,6 +27,7 @@ public:
 	void endFrame();
 
 	std::vector<MeshObject*> collectMeshObjects() const;
+	CameraObject* getCamera() const { return camera.get(); }
 
 	void markSceneDirty() { bSceneDirty = true; }
 	bool isSceneDirty() const { return bSceneDirty; }
@@ -35,5 +37,6 @@ private:
 
     std::unordered_map<std::string, MeshResource*> resources;
     std::vector<std::unique_ptr<SceneObject>> objects;
+	std::unique_ptr<CameraObject> camera;
 };
 }

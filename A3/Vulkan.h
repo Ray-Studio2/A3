@@ -39,6 +39,7 @@ public:
     virtual void rebuildAccelerationStructure() override;
 
     //@TODO: Move to renderer
+    const class Scene* tempScenePointer = nullptr;
     virtual IAccelerationStructureRef createBLAS(
         const std::vector<VertexPosition>& positionData,
         const std::vector<VertexAttributes>& attributeData,

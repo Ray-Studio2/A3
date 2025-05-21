@@ -1287,6 +1287,8 @@ void VulkanRenderBackend::createOutImage()
     vkQueueWaitIdle( graphicsQueue );
 }
 
+#include "CameraObject.h"
+#include "Scene.h"
 void VulkanRenderBackend::createUniformBuffer()
 {
     struct Data
@@ -1300,9 +1302,14 @@ void VulkanRenderBackend::createUniformBuffer()
         VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT );
 
+    CameraObject* co = tempScenePointer->getCamera();
+    const Vec3& pos = co->getPosition();
+    float cameraPos[3] = { pos.x, pos.y, pos.z };
+    float fov = co->getFov();
+
     void* dst;
     vkMapMemory( device, uniformBufferMem, 0, sizeof( dataSrc ), 0, &dst );
-    *( Data* )dst = { 0, 0, 10, 60 };
+    *( Data* )dst = { cameraPos[0], cameraPos[1], cameraPos[2], fov};
     vkUnmapMemory( device, uniformBufferMem );
 }
 
@@ -1603,6 +1610,6 @@ In the vulkan spec,
 [VUID-vkCmdTraceRaysKHR-pHitShaderBindingTable-03689] pHitShaderBindingTable->deviceAddress must be a multiple of VkPhysicalDeviceRayTracingPipelinePropertiesKHR::shaderGroupBaseAlignment
 
 As shown in the vulkan spec 40.3.1. Indexing Rules,
-    pHitShaderBindingTable->deviceAddress + pHitShaderBindingTable->stride ¡¿ (
-    instanceShaderBindingTableRecordOffset + geometryIndex ¡¿ sbtRecordStride + sbtRecordOffset )
+    pHitShaderBindingTable->deviceAddress + pHitShaderBindingTable->stride ï¿½ï¿½ (
+    instanceShaderBindingTableRecordOffset + geometryIndex ï¿½ï¿½ sbtRecordStride + sbtRecordOffset )
 */

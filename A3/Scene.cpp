@@ -47,28 +47,27 @@ void Scene::load(const std::string &path) {
 
 	auto &objects = data["objects"];
 	if (objects.is_array()) {
-        for (auto &object : objects) {
-            auto &type = object["type"];
-            if (type == "mesh") {
-                auto &name = object["name"];
-                auto &mesh = object["mesh"];
-                auto &position = object["position"];
-                auto &rotation = object["rotation"];
-                auto &material = object["material"];
+		for (auto &object : objects) {
+			// auto &type = object["type"];
+			auto &name = object["name"];
+			auto &mesh = object["mesh"];
+			auto &position = object["position"];
+			auto &rotation = object["rotation"];
+			auto &material = object["material"];
 
-                if (resources.find(mesh) == resources.end()) {
-                    MeshResource resource;
-                    Utility::loadMeshFile(resource, ((std::string) mesh) + ".obj");
-                    resources[mesh] = new MeshResource(resource);
-                }
+			if (resources.find(mesh) == resources.end()) {
+				MeshResource resource;
+				Utility::loadMeshFile(resource, "../asset/" + ((std::string)mesh) + ".obj");
+				resources[mesh] = new MeshResource(resource);
+			}
 
-                MeshObject *mo = new MeshObject(resources[mesh]);
-                mo->setPosition(Vec3(position[0], position[1], position[2]));
-                this->objects.emplace_back(mo);
-            } else {
-                throw std::runtime_error("unknown object type: " + type.get<std::string>());
-            }
-        }
+			MeshObject *mo = new MeshObject(resources[mesh]);
+			mo->setPosition(Vec3(position[0], position[1], position[2]));
+			this->objects.emplace_back(mo);
+			// } else {
+			//     throw std::runtime_error("unknown object type: " + type.get<std::string>());
+			// }
+		}
 	}
 }
 

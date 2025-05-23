@@ -22,6 +22,10 @@ public:
     VkBuffer                    descriptor;
     VkDeviceMemory              memory;
     VkAccelerationStructureKHR  handle;
+
+    VkBuffer vertexPositionBuffer;
+    VkBuffer vertexAttributeBuffer;
+    VkBuffer indexBuffer;
 };
 
 struct VulkanShaderModule : public IShaderModule

@@ -57,8 +57,8 @@ void PathTracingRenderer::buildSamplePSO()
         ShaderDesc& closestHit = psoDesc.shaders[ 2 ];
         closestHit.descriptors.emplace_back( SRD_AccelerationStructure, 0 );
         closestHit.descriptors.emplace_back( SRD_StorageBuffer, 3 );
-        closestHit.descriptors.emplace_back( SRD_StorageBuffer, 4 );
-        closestHit.descriptors.emplace_back( SRD_StorageBuffer, 5 );
+        /*closestHit.descriptors.emplace_back( SRD_StorageBuffer, 4 );
+        closestHit.descriptors.emplace_back( SRD_StorageBuffer, 5 );*/
     }
 
     samplePSO->shaders.resize( psoDesc.shaders.size() );

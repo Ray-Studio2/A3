@@ -1469,7 +1469,7 @@ IRenderPipelineRef VulkanRenderBackend::createRayTracingPipeline( const Raytraci
         .pStages = stages.data(),
         .groupCount = ( uint32 )groups.size(),
         .pGroups = groups.data(),
-        .maxPipelineRayRecursionDepth = 1,
+        .maxPipelineRayRecursionDepth = 30,
         .layout = outPipeline->pipelineLayout,
     };
     vkCreateRayTracingPipelinesKHR( device, VK_NULL_HANDLE, VK_NULL_HANDLE, 1, &pipelineCreateInfo, nullptr, &outPipeline->pipeline );
@@ -1629,7 +1629,7 @@ IRenderPipelineRef VulkanRenderBackend::createRayTracingPipeline( const Raytraci
         *( ShaderGroupHandle* )( dst + missOffset + 0 * missStride ) = missHandle;
         *( ShaderGroupHandle* )( dst + missOffset + 1 * missStride ) = shadowMissHandle;
 
-        const HitgCustomData sampleColorTable[] =
+        const std::vector<HitgCustomData> sampleColorTable =
         { 
             { 0.6f, 0.1f, 0.2f }  // Deep Red Wine
             , { 0.1f, 0.8f, 0.4f } // Emerald Green
@@ -1644,7 +1644,7 @@ IRenderPipelineRef VulkanRenderBackend::createRayTracingPipeline( const Raytraci
         for (size_t i = 0; i < geometryCount; ++i)
         {
             HitgCustomData color;
-            if (i < IM_ARRAYSIZE(sampleColorTable))
+            /*if (i < sampleColorTable.size())
             {
                 color = sampleColorTable[i];
             }
@@ -1653,7 +1653,9 @@ IRenderPipelineRef VulkanRenderBackend::createRayTracingPipeline( const Raytraci
                 color.color[0] = dist(gen);
                 color.color[1] = dist(gen);
 				color.color[2] = dist(gen);
-            }
+            }*/
+            size_t index = i % sampleColorTable.size();
+            color = sampleColorTable[index];
             *(ShaderGroupHandle*)(dst + hitgOffset + i * hitgStride) = hitgHandle;
             *(HitgCustomData*)(dst + hitgOffset + i * hitgStride + handleSize) = color;
         }

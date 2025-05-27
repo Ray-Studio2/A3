@@ -544,6 +544,7 @@ void VulkanRenderBackend::createVkDescriptorPools()
         { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 1000 },
         { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, 1000 },
         { VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 1000 },
+        { VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 1000 }, // 추가
     };
 
     // Create Descriptor Pool
@@ -560,7 +561,7 @@ void VulkanRenderBackend::createVkDescriptorPools()
         vkCreateDescriptorPool( device, &pool_info, allocator, &descriptorPool );
     }
 }
- 
+
 void VulkanRenderBackend::createSwapChain()
 {
     VkSurfaceCapabilitiesKHR capabilities;
@@ -1460,7 +1461,7 @@ IRenderPipelineRef VulkanRenderBackend::createRayTracingPipeline( const Raytraci
             std::vector<VkDescriptorImageInfo> images;
             std::vector<VkDescriptorBufferInfo> buffers;
         };
-
+        
         ScopedWriteDescriptorSets writeDescriptorSets;
 
         { // @TODO: Deterministic resize

@@ -4,7 +4,7 @@
 #extension GL_EXT_scalar_block_layout : require
 #extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
 
-#define MAX_DEPTH 5
+#define MAX_DEPTH 3
 #define SAMPLE_COUNT 1000
 
 struct RayPayload
@@ -119,7 +119,11 @@ vec3 RandomHemisphereNormal(vec3 normal, vec2 xi) {
     return normalize(tbn * local);
 }
 
-// Uniform slow
+//float rand(vec2 co) {
+//    return fract(sin(dot(co, vec2(12.9898, 78.233))) * 43758.5453123);
+//}
+//
+//// Uniform slow
 //vec3 RandomHemisphereNormal(vec3 Normal, vec2 Seed)
 //{
 //    vec3 Result;
@@ -244,6 +248,7 @@ void main()
 			gPayload.HitLightColor = vec3(0.0);
 			vec2 RandomSeed = vec2(RandomValue2(randomSeedBase), RandomValue(randomSeedBase));
 			vec3 rayDir = RandomHemisphereNormal(worldNormal, RandomSeed);
+			//vec3 rayDir = RandomHemisphereDirection(worldNormal, randomSeedBase);
 			traceRayEXT(
 				topLevelAS,
 				gl_RayFlagsOpaqueEXT,

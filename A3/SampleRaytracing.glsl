@@ -110,7 +110,7 @@ vec3 SampleUniformHemisphere(vec2 xi) {
 
     return vec3(r * cos(phi), r * sin(phi), z);
 }
-// Uniform fast
+
 vec3 RandomHemisphereNormal(vec3 normal, vec2 xi) {
     vec3 local = SampleUniformHemisphere(xi);
 	// 기준축이 Z였던 것을 기준축을 normal로 바꾸겠다~ 는 회전 행렬
@@ -118,56 +118,6 @@ vec3 RandomHemisphereNormal(vec3 normal, vec2 xi) {
     mat3 tbn = CreateTangentSpace(normal);
     return normalize(tbn * local);
 }
-
-//float rand(vec2 co) {
-//    return fract(sin(dot(co, vec2(12.9898, 78.233))) * 43758.5453123);
-//}
-//
-//// Uniform slow
-//vec3 RandomHemisphereNormal(vec3 Normal, vec2 Seed)
-//{
-//    vec3 Result;
-//    const int MaxTries = 10; // 무한 루프 방지용
-//
-//    // Unit sphere 안에서 균일한 샘플을 찾음
-//    for (int i = 0; i < MaxTries; ++i) {
-//        // [-1, 1] 범위 난수 생성
-//        vec3 Candidate = vec3(
-//            rand(Seed + float(i) + vec2(1.0, 0.0)) * 2.0 - 1.0,
-//            rand(Seed + float(i) + vec2(0.0, 1.0)) * 2.0 - 1.0,
-//            rand(Seed + float(i) + vec2(1.0, 1.0)) * 2.0 - 1.0
-//        );
-//
-//        if (dot(Candidate, Candidate) < 1.0) {
-//            Result = normalize(Candidate);
-//            break;
-//        }
-//    }
-//
-//    // 반구 방향으로 반사 (z > 0과 같은 효과)
-//    if (dot(Result, Normal) < 0.0)
-//        Result = -Result;
-//
-//    return Result;
-//}
-
-// Non Uniform?
-float RandomValueNormalDistribution(inout uint state) {
-    float theta = 2 * 3.1415926 * RandomValue(state);
-    float rho = sqrt(-2 * log(RandomValue(state)));
-    return rho * cos(theta);
-}
-vec3 RandomDirection(inout uint state) {
-    float x = RandomValueNormalDistribution(state);
-    float y = RandomValueNormalDistribution(state);
-    float z = RandomValueNormalDistribution(state);
-    return normalize(vec3(x, y, z));
-}
-vec3 RandomHemisphereDirection(vec3 normal, inout uint state) {
-    vec3 dir = RandomDirection(state);
-    return dir * sign(dot(normal, dir));
-}
-
 
 struct VertexAttributes
 {

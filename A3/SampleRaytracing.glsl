@@ -4,8 +4,8 @@
 #extension GL_EXT_scalar_block_layout : require
 #extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
 
-#define MAX_DEPTH 10
-#define SAMPLE_COUNT 2000
+#define MAX_DEPTH 5
+#define SAMPLE_COUNT 1000
 
 struct RayPayload
 {
@@ -14,17 +14,18 @@ struct RayPayload
 	uint depth;
 };
 
+layout( binding = 2 ) uniform CameraProperties
+{
+	vec3 cameraPos;
+	float yFov_degree;
+} g;
+
 #if RAY_GENERATION_SHADER
 //=========================
 //	RAY GENERATION SHADER
 //=========================
 layout( binding = 0 ) uniform accelerationStructureEXT topLevelAS;
 layout( binding = 1, rgba8 ) uniform image2D image;
-layout( binding = 2 ) uniform CameraProperties
-{
-	vec3 cameraPos;
-	float yFov_degree;
-} g;
 
 //layout( location = 0 ) rayPayloadEXT vec3 hitValue;
 layout(location = 0) rayPayloadEXT RayPayload payload;
@@ -78,31 +79,75 @@ void main()
 //	CLOSEST HIT SHADER
 //=========================
 
-// 난수 함수 (예시: 해시 기반)
-float rand(vec2 co) {
-    return fract(sin(dot(co.xy ,vec2(12.9898,78.233))) * 43758.5453);
-}
-
-// 반구 샘플링
-vec3 randomHemisphereNormal(vec3 normal, vec2 seed) {
-    float theta = acos(rand(seed)); // [0, π/2]
-    float phi = rand(seed.yx + vec2(0.123, 0.456)) * 6.2831853;
-
-    vec3 dir = vec3(
-        sin(theta) * cos(phi),
-        sin(theta) * sin(phi),
-        cos(theta)
-    );
-
-    // local space → world space
-    if (dot(dir, normal) < 0.0) dir = -dir;
-    return normalize(dir);
-}
-
+// 0.0 ~ 1.0 사이의 float 반환
 float RandomValue(inout uint state) {
     state *= (state + 195439) * (state + 124395) * (state + 845921);
     return state / 4294967295.0;
 }
+// 0.0 ~ 1.0 사이의 float 반환
+float RandomValue2(inout uint state) {
+    state = uint(state ^ 61u) ^ (state >> 16);
+    state *= 9u;
+    state = state ^ (state >> 4);
+    state *= 0x27d4eb2du;
+    state = state ^ (state >> 15);
+    return float(state) / 4294967295.0;
+}
+
+// SampleUniformHemisphere()는 +Z 방향(normal)을 기준으로 반구에서 균일하게 방향을 샘플링함
+// 이 로컬 기준 샘플을 월드 기준 normal 방향에 정렬시키기 위해 회전 행렬(TBN)을 생성함
+// TBN은 UE의 TRotationMatrix::MakeFromZ와 동일한 원리
+mat3 CreateTangentSpace(vec3 normal) {
+    vec3 up = abs(normal.z) < 0.999 ? vec3(0,0,1) : vec3(1,0,0);
+    vec3 tangent = normalize(cross(up, normal));
+    vec3 bitangent = cross(normal, tangent);
+    return mat3(tangent, bitangent, normal);
+}
+vec3 SampleUniformHemisphere(vec2 xi) {
+    float z = xi.x;
+    float r = sqrt(max(0.0, 1.0 - z * z));
+    float phi = 2.0 * 3.1415926 * xi.y;
+
+    return vec3(r * cos(phi), r * sin(phi), z);
+}
+// Uniform fast
+vec3 RandomHemisphereNormal(vec3 normal, vec2 xi) {
+    vec3 local = SampleUniformHemisphere(xi);
+	// 기준축이 Z였던 것을 기준축을 normal로 바꾸겠다~ 는 회전 행렬
+	// 예를 들어 Z축 기준으로 오른쪽을 향하는 vector였으면 이 회전 행렬을 곱하면 normal 기준으로 오른쪽을 향하는 vector가 된다~
+    mat3 tbn = CreateTangentSpace(normal);
+    return normalize(tbn * local);
+}
+
+// Uniform slow
+//vec3 RandomHemisphereNormal(vec3 Normal, vec2 Seed)
+//{
+//    vec3 Result;
+//    const int MaxTries = 10; // 무한 루프 방지용
+//
+//    // Unit sphere 안에서 균일한 샘플을 찾음
+//    for (int i = 0; i < MaxTries; ++i) {
+//        // [-1, 1] 범위 난수 생성
+//        vec3 Candidate = vec3(
+//            rand(Seed + float(i) + vec2(1.0, 0.0)) * 2.0 - 1.0,
+//            rand(Seed + float(i) + vec2(0.0, 1.0)) * 2.0 - 1.0,
+//            rand(Seed + float(i) + vec2(1.0, 1.0)) * 2.0 - 1.0
+//        );
+//
+//        if (dot(Candidate, Candidate) < 1.0) {
+//            Result = normalize(Candidate);
+//            break;
+//        }
+//    }
+//
+//    // 반구 방향으로 반사 (z > 0과 같은 효과)
+//    if (dot(Result, Normal) < 0.0)
+//        Result = -Result;
+//
+//    return Result;
+//}
+
+// Non Uniform?
 float RandomValueNormalDistribution(inout uint state) {
     float theta = 2 * 3.1415926 * RandomValue(state);
     float rho = sqrt(-2 * log(RandomValue(state)));
@@ -180,27 +225,25 @@ void main()
 	vec3 localNormal = normalize(w * n0 + u * n1 + v * n2);
 
 	vec3 worldPos = (gl_ObjectToWorldEXT * vec4(position, 1.0)).xyz;
-    vec3 worldNormal = normalize(gl_ObjectToWorldEXT * vec4(localNormal, 0.0));
+	mat3 normalMatrix = transpose(inverse(mat3(gl_ObjectToWorldEXT)));
+	vec3 worldNormal = normalize(normalMatrix * localNormal);
 	
 	if (LIGHT_INSTANCE_INDEX == gl_InstanceCustomIndexEXT) 
 	{
-		gPayload.HitLightColor = vec3(255.0, 255.0, 255.0);
+		gPayload.HitLightColor = vec3(500.0, 500.0, 500.0);
 	}
 
 	if(gPayload.depth + 1 < MAX_DEPTH)
 	{
+		gPayload.depth += 1;
 		uvec2 pixelCoord = gl_LaunchIDEXT.xy;
 		uvec2 screenSize = gl_LaunchSizeEXT.xy;
-		uint rngState = pixelCoord.y * screenSize.x + pixelCoord.x;
-		gPayload.depth += 1;
+		uint randomSeedBase = pixelCoord.y * screenSize.x + pixelCoord.x;
 		for (int i = 0; i < SAMPLE_COUNT; ++i)
 		{
 			gPayload.HitLightColor = vec3(0.0);
-			//vec2 seed = vec2(i, gl_LaunchIDEXT.x ^ gl_LaunchIDEXT.y);
-			//vec2 seed = vec2(gl_LaunchSizeEXT.x + i, gl_LaunchSizeEXT.y + i);
-			//vec2 seed = vec2(float(gl_LaunchIDEXT.x + i * 17), float(gl_LaunchIDEXT.y + i * 21));
-			//vec3 rayDir = randomHemisphereNormal(worldNormal, seed);
-			vec3 rayDir = RandomHemisphereDirection(worldNormal, rngState);
+			vec2 RandomSeed = vec2(RandomValue2(randomSeedBase), RandomValue(randomSeedBase));
+			vec3 rayDir = RandomHemisphereNormal(worldNormal, RandomSeed);
 			traceRayEXT(
 				topLevelAS,
 				gl_RayFlagsOpaqueEXT,
@@ -213,7 +256,7 @@ void main()
 				0
 			);
 
-			vec3 finalColor = color * gPayload.HitLightColor / float(SAMPLE_COUNT);
+			vec3 finalColor = color * gPayload.HitLightColor / float(SAMPLE_COUNT);// * MAX_DEPTH / gPayload.depth;
 			gPayload.radiance += finalColor;
 		}
 	}

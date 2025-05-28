@@ -62,9 +62,9 @@
     {
       "name": "light_sphere",
       "type": "mesh",
-      "position": [ 0.0, 3.0, -3.0 ],
+      "position": [ 0.0, 2.0, 2.0 ],
       "rotation": [ 0.0, 0.0, 0.0 ],
-      "scale": [ 0.3, 0.3, 0.3 ],
+      "scale": [ 0.2, 0.2, 0.2 ],
       "mesh": "sphere",
       "material": "light"
     }

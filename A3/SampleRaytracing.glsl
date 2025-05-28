@@ -198,7 +198,6 @@ void main()
 			gPayload.HitLightColor = vec3(0.0);
 			vec2 RandomSeed = vec2(RandomValue2(randomSeedBase), RandomValue(randomSeedBase));
 			vec3 rayDir = RandomHemisphereNormal(worldNormal, RandomSeed);
-			//vec3 rayDir = RandomHemisphereDirection(worldNormal, randomSeedBase);
 			traceRayEXT(
 				topLevelAS,
 				gl_RayFlagsOpaqueEXT,
@@ -211,7 +210,7 @@ void main()
 				0
 			);
 
-			vec3 finalColor = color * gPayload.HitLightColor / float(SAMPLE_COUNT);// * MAX_DEPTH / gPayload.depth;
+			vec3 finalColor = color * gPayload.HitLightColor / float(SAMPLE_COUNT);
 			gPayload.radiance += finalColor;
 		}
 	}

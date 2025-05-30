@@ -87,9 +87,69 @@ layout( location = 0 ) rayPayloadInEXT vec3 hitValue;
 layout( location = 1 ) rayPayloadEXT uint missCount;
 hitAttributeEXT vec2 attribs;
 
+float RandomValue(inout uint state) {
+    state *= (state + 195439) * (state + 124395) * (state + 845921);
+    return state / 4294967295.0; // 2^31 - 1 (uint 최댓값으로 나눔) -> 0~1 사이의 실수
+}
+
+float RandomValueNormalDistribution(inout uint state) {
+    float theta = 2 * 3.1415926 * RandomValue(state);
+    float rho = sqrt(-2 * log(RandomValue(state)));
+    return rho * cos(theta);
+}
+
+vec3 RandomDirection(inout uint state) {
+    float x = RandomValueNormalDistribution(state);
+    float y = RandomValueNormalDistribution(state);
+    float z = RandomValueNormalDistribution(state);
+    return normalize(vec3(x, y, z));
+}
+
+vec3 RandomHemisphereDirection(vec3 normal, inout uint state) {
+    vec3 dir = RandomDirection(state);
+    return dir * sign(dot(normal, dir));
+}
+
 void main()
 {
-	hitValue = color;
+    missCount = 0;
+
+    vec4 v0 = vPosBuffer[idxBuffer[gl_PrimitiveID * 3 + 0]]; // TODO: if indices data are modified, need to pass the index data also, repeated vertex rn
+    vec4 v1 = vPosBuffer[idxBuffer[gl_PrimitiveID * 3 + 1]];
+    vec4 v2 = vPosBuffer[idxBuffer[gl_PrimitiveID * 3 + 2]];
+
+	VertexAttributes a0 = vAttribBuffer[idxBuffer[gl_PrimitiveID * 3 + 0]]; // TODO: if indices data are modified, need to pass the index data also, repeated vertex rn
+    VertexAttributes a1 = vAttribBuffer[idxBuffer[gl_PrimitiveID * 3 + 1]];
+    VertexAttributes a2 = vAttribBuffer[idxBuffer[gl_PrimitiveID * 3 + 2]];
+    
+    const vec3 barycentrics = {1.0f - attribs.x - attribs.y, attribs.x, attribs.y};
+
+    vec3 localPos = (v0.xyz * barycentrics.x +
+                     v1.xyz * barycentrics.y +
+                     v2.xyz * barycentrics.z);
+    vec3 worldPos = gl_WorldRayOriginEXT + gl_WorldRayDirectionEXT * gl_HitTEXT;
+
+    vec3 localNorm = normalize(a0.norm.xyz * barycentrics.x +
+                               a1.norm.xyz * barycentrics.y +
+                               a2.norm.xyz * barycentrics.z);
+    vec3 worldNorm = localNorm; // TODO: need a normalMatrix for rotation and scale
+
+    uvec2 pixelCoord = gl_LaunchIDEXT.xy;
+    uvec2 screenSize = gl_LaunchSizeEXT.xy;
+    uint rngState = pixelCoord.y * screenSize.x + pixelCoord.x; // 1-D array에서의 pixel 위치
+
+    const uint numShadowRays = 3000;
+    for (uint i=0; i < numShadowRays; ++i) {
+        vec3 rayDir = RandomHemisphereDirection(worldNorm, rngState);
+        traceRayEXT(
+            topLevelAS,                         // topLevel
+            gl_RayFlagsTerminateOnFirstHitEXT | gl_RayFlagsSkipClosestHitShaderEXT, 0xff,         // rayFlags, cullMask
+            0, 1, 1,                            // sbtRecordOffset, sbtRecordStride, missIndex
+            worldPos, 0.001, rayDir, 100.0,  // origin, tmin, direction, tmax
+            1);                                 // payload
+    }
+    
+    hitValue = color * (float(missCount) / numShadowRays);
 }
 #endif
 
@@ -97,7 +157,6 @@ void main()
 //=========================
 //	SHADOW MISS SHADER
 //=========================
-layout( location = 1 ) rayPayloadInEXT uint missCount;
 
 void main()
 {

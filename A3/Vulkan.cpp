@@ -978,8 +978,11 @@ IAccelerationStructureRef VulkanRenderBackend::createBLAS(
     const Mat3x4& transformData )
 {
     VulkanAccelerationStructure* outBlas = new VulkanAccelerationStructure();
+    VkDeviceMemory vertexPositionBufferMem;
+    VkDeviceMemory vertexAttributeBufferMem;
+    VkDeviceMemory indexBufferMem;
 
-    std::tie( vertexPositionBuffer, vertexPositionBufferMem ) = createBuffer(
+    std::tie( outBlas->vertexPositionBuffer, vertexPositionBufferMem ) = createBuffer(
         positionData.size() * sizeof( VertexPosition ),
         VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | 
         VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | 
@@ -987,7 +990,7 @@ IAccelerationStructureRef VulkanRenderBackend::createBLAS(
         VK_BUFFER_USAGE_TRANSFER_DST_BIT,
         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT );
 
-    std::tie( vertexAttributeBuffer, vertexAttributeBufferMem ) = createBuffer(
+    std::tie( outBlas->vertexAttributeBuffer, vertexAttributeBufferMem ) = createBuffer(
         attributeData.size() * sizeof( VertexAttributes ),
         VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
         VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR |
@@ -995,7 +998,7 @@ IAccelerationStructureRef VulkanRenderBackend::createBLAS(
         VK_BUFFER_USAGE_TRANSFER_DST_BIT,
         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT );
 
-    std::tie( indexBuffer, indexBufferMem ) = createBuffer(
+    std::tie( outBlas->indexBuffer, indexBufferMem ) = createBuffer(
         indexData.size() * sizeof( uint32 ),
         VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
         VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR |
@@ -1033,11 +1036,11 @@ IAccelerationStructureRef VulkanRenderBackend::createBLAS(
             .triangles = {
                 .sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_TRIANGLES_DATA_KHR,
                 .vertexFormat = VK_FORMAT_R32G32B32_SFLOAT,
-                .vertexData = {.deviceAddress = getDeviceAddressOf( vertexPositionBuffer ) },
+                .vertexData = {.deviceAddress = getDeviceAddressOf( outBlas->vertexPositionBuffer ) },
                 .vertexStride = sizeof( VertexPosition ),
 				.maxVertex = ( uint32 )positionData.size() - 1,
                 .indexType = VK_INDEX_TYPE_UINT32,
-                .indexData = {.deviceAddress = getDeviceAddressOf( indexBuffer ) },
+                .indexData = {.deviceAddress = getDeviceAddressOf( outBlas->indexBuffer ) },
                 .transformData = {.deviceAddress = getDeviceAddressOf( geoTransformBuffer ) },
             },
         },
@@ -1123,30 +1126,67 @@ IAccelerationStructureRef VulkanRenderBackend::createBLAS(
     return IAccelerationStructureRef( outBlas );
 }
 
+struct ObjectDesc
+{
+    uint64 vertexPositionDeviceAddress = 0;
+    uint64 vertexAttributeDeviceAddress = 0;
+    uint64 indexDeviceAddress = 0;
+};
+
 // @TODO: Support more than 1 instance
 void VulkanRenderBackend::createTLAS( const std::vector<BLASBatch*>& batches )
 {
     std::vector<VkAccelerationStructureInstanceKHR> instanceData;
+    void* dst;
 
-    for( int32 batchIndex = 0; batchIndex < batches.size(); ++batchIndex )
+    size_t objectBufferCount = 0;
+
+    for (int32 batchIndex = 0; batchIndex < batches.size(); ++batchIndex)
     {
-        BLASBatch* batch = batches[ batchIndex ];
+        BLASBatch* batch = batches[batchIndex];
+        objectBufferCount += batch->transforms.size();
+    }
+
+    const uint64 objectDescBufferSize = objectBufferCount * sizeof(ObjectDesc);
+    VkDeviceMemory objectBufferMem;
+    std::tie(objectBuffer, objectBufferMem) = createBuffer( // Q: what's in objectBuffer ? 
+        objectDescBufferSize, 
+        VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
+        VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR |
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+        VK_BUFFER_USAGE_TRANSFER_DST_BIT, 
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+        VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+    vkMapMemory(device, objectBufferMem, 0, objectDescBufferSize, 0, &dst);
+
+    for (int32 batchIndex = 0, objectIndex = 0; batchIndex < batches.size(); ++batchIndex) // Q: So what's the TLAS structure rn? An array of objects?
+    {
+        BLASBatch* batch = batches[batchIndex];
         VulkanAccelerationStructure* blas = static_cast<VulkanAccelerationStructure*>( batch->blas.get() );
 
         VkAccelerationStructureInstanceKHR instance{};
-        instance.instanceCustomIndex = 100;
         instance.mask = 0xFF;
         instance.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
         instance.accelerationStructureReference = getDeviceAddressOf( blas->handle );
 
-        for( int32 instanceIndex = 0; instanceIndex < batch->transforms.size(); ++instanceIndex )
+        for( int32 instanceIndex = 0; instanceIndex < batch->transforms.size(); ++instanceIndex, ++objectIndex )
         {
+            instance.instanceCustomIndex = objectIndex;
             instance.instanceShaderBindingTableRecordOffset = instanceData.size();
             memcpy( &instance, &batch->transforms[ instanceIndex ], sizeof( Mat3x4 ) );
 
             instanceData.push_back( instance );
+            ObjectDesc objectDesc{
+                .vertexPositionDeviceAddress = getDeviceAddressOf(blas->vertexPositionBuffer),
+                .vertexAttributeDeviceAddress = getDeviceAddressOf(blas->vertexAttributeBuffer),
+                .indexDeviceAddress = getDeviceAddressOf(blas->indexBuffer),
+            };
+            memcpy((ObjectDesc*)dst + objectIndex, &objectDesc, sizeof(ObjectDesc));
         }
     }
+
+    vkUnmapMemory(device, objectBufferMem);
 
     const int64 instanceDataByteSize = instanceData.size() * sizeof( VkAccelerationStructureInstanceKHR );
 
@@ -1155,7 +1195,6 @@ void VulkanRenderBackend::createTLAS( const std::vector<BLASBatch*>& batches )
         VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR,
         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT );
 
-    void* dst;
     vkMapMemory( device, instanceBufferMem, 0, instanceDataByteSize, 0, &dst );
     memcpy( dst, instanceData.data(), instanceDataByteSize );
     vkUnmapMemory( device, instanceBufferMem );
@@ -1370,7 +1409,7 @@ IRenderPipelineRef VulkanRenderBackend::createRayTracingPipeline( const Raytraci
     //==========================================================
     // Pipeline layout
     //==========================================================
-    std::vector<VkDescriptorSetLayoutBinding> bindings( 6 );
+    std::vector<VkDescriptorSetLayoutBinding> bindings( 4 ); // Look PathTracingRenderer.cpp Q: Why 4?
     for( const ShaderDesc& shaderDesc : psoDesc.shaders )
     {
         for( const ShaderResourceDescriptor& descriptor : shaderDesc.descriptors )
@@ -1472,7 +1511,7 @@ IRenderPipelineRef VulkanRenderBackend::createRayTracingPipeline( const Raytraci
         }
 
         // @TODO: Move to scene level
-        std::vector<VkBuffer> storageBuffers = { nullptr, nullptr, uniformBuffer, vertexPositionBuffer, vertexAttributeBuffer, indexBuffer };
+        std::vector<VkBuffer> storageBuffers = { nullptr, nullptr, uniformBuffer, objectBuffer };
 
         for( int32 index = 0; index < bindings.size(); ++index )
         {

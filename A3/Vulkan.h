@@ -152,14 +152,16 @@ private:
     VkBuffer uniformBuffer;
     VkDeviceMemory uniformBufferMem;
 
-    VkBuffer vertexPositionBuffer;
-    VkDeviceMemory vertexPositionBufferMem;
+    //VkBuffer vertexPositionBuffer;
+    //VkDeviceMemory vertexPositionBufferMem;
 
-    VkBuffer vertexAttributeBuffer;
-    VkDeviceMemory vertexAttributeBufferMem;
+    //VkBuffer vertexAttributeBuffer;
+    //VkDeviceMemory vertexAttributeBufferMem;
 
-    VkBuffer indexBuffer;
-    VkDeviceMemory indexBufferMem;
+    //VkBuffer indexBuffer;
+    //VkDeviceMemory indexBufferMem;
+
+    VkBuffer objectBuffer;
 
     VkDescriptorPool descriptorPool;
 

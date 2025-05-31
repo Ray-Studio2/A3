@@ -1,4 +1,8 @@
 #extension GL_EXT_ray_tracing : enable
+#extension GL_EXT_buffer_reference : require
+#extension GL_EXT_buffer_reference_uvec2 : require
+#extension GL_EXT_scalar_block_layout : require
+#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
 
 #if RAY_GENERATION_SHADER
 //=========================
@@ -39,18 +43,6 @@ void main()
 }
 #endif
 
-#if ENVIRONMENT_MISS_SHADER
-//=========================
-//	ENVIRONMENT MISS SHADER
-//=========================
-layout( location = 0 ) rayPayloadInEXT vec3 hitValue;
-
-void main()
-{
-	hitValue = vec3( 0.0, 0.0, 0.2 );
-}
-#endif
-
 #if CLOSEST_HIT_SHADER
 //=========================
 //	CLOSEST HIT SHADER
@@ -61,20 +53,19 @@ struct VertexAttributes
 	vec4 uv;
 };
 
-layout( binding = 3 ) buffer VertexPosition
-{
-	vec4 vPosBuffer[];
+struct ObjectDesc {
+	uint64_t vertexPositionDeviceAddress;
+	uint64_t vertexAttributeDeviceAddress;
+	uint64_t indexDeviceAddress;
 };
 
-layout( binding = 4 ) buffer VertexAttribute
-{
-	VertexAttributes vAttribBuffer[];
-};
+layout(buffer_reference, scalar) buffer PositionBuffer { vec4 p[]; };
+layout(buffer_reference, scalar) buffer AttributeBuffer { VertexAttributes a[]; };
+layout(buffer_reference, scalar) buffer IndexBuffer { ivec3 i[]; };
 
-layout( binding = 5 ) buffer Indices
-{
-	uint idxBuffer[];
-};
+layout(binding=3, scalar) buffer ObjectDescBuffer {
+	ObjectDesc desc[];
+} objectDescs;
 
 layout( shaderRecordEXT ) buffer CustomData
 {
@@ -114,25 +105,34 @@ void main()
 {
     missCount = 0;
 
-    vec4 v0 = vPosBuffer[idxBuffer[gl_PrimitiveID * 3 + 0]]; // TODO: if indices data are modified, need to pass the index data also, repeated vertex rn
-    vec4 v1 = vPosBuffer[idxBuffer[gl_PrimitiveID * 3 + 1]];
-    vec4 v2 = vPosBuffer[idxBuffer[gl_PrimitiveID * 3 + 2]];
+    ObjectDesc objDesc = objectDescs.desc[gl_InstanceCustomIndexEXT];
 
-	VertexAttributes a0 = vAttribBuffer[idxBuffer[gl_PrimitiveID * 3 + 0]]; // TODO: if indices data are modified, need to pass the index data also, repeated vertex rn
-    VertexAttributes a1 = vAttribBuffer[idxBuffer[gl_PrimitiveID * 3 + 1]];
-    VertexAttributes a2 = vAttribBuffer[idxBuffer[gl_PrimitiveID * 3 + 2]];
-    
-    const vec3 barycentrics = {1.0f - attribs.x - attribs.y, attribs.x, attribs.y};
+	IndexBuffer indexBuffer = IndexBuffer(objDesc.indexDeviceAddress);
+	ivec3 index = indexBuffer.i[gl_PrimitiveID];
 
-    vec3 localPos = (v0.xyz * barycentrics.x +
-                     v1.xyz * barycentrics.y +
-                     v2.xyz * barycentrics.z);
-    vec3 worldPos = gl_WorldRayOriginEXT + gl_WorldRayDirectionEXT * gl_HitTEXT;
+	PositionBuffer positionBuffer = PositionBuffer(objDesc.vertexPositionDeviceAddress);
+	vec4 p0 = positionBuffer.p[index.x];
+    vec4 p1 = positionBuffer.p[index.y];
+    vec4 p2 = positionBuffer.p[index.z];
+	
+	float u = attribs.x;
+	float v = attribs.y;
+	float w = 1.0 - u - v;
+	
+	vec3 position = (w * p0 + u * p1 + v * p2).xyz;
 
-    vec3 localNorm = normalize(a0.norm.xyz * barycentrics.x +
-                               a1.norm.xyz * barycentrics.y +
-                               a2.norm.xyz * barycentrics.z);
-    vec3 worldNorm = localNorm; // TODO: need a normalMatrix for rotation and scale
+	AttributeBuffer attributeBuffer = AttributeBuffer(objDesc.vertexAttributeDeviceAddress);
+	VertexAttributes a0 = attributeBuffer.a[index.x];
+	VertexAttributes a1 = attributeBuffer.a[index.y];
+	VertexAttributes a2 = attributeBuffer.a[index.z];
+	vec3 n0 = normalize(a0.norm.xyz);
+	vec3 n1 = normalize(a1.norm.xyz);
+ 	vec3 n2 = normalize(a2.norm.xyz);
+	vec3 localNormal = normalize(w * n0 + u * n1 + v * n2);
+
+	mat4x3 objToWorld = gl_ObjectToWorldEXT;
+	vec3 worldNormal = normalize(objToWorld * vec4(localNormal, 0.0));
+	vec3 worldPos = objToWorld * vec4(position, 1.0);
 
     uvec2 pixelCoord = gl_LaunchIDEXT.xy;
     uvec2 screenSize = gl_LaunchSizeEXT.xy;
@@ -140,7 +140,7 @@ void main()
 
     const uint numShadowRays = 3000;
     for (uint i=0; i < numShadowRays; ++i) {
-        vec3 rayDir = RandomHemisphereDirection(worldNorm, rngState);
+        vec3 rayDir = RandomHemisphereDirection(worldNormal, rngState);
         traceRayEXT(
             topLevelAS,                         // topLevel
             gl_RayFlagsTerminateOnFirstHitEXT | gl_RayFlagsSkipClosestHitShaderEXT, 0xff,         // rayFlags, cullMask
@@ -157,9 +157,23 @@ void main()
 //=========================
 //	SHADOW MISS SHADER
 //=========================
+layout( location = 1 ) rayPayloadInEXT uint missCount;
 
 void main()
 {
+	++missCount;
+}
+#endif
 
+
+#if ENVIRONMENT_MISS_SHADER
+//=========================
+//	ENVIRONMENT MISS SHADER
+//=========================
+layout( location = 0 ) rayPayloadInEXT vec3 hitValue;
+
+void main()
+{
+	hitValue = vec3( 0.0, 0.0, 0.2 );
 }
 #endif

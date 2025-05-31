@@ -492,12 +492,16 @@ void VulkanRenderBackend::createVkQueueFamily()
         .pQueuePriorities = &queuePriority,
     };
 
+    VkPhysicalDeviceFeatures deviceFeatures{};
+    deviceFeatures.shaderInt64 = VK_TRUE;
+
     VkDeviceCreateInfo createInfo{
         .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
         .queueCreateInfoCount = 1,
         .pQueueCreateInfos = &queueCreateInfo,
         .enabledExtensionCount = ( uint32 )deviceExtensions.size(),
         .ppEnabledExtensionNames = deviceExtensions.data(),
+        .pEnabledFeatures = &deviceFeatures,
     };
 
     VkPhysicalDeviceBufferDeviceAddressFeatures f1{

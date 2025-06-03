@@ -847,7 +847,7 @@ std::tuple<VkBuffer, VkDeviceMemory> VulkanRenderBackend::createBuffer(
 
     if( usage & VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT )
     {
-        VkMemoryAllocateFlagsInfo flagsInfo{
+        static VkMemoryAllocateFlagsInfo flagsInfo{
             .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO,
             .flags = VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT_KHR,
         };
@@ -1469,7 +1469,7 @@ IRenderPipelineRef VulkanRenderBackend::createRayTracingPipeline( const Raytraci
         .pStages = stages.data(),
         .groupCount = ( uint32 )groups.size(),
         .pGroups = groups.data(),
-        .maxPipelineRayRecursionDepth = 30,
+        .maxPipelineRayRecursionDepth = 31,
         .layout = outPipeline->pipelineLayout,
     };
     vkCreateRayTracingPipelinesKHR( device, VK_NULL_HANDLE, VK_NULL_HANDLE, 1, &pipelineCreateInfo, nullptr, &outPipeline->pipeline );

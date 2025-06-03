@@ -62,7 +62,7 @@ void main()
 //=========================
 
 #define LIGHT_INSTANCE_INDEX 6
-#define NUM_SAMPLE 10
+#define NUM_SAMPLE 100
 
 struct VertexAttributes
 {
@@ -91,8 +91,7 @@ layout( shaderRecordEXT ) buffer CustomData
 
 layout( binding = 0 ) uniform accelerationStructureEXT topLevelAS;
 
-layout( location = 0 ) rayPayloadInEXT Ray rayOrigin;
-layout( location = 1 ) rayPayloadEXT Ray rayChild;
+layout( location = 0 ) rayPayloadInEXT Ray ray;
 hitAttributeEXT vec2 attribs;
 
 float RandomValue(inout uint state) {
@@ -161,30 +160,29 @@ void main()
 	vec3 lightColor = vec3(0.0);
 	vec3 temp = vec3(0.0);
 
+	uint tempDepth = ray.depth;
+
 	if (LIGHT_INSTANCE_INDEX == gl_InstanceCustomIndexEXT) 
 	{
 		lightColor = vec3(1.0);
 	}
-	else if (rayOrigin.depth + 1 < MAX_DEPTH) {
-		rayOrigin.depth += 1;
+	else if (ray.depth + 1 < MAX_DEPTH) {
+		ray.depth += 1;
 		for (uint i=0; i < NUM_SAMPLE; ++i) {
 			vec3 rayDir = RandomHemisphereDirection(worldNormal, rngState);
-
-			rayChild.radiance = vec3(0.0);
-			rayChild.depth = rayOrigin.depth + 1;
 
 			traceRayEXT(
 				topLevelAS,                         // topLevel
 				gl_RayFlagsOpaqueEXT, 0xff,         // rayFlags, cullMask
 				0, 1, 1,                            // sbtRecordOffset, sbtRecordStride, missIndex
-				worldPos, 0.001, rayDir, 100.0,  	// origin, tmin, direction, tmax
-				1);                                 // payload
+				worldPos, 0.0001, rayDir, 100.0,  	// origin, tmin, direction, tmax
+				0);                                 // payload
 
-			temp += abs(dot(worldNormal, rayDir)) * rayChild.radiance;
+			temp += abs(dot(worldNormal, rayDir)) * ray.radiance;
 		}
-		rayOrigin.depth -= 1;
+		ray.depth = tempDepth;
 	}
-	rayOrigin.radiance = lightColor +  2.0 * color * (temp / float(NUM_SAMPLE));
+	ray.radiance = lightColor +  2.0 * color * (temp / float(NUM_SAMPLE)); // FIX: doesn't show anything; very bright with no division
 }
 #endif
 
@@ -192,11 +190,10 @@ void main()
 //=========================
 //	SHADOW MISS SHADER
 //=========================
-layout(location = 1) rayPayloadInEXT Ray ray;
 
 void main()
 {
-	ray.radiance = vec3(0.0);
+
 }
 #endif
 

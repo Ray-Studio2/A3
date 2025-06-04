@@ -1,34 +1,14 @@
+#extension GL_GOOGLE_include_directive : require
+#include "Sampler.glsl"
+
 #extension GL_EXT_ray_tracing : enable
 #extension GL_EXT_buffer_reference : require
 #extension GL_EXT_buffer_reference_uvec2 : require
 #extension GL_EXT_scalar_block_layout : require
 #extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
 
-#define MAX_DEPTH 5
-#define SAMPLE_COUNT 10
-
-struct RayPayload
-{
-   vec3 radiance;
-   vec3 depthColor[MAX_DEPTH];
-   uint depth;
-};
-
-layout( binding = 2 ) uniform CameraProperties
-{
-   vec3 cameraPos;
-   float yFov_degree;
-} g;
-
-#if RAY_GENERATION_SHADER
-//=========================
-//   RAY GENERATION SHADER
-//=========================
-layout( binding = 0 ) uniform accelerationStructureEXT topLevelAS;
-layout( binding = 1, rgba8 ) uniform image2D image;
-
-//layout( location = 0 ) rayPayloadEXT vec3 hitValue;
-layout(location = 0) rayPayloadEXT RayPayload gPayload;
+#define MAX_DEPTH 3
+#define SAMPLE_COUNT 120
 
 vec3 toneMapACES(vec3 x) {
     const float a = 2.51;
@@ -38,6 +18,28 @@ vec3 toneMapACES(vec3 x) {
     const float e = 0.14;
     return clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0, 1.0);
 }
+
+struct RayPayload
+{
+    vec3 rayDirection;
+    vec3 radiance;
+    vec3 depthColor[MAX_DEPTH];
+    uint depth;
+};
+
+layout( binding = 2 ) uniform CameraProperties
+{
+    vec3 cameraPos;
+    float yFov_degree;
+} g;
+
+#if RAY_GENERATION_SHADER
+//=========================
+//   RAY GENERATION SHADER
+//=========================
+layout( binding = 0 ) uniform accelerationStructureEXT topLevelAS;
+layout( binding = 1, rgba8 ) uniform image2D image;
+layout(location = 0) rayPayloadEXT RayPayload gPayload;
 
 vec3 gammaCorrect(vec3 color) {
     return pow(color, vec3(1.0 / 2.2));
@@ -62,6 +64,7 @@ void main()
     }
     gPayload.depth = 0;
     
+    gPayload.rayDirection = rayDir;
     traceRayEXT(
        topLevelAS,                         // topLevel
        gl_RayFlagsOpaqueEXT, 0xff,         // rayFlags, cullMask
@@ -79,46 +82,6 @@ void main()
 //=========================
 //   CLOSEST HIT SHADER
 //=========================
-
-// 0.0 ~ 1.0 사이의 float 반환
-float RandomValue(inout uint state) {
-    state *= (state + 195439) * (state + 124395) * (state + 845921);
-    return state / 4294967295.0;
-}
-// 0.0 ~ 1.0 사이의 float 반환
-float RandomValue2(inout uint state) {
-    state = uint(state ^ 61u) ^ (state >> 16);
-    state *= 9u;
-    state = state ^ (state >> 4);
-    state *= 0x27d4eb2du;
-    state = state ^ (state >> 15);
-    return float(state) / 4294967295.0;
-}
-
-// SampleUniformHemisphere()는 +Z 방향(normal)을 기준으로 반구에서 균일하게 방향을 샘플링함
-// 이 로컬 기준 샘플을 월드 기준 normal 방향에 정렬시키기 위해 회전 행렬(TBN)을 생성함
-// TBN은 UE의 TRotationMatrix::MakeFromZ와 동일한 원리
-mat3 CreateTangentSpace(vec3 normal) {
-    vec3 up = abs(normal.z) < 0.999 ? vec3(0,0,1) : vec3(1,0,0);
-    vec3 tangent = normalize(cross(up, normal));
-    vec3 bitangent = cross(normal, tangent);
-    return mat3(tangent, bitangent, normal);
-}
-vec3 SampleUniformHemisphere(vec2 xi) {
-    float z = xi.x;
-    float r = sqrt(max(0.0, 1.0 - z * z));
-    float phi = 2.0 * 3.1415926 * xi.y;
-
-    return vec3(r * cos(phi), r * sin(phi), z);
-}
-
-vec3 RandomHemisphereNormal(vec3 normal, vec2 xi) {
-    vec3 local = SampleUniformHemisphere(xi);
-   // 기준축이 Z였던 것을 기준축을 normal로 바꾸겠다~ 는 회전 행렬
-   // 예를 들어 Z축 기준으로 오른쪽을 향하는 vector였으면 이 회전 행렬을 곱하면 normal 기준으로 오른쪽을 향하는 vector가 된다~
-    mat3 tbn = CreateTangentSpace(normal);
-    return normalize(tbn * local);
-}
 
 struct VertexAttributes
 {
@@ -211,7 +174,7 @@ void main()
             weightSum += kDepthWeights[i];
             
         // 아직은 씬에 맞게 조정 필요.
-        const float magicNumber = float(SAMPLE_COUNT) * 0.9;
+        const float magicNumber = float(SAMPLE_COUNT) * 0.5;
         // 정규화하여 누적
         for (uint i = 0; i <= currentDepthIndex; ++i)
         {
@@ -232,7 +195,7 @@ void main()
         for (int i = 0; i < SAMPLE_COUNT; ++i) 
         {
             vec2 seed = vec2(RandomValue2(rngState), RandomValue(rngState));
-            vec3 dir = RandomHemisphereNormal(worldNormal, seed);
+            vec3 dir = RandomCosineHemisphere(worldNormal, seed);
 
             // visit
             traceRayEXT(
@@ -268,10 +231,22 @@ void main()
 //=========================
 //   ENVIRONMENT MISS SHADER
 //=========================
-//layout( location = 0 ) rayPayloadInEXT vec3 hitValue;
+layout(location = 0) rayPayloadInEXT RayPayload gPayload;
+layout(set = 0, binding = 4) uniform sampler2D environmentMap;
 
 void main()
 {
-   //hitValue = vec3( 0.0, 0.0, 0.2 );
+    if(gPayload.depth != 0)
+    {
+        return;
+    }
+
+    vec3 dir = normalize(gPayload.rayDirection); // ray direction 넘겨줘야 함
+    vec2 uv = vec2(
+        atan(dir.z, dir.x) / (2.0 * 3.1415926535) + 0.5,
+        acos(clamp(dir.y, -1.0, 1.0)) / 3.1415926535
+    );
+    vec3 color = texture(environmentMap, uv).rgb;
+    gPayload.radiance = toneMapACES(color);
 }
 #endif

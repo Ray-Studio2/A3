@@ -196,6 +196,7 @@
     <ClInclude Include="VulkanResource.h" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="Sampler.glsl" />
     <None Include="SampleRaytracing.glsl" />
     <None Include="scene.json" />
   </ItemGroup>

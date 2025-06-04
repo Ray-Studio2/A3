@@ -11,6 +11,9 @@
 #include "PipelineStateObject.h"
 #include <random>
 
+#define STB_IMAGE_IMPLEMENTATION
+#include <stb_image.h>
+
 using namespace A3;
 
 VulkanRenderBackend::VulkanRenderBackend( GLFWwindow* window, std::vector<const char*>& extensions, int32 screenWidth, int32 screenHeight )
@@ -23,6 +26,9 @@ VulkanRenderBackend::VulkanRenderBackend( GLFWwindow* window, std::vector<const 
     createSwapChain();
     createImguiRenderPass( screenWidth, screenHeight );
     createCommandCenter();
+
+    //std::tie(envImage, envImageMem, envImageView, envSampler) = createEnvironmentMap("../asse1/autumn_field_puresky_4k.hdr");
+    std::tie(envImage, envImageMem, envImageView, envSampler) = createEnvironmentMap("../asset/rogland_overcast_4k.hdr");
 }
 
 VulkanRenderBackend::~VulkanRenderBackend()
@@ -799,6 +805,122 @@ void VulkanRenderBackend::createCommandCenter()
     }
 }
 
+std::tuple<VkImage, VkDeviceMemory, VkImageView, VkSampler>
+A3::VulkanRenderBackend::createEnvironmentMap(std::string_view hdrTexturePath)
+{
+    // --- HDR 로드 ---
+    int width, height, channels;
+    float* pixels = stbi_loadf(hdrTexturePath.data(), &width, &height, &channels, 0);
+    assert(pixels && channels == 3);
+
+    VkDeviceSize imageSize = width * height * 4 * sizeof(float);
+    std::vector<float> rgbaPixels(width * height * 4);
+    for (int i = 0; i < width * height; ++i) {
+        rgbaPixels[i * 4 + 0] = pixels[i * 3 + 0];
+        rgbaPixels[i * 4 + 1] = pixels[i * 3 + 1];
+        rgbaPixels[i * 4 + 2] = pixels[i * 3 + 2];
+        rgbaPixels[i * 4 + 3] = 1.0f;
+    }
+    stbi_image_free(pixels);
+
+    vkQueueWaitIdle(graphicsQueue);
+
+    // --- 이미지 생성 ---
+    VkImage image;
+    VkDeviceMemory imageMemory;
+    std::tie(image, imageMemory) = createImage(
+        { (uint32_t)width, (uint32_t)height },
+        VK_FORMAT_R32G32B32A32_SFLOAT,
+        VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+    // --- 스테이징 버퍼 생성 ---
+    auto [stagingBuffer, stagingMem] = createBuffer(
+        imageSize,
+        VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+    void* data;
+    vkMapMemory(device, stagingMem, 0, imageSize, 0, &data);
+    memcpy(data, rgbaPixels.data(), static_cast<size_t>(imageSize));
+    vkUnmapMemory(device, stagingMem);
+
+    // --- 명령 버퍼 기록 ---
+    VkCommandBuffer& cmd = commandBuffers[imageIndex];
+    vkResetCommandBuffer(cmd, 0);
+
+    VkCommandBufferBeginInfo beginInfo{ .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
+    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    vkBeginCommandBuffer(cmd, &beginInfo);
+
+    VkImageSubresourceRange subresourceRange = {
+        .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+        .baseMipLevel = 0,
+        .levelCount = 1,
+        .baseArrayLayer = 0,
+        .layerCount = 1,
+    };
+
+    setImageLayout(cmd, image, VK_IMAGE_LAYOUT_UNDEFINED,
+        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, subresourceRange,
+        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+
+    VkBufferImageCopy region{};
+    region.bufferOffset = 0;
+    region.imageSubresource = {
+        .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+        .mipLevel = 0,
+        .baseArrayLayer = 0,
+        .layerCount = 1,
+    };
+    region.imageExtent = { (uint32_t)width, (uint32_t)height, 1 };
+
+    vkCmdCopyBufferToImage(cmd, stagingBuffer, image,
+        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+
+    setImageLayout(cmd, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, subresourceRange,
+        VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+
+    vkEndCommandBuffer(cmd);
+
+    VkSubmitInfo submitInfo{ .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO };
+    submitInfo.commandBufferCount = 1;
+    submitInfo.pCommandBuffers = &cmd;
+    vkQueueSubmit(graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
+    vkQueueWaitIdle(graphicsQueue);
+
+    vkDestroyBuffer(device, stagingBuffer, nullptr);
+    vkFreeMemory(device, stagingMem, nullptr);
+
+    // --- ImageView 생성 ---
+    VkImageView imageView;
+    VkImageViewCreateInfo viewInfo{
+        .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+        .image = image,
+        .viewType = VK_IMAGE_VIEW_TYPE_2D,
+        .format = VK_FORMAT_R32G32B32A32_SFLOAT,
+        .subresourceRange = subresourceRange,
+    };
+    vkCreateImageView(device, &viewInfo, nullptr, &imageView);
+
+    // --- Sampler 생성 ---
+    VkSampler sampler;
+    VkSamplerCreateInfo samplerInfo{
+        .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+        .magFilter = VK_FILTER_LINEAR,
+        .minFilter = VK_FILTER_LINEAR,
+        .mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR,
+        .addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+        .addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+        .addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+        .maxLod = FLT_MAX,
+    };
+    vkCreateSampler(device, &samplerInfo, nullptr, &sampler);
+
+    return { image, imageMemory, imageView, sampler };
+}
+
 uint32 VulkanRenderBackend::findMemoryType( uint32_t memoryTypeBits, VkMemoryPropertyFlags reqMemProps )
 {
     uint32 memTypeIndex = 0;
@@ -1386,6 +1508,7 @@ VkDescriptorType getVulkanShaderDescriptorType( EShaderResourceDescriptor type )
         case SRD_StorageBuffer:         return VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         case SRD_StorageImage:          return VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
         case SRD_UniformBuffer:         return VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        case SRD_ImageSampler:          return VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     }
 
     // Should not reach here
@@ -1404,7 +1527,7 @@ IRenderPipelineRef VulkanRenderBackend::createRayTracingPipeline( const Raytraci
     //==========================================================
     // Pipeline layout
     //==========================================================
-    std::vector<VkDescriptorSetLayoutBinding> bindings( 4 );
+    std::vector<VkDescriptorSetLayoutBinding> bindings( 5 );
     for( const ShaderDesc& shaderDesc : psoDesc.shaders )
     {
         for( const ShaderResourceDescriptor& descriptor : shaderDesc.descriptors )
@@ -1561,6 +1684,18 @@ IRenderPipelineRef VulkanRenderBackend::createRayTracingPipeline( const Raytraci
                 );
 
                 descriptor.pBufferInfo = &writeDescriptorSets.buffers.back();
+            }
+            else if (binding.descriptorType == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
+            {
+                writeDescriptorSets.images.emplace_back(
+                    VkDescriptorImageInfo{
+                        .sampler = envSampler,
+                        .imageView = envImageView,
+                        .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+                    }
+                );
+
+                descriptor.pImageInfo = &writeDescriptorSets.images.back();
             }
         }
 

@@ -61,6 +61,7 @@ private:
     void createSwapChain();
     void createImguiRenderPass( int32 screenWidth, int32 screenHeight );
     void createCommandCenter();
+    std::tuple<VkImage, VkDeviceMemory, VkImageView, VkSampler> createEnvironmentMap(std::string_view hdrTexturePath);
 
     void loadDeviceExtensionFunctions( VkDevice device );
 
@@ -144,6 +145,11 @@ private:
     VkBuffer tlasBuffer;
     VkDeviceMemory tlasBufferMem;
     VkAccelerationStructureKHR tlas;
+
+    VkImage envImage;
+    VkDeviceMemory envImageMem;
+    VkImageView envImageView;
+    VkSampler envSampler;
 
     VkImage outImage;
     VkDeviceMemory outImageMem;

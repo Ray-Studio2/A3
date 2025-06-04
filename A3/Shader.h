@@ -26,6 +26,7 @@ enum EShaderResourceDescriptor
     SRD_StorageImage,
     SRD_StorageBuffer,
     SRD_AccelerationStructure,
+    SRD_ImageSampler,
 };
 
 struct ShaderResourceDescriptor

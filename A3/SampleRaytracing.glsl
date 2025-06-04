@@ -4,8 +4,8 @@
 #extension GL_EXT_scalar_block_layout : require
 #extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
 
-#define MAX_DEPTH 3
-#define SAMPLE_COUNT 500
+#define MAX_DEPTH 5
+#define SAMPLE_COUNT 10
 
 struct RayPayload
 {
@@ -227,12 +227,10 @@ void main()
         uvec2 pixelCoord = gl_LaunchIDEXT.xy;
         uvec2 screenSize = gl_LaunchSizeEXT.xy;
         uint rngState = pixelCoord.y * screenSize.x + pixelCoord.x;
-        
+        RayPayload payloadBackup = gPayload;
+        gPayload.depth += 1;
         for (int i = 0; i < SAMPLE_COUNT; ++i) 
         {
-            RayPayload backUp = gPayload;
-            gPayload.depth += 1;
-
             vec2 seed = vec2(RandomValue2(rngState), RandomValue(rngState));
             vec3 dir = RandomHemisphereNormal(worldNormal, seed);
 
@@ -244,10 +242,10 @@ void main()
                 worldPos, 0.001, dir, 100.0,
                 0
             );
-            vec3 radianceBackUp = gPayload.radiance;
-            gPayload = backUp;
-            gPayload.radiance = radianceBackUp;
         }
+        vec3 radianceBackup = gPayload.radiance;
+        gPayload = payloadBackup;
+        gPayload.radiance = radianceBackup;
     }
 }
 

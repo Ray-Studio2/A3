@@ -27,7 +27,7 @@ VulkanRenderBackend::VulkanRenderBackend( GLFWwindow* window, std::vector<const 
     createImguiRenderPass( screenWidth, screenHeight );
     createCommandCenter();
 
-    //std::tie(envImage, envImageMem, envImageView, envSampler) = createEnvironmentMap("../asse1/autumn_field_puresky_4k.hdr");
+    //std::tie(envImage, envImageMem, envImageView, envSampler) = createEnvironmentMap("../asset/autumn_field_puresky_4k.hdr");
     std::tie(envImage, envImageMem, envImageView, envSampler) = createEnvironmentMap("../asset/rogland_overcast_4k.hdr");
 }
 

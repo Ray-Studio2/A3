@@ -28,7 +28,7 @@ VulkanRenderBackend::VulkanRenderBackend( GLFWwindow* window, std::vector<const 
     createCommandCenter();
 
     //std::tie(envImage, envImageMem, envImageView, envSampler) = createEnvironmentMap("../asset/autumn_field_puresky_4k.hdr");
-    std::tie(envImage, envImageMem, envImageView, envSampler) = createEnvironmentMap("../asset/rogland_overcast_4k.hdr");
+    std::tie(envImage, envImageMem, envImageView, envSampler) = createEnvironmentMap("../asset/bloem_hill_01_4k.hdr");
 }
 
 VulkanRenderBackend::~VulkanRenderBackend()
@@ -572,7 +572,7 @@ void VulkanRenderBackend::createSwapChain()
     VkSurfaceCapabilitiesKHR capabilities;
     vkGetPhysicalDeviceSurfaceCapabilitiesKHR( physicalDevice, surface, &capabilities );
 
-    const VkColorSpaceKHR defaultSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
+    const VkColorSpaceKHR defaultSpace = VK_COLOR_SPACE_EXTENDED_SRGB_LINEAR_EXT;// VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
     {
         uint32_t formatCount;
         vkGetPhysicalDeviceSurfaceFormatsKHR( physicalDevice, surface, &formatCount, nullptr );
@@ -1398,7 +1398,7 @@ void VulkanRenderBackend::createTLAS( const std::vector<BLASBatch*>& batches )
 
 void VulkanRenderBackend::createOutImage()
 {
-    VkFormat format = VK_FORMAT_B8G8R8A8_UNORM; //VK_FORMAT_R8G8B8A8_SRGB, VK_FORMAT_B8G8R8A8_SRGB(==swapChainImageFormat)
+    VkFormat format = VK_FORMAT_R16G16B16A16_SFLOAT;// VK_FORMAT_B8G8R8A8_UNORM; //VK_FORMAT_R8G8B8A8_SRGB, VK_FORMAT_B8G8R8A8_SRGB(==swapChainImageFormat)
     std::tie( outImage, outImageMem ) = createImage(
         { RenderSettings::screenWidth, RenderSettings::screenHeight },
         format,

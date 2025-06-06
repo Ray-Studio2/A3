@@ -8,7 +8,7 @@
 #extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
 
 #define MAX_DEPTH 3
-#define SAMPLE_COUNT 120
+#define SAMPLE_COUNT 20
 
 vec3 toneMapACES(vec3 x) {
     const float a = 2.51;
@@ -247,6 +247,6 @@ void main()
         acos(clamp(dir.y, -1.0, 1.0)) / 3.1415926535
     );
     vec3 color = texture(environmentMap, uv).rgb;
-    gPayload.radiance = toneMapACES(color);
+    gPayload.radiance = color;//toneMapACES(color);
 }
 #endif

@@ -5,11 +5,15 @@
 #include <string>
 #include <unordered_map>
 
+#include "SampleQuality.h"
+
 namespace A3
 {
 class SceneObject;
 class MeshObject;
 class CameraObject;
+
+//struct SampleQuality;
 struct MeshResource;
 
 
@@ -28,8 +32,10 @@ public:
 
 	std::vector<MeshObject*> collectMeshObjects() const;
 	CameraObject* getCamera() const { return camera.get(); }
+	SampleQuality* getSampleQuality() const { return sampleQuality.get(); }
 
 	void markSceneDirty() { bSceneDirty = true; }
+	void clearSceneDirty() { bSceneDirty = false; }
 	bool isSceneDirty() const { return bSceneDirty; }
 
 private:
@@ -38,5 +44,6 @@ private:
     std::unordered_map<std::string, MeshResource*> resources;
     std::vector<std::unique_ptr<SceneObject>> objects;
 	std::unique_ptr<CameraObject> camera;
+	std::unique_ptr<SampleQuality> sampleQuality;
 };
 }

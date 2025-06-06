@@ -147,6 +147,7 @@
     <ClCompile Include="MeshResource.cpp" />
     <ClCompile Include="MeshUtility.cpp" />
     <ClCompile Include="PathTracingRenderer.cpp" />
+    <ClCompile Include="SampleQuality.h" />
     <ClCompile Include="Scene.cpp" />
     <ClCompile Include="SceneObject.cpp" />
     <ClCompile Include="ShaderCompiler.cpp" />
@@ -195,7 +196,10 @@
     <ClInclude Include="VulkanResource.h" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="SampleRaytracing.glsl" />
+    <None Include="SampleRaytracing.glsl">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</ExcludedFromBuild>
+    </None>
     <None Include="scene.json" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

@@ -4,12 +4,9 @@
 #extension GL_EXT_scalar_block_layout : require
 #extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
 
-#define MAX_DEPTH 3
-
 struct Ray
 {
     vec3 radiance;
-	// vec3 hitLightColor;
     uint depth;
 };
 
@@ -40,7 +37,6 @@ void main()
 	vec3 rayDir = ndc.x * aspect_x * cameraX + ndc.y * aspect_y * cameraY + cameraZ;
 
 	ray.radiance = vec3(0.0);
-	// ray.hitLightColor = vec3(0.0);
 	ray.depth = 0;
 
 	traceRayEXT(
@@ -52,7 +48,7 @@ void main()
 
 	vec3 finalColor = ray.radiance;
 
-	imageStore( image, ivec2( gl_LaunchIDEXT.xy ), vec4( finalColor, 0.0 ) );
+	imageStore( image, ivec2( gl_LaunchIDEXT.xy ), vec4( finalColor, 1.0 ) );
 }
 #endif
 
@@ -62,7 +58,6 @@ void main()
 //=========================
 
 #define LIGHT_INSTANCE_INDEX 6
-#define NUM_SAMPLE 100
 
 struct VertexAttributes
 {
@@ -84,6 +79,11 @@ layout(binding=3, scalar) buffer ObjectDescBuffer {
 	ObjectDesc desc[];
 } objectDescs;
 
+layout( binding=4 ) uniform SampleQuality {
+	uint maxDepth;
+	uint numSamples;
+} sq;
+
 layout( shaderRecordEXT ) buffer CustomData
 {
 	vec3 color;
@@ -101,8 +101,7 @@ float RandomValue(inout uint state) {
 
 float RandomValueNormalDistribution(inout uint state) {
     float theta = 2 * 3.1415926 * RandomValue(state);
-	float u = max(RandomValue(state), 1e-6);
-    float rho = sqrt(-2.0 * log(u));
+    float rho = sqrt(-2.0 * log(RandomValue(state)));
     return rho * cos(theta);
 }
 
@@ -166,9 +165,11 @@ void main()
 	{
 		lightColor = vec3(1.0);
 	}
-	else if (ray.depth + 1 < MAX_DEPTH) {
+
+	uint numSampleByDepth = (ray.depth == 0 ? sq.numSamples : sq.numSamples > 4 ? 4 : sq.numSamples);
+	if (ray.depth + 1 < sq.maxDepth) {
 		ray.depth += 1;
-		for (uint i=0; i < NUM_SAMPLE; ++i) {
+		for (uint i=0; i < numSampleByDepth; ++i) {
 			vec3 rayDir = RandomHemisphereDirection(worldNormal, rngState);
 
 			traceRayEXT(
@@ -176,13 +177,14 @@ void main()
 				gl_RayFlagsOpaqueEXT, 0xff,         // rayFlags, cullMask
 				0, 1, 1,                            // sbtRecordOffset, sbtRecordStride, missIndex
 				worldPos, 0.0001, rayDir, 100.0,  	// origin, tmin, direction, tmax
-				0);                                 // payload
+				0);                                 // payload 
 
-			temp += abs(dot(worldNormal, rayDir)) * ray.radiance;
+			temp += max(dot(worldNormal, rayDir), 0.0) * ray.radiance;
 		}
+		temp *= 1.0 / float(numSampleByDepth);
 		ray.depth = tempDepth;
 	}
-	ray.radiance = lightColor +  2.0 * color * (temp / float(NUM_SAMPLE)); // FIX: doesn't show anything; very bright with no division
+	ray.radiance = lightColor +  2.0 * color * temp; // FIX: doesn't show anything; very bright with no division
 }
 #endif
 
@@ -191,9 +193,11 @@ void main()
 //	SHADOW MISS SHADER
 //=========================
 
+layout( location = 0 ) rayPayloadInEXT Ray ray;
+
 void main()
 {
-
+	ray.radiance = vec3(0.0);
 }
 #endif
 
@@ -203,8 +207,10 @@ void main()
 //	ENVIRONMENT MISS SHADER
 //=========================
 
+layout( location = 0 ) rayPayloadInEXT Ray ray;
+
 void main()
 {
-
+	ray.radiance = vec3(0.0);
 }
 #endif

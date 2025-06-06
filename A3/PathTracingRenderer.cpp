@@ -22,7 +22,7 @@ void PathTracingRenderer::beginFrame( int32 screenWidth, int32 screenHeight ) co
     backend->beginFrame( screenWidth, screenHeight );
 }
 
-void PathTracingRenderer::render( const Scene& scene )
+void PathTracingRenderer::render( Scene& scene )
 {
     if( scene.isSceneDirty() )
     {
@@ -31,6 +31,8 @@ void PathTracingRenderer::render( const Scene& scene )
         buildAccelerationStructure( scene );
 
         buildSamplePSO();
+
+        scene.clearSceneDirty();
     }
 
     backend->beginRaytracingPipeline( samplePSO->pipeline.get() );
@@ -57,8 +59,7 @@ void PathTracingRenderer::buildSamplePSO()
         ShaderDesc& closestHit = psoDesc.shaders[ 2 ];
         closestHit.descriptors.emplace_back( SRD_AccelerationStructure, 0 );
         closestHit.descriptors.emplace_back( SRD_StorageBuffer, 3 );
-        //closestHit.descriptors.emplace_back( SRD_StorageBuffer, 4 );
-        //closestHit.descriptors.emplace_back( SRD_StorageBuffer, 5 ); -> will give memory addresses instead
+        closestHit.descriptors.emplace_back( SRD_UniformBuffer, 4 );
     }
 
     samplePSO->shaders.resize( psoDesc.shaders.size() );

@@ -154,7 +154,6 @@ void main()
 
     uvec2 pixelCoord = gl_LaunchIDEXT.xy;
     uvec2 screenSize = gl_LaunchSizeEXT.xy;
-    uint rngState = pixelCoord.y * screenSize.x + pixelCoord.x; // 1-D array에서의 pixel 위치
 
 	vec3 lightColor = vec3(0.0);
 	vec3 temp = vec3(0.0);
@@ -170,6 +169,7 @@ void main()
 	if (ray.depth + 1 < sq.maxDepth) {
 		ray.depth += 1;
 		for (uint i=0; i < numSampleByDepth; ++i) {
+			uint rngState = (pixelCoord.y * screenSize.x + pixelCoord.x) * (ray.depth + 1) * (i + 1);
 			vec3 rayDir = RandomHemisphereDirection(worldNormal, rngState);
 
 			traceRayEXT(

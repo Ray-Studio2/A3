@@ -29,8 +29,10 @@ public:
 
     virtual void createTLAS( const std::vector<BLASBatch*>& batches ) = 0;
 
-    virtual IShaderModuleRef createShaderModule( const ShaderDesc& desc ) = 0;
+    virtual IShaderRef createShader( const ShaderDesc& desc ) = 0;
 
     virtual IRenderPipelineRef createRayTracingPipeline( const RaytracingPSODesc& psoDesc, RaytracingPSO* pso ) = 0;
+
+    virtual void updateShaderBindingTable( const RaytracingPSODesc& psoDesc, IRenderPipeline* pipelineInterface, uint8* sbtCustomData ) = 0;
 };
 }

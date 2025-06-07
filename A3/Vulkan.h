@@ -46,8 +46,9 @@ public:
         const std::vector<uint32>& indexData,
         const Mat3x4& transformData ) override;
     virtual void createTLAS( const std::vector<BLASBatch*>& batches ) override;
-    virtual IShaderModuleRef createShaderModule( const ShaderDesc& desc ) override;
+    virtual IShaderRef createShader( const ShaderDesc& desc ) override;
     virtual IRenderPipelineRef createRayTracingPipeline( const RaytracingPSODesc& psoDesc, RaytracingPSO* pso ) override;
+    virtual void updateShaderBindingTable( const RaytracingPSODesc& psoDesc, IRenderPipeline* pipelineInterface, uint8* sbtCustomData ) override;
     void createOutImage();
     void createUniformBuffer();
     //////////////////////////
@@ -162,13 +163,6 @@ private:
     VkDeviceMemory indexBufferMem;
 
     VkDescriptorPool descriptorPool;
-
-    VkBuffer sbtBuffer;
-    VkDeviceMemory sbtBufferMem;
-    VkStridedDeviceAddressRegionKHR rgenSbt{};
-    VkStridedDeviceAddressRegionKHR missSbt{};
-    VkStridedDeviceAddressRegionKHR hitgSbt{};
-    VkStridedDeviceAddressRegionKHR callSbt{};
 
     VkCommandBufferBeginInfo beginInfo = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
     VkImageSubresourceRange subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };

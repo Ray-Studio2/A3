@@ -9,12 +9,14 @@
 namespace A3
 {
 struct MeshResource;
+class IMaterial;
 
 class MeshObject : public SceneObject
 {
 public:
-	MeshObject( MeshResource* inResource )
+	MeshObject( MeshResource* inResource, IMaterial* inMaterial )
 		: resource( inResource )
+		, material( inMaterial )
 	{}
 
 	void createRenderResources( IRenderBackend* backend )
@@ -27,10 +29,14 @@ public:
 
 	MeshResource* getResource() { return resource; }
 
+	IMaterial* getMaterial() { return material; }
+
 	virtual bool canRender() override { return true; }
 
 private:
 	MeshResource* resource;
+
+	IMaterial* material;
 
 	BLASBatch blasBatch;
 };

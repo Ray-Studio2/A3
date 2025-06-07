@@ -6,6 +6,7 @@
 #include "MeshObject.h"
 #include "MeshResource.h"
 #include "CameraObject.h"
+#include "Material.h"
 
 #include "Json.hpp"
 
@@ -15,14 +16,23 @@ using Json = nlohmann::json;
 Scene::Scene()
 	: bSceneDirty( true )
 {
-	// static MeshResource resource;
-	// Utility::loadMeshFile( resource, "bunny.obj" );
-	// MeshObject* mo0 = new MeshObject( &resource );
-	// MeshObject* mo1 = new MeshObject( &resource );
-	// mo0->setPosition( Vec3( -2, 0, 0 ) );
-	// mo1->setPosition( Vec3( 2, 0, 0 ) );
-	// objects.emplace_back( mo0 );
-	// objects.emplace_back( mo1 );
+	//MeshResource* meshResource = new MeshResource();
+	//Utility::loadMeshFile( *meshResource, "teapot.obj" );
+	//resources.emplace_back( meshResource );
+
+	//Material* material = new Material( 2, Vec3() );
+	//MaterialInstance* materialInstance0 = new MaterialInstance( material, Vec3( 0, 0, 1 ) );
+	//MaterialInstance* materialInstance1 = new MaterialInstance( material, Vec3( 1, 0, 0 ) );
+	//resources.emplace_back( material );
+	//resources.emplace_back( materialInstance0 );
+	//resources.emplace_back( materialInstance1 );
+
+	//MeshObject* mo0 = new MeshObject( meshResource, materialInstance0 );
+	//MeshObject* mo1 = new MeshObject( meshResource, materialInstance1 );
+	//mo0->setPosition( Vec3( -2, 0, 0 ) );
+	//mo1->setPosition( Vec3( 2, 0, 0 ) );
+	//objects.emplace_back( mo0 );
+	//objects.emplace_back( mo1 );
 }
 
 Scene::~Scene() {
@@ -51,6 +61,11 @@ void Scene::load(const std::string &path) {
 		this->camera->setFov(fov);
     }
 
+	Material* material = new Material( 2, Vec3() );
+	MaterialInstance* materialInstance0 = new MaterialInstance( material, Vec3( 0, 0, 1 ) );
+	resources1.emplace_back( material );
+	resources1.emplace_back( materialInstance0 );
+
 	auto &objects = data["objects"];
 	if (objects.is_array()) {
 		for (auto &object : objects) {
@@ -68,7 +83,7 @@ void Scene::load(const std::string &path) {
 				resources[mesh] = new MeshResource(resource);
 			}
 
-			MeshObject *mo = new MeshObject(resources[mesh]);
+			MeshObject *mo = new MeshObject(resources[mesh], materialInstance0);
 			mo->setPosition(Vec3(position[0], position[1], position[2]));
 			mo->setScale(Vec3(scale[0], scale[1], scale[2]));
 			this->objects.emplace_back(mo);
@@ -102,4 +117,18 @@ std::vector<MeshObject*> Scene::collectMeshObjects() const
 	}
 
 	return outObjects;
+}
+
+std::vector<MaterialInstance*> Scene::collectMaterialInstances(int32 shaderId) const
+{
+	std::vector<MaterialInstance*> outMaterials;
+
+	for (const std::unique_ptr<ISceneResource>& so : resources1)
+	{
+		// @TODO: Remove dynamic cast
+		if (MaterialInstance* material = dynamic_cast<MaterialInstance*>(so.get()))
+			outMaterials.push_back(material);
+	}
+
+	return outMaterials;
 }

@@ -10,11 +10,17 @@ struct IAccelerationStructure
 };
 using IAccelerationStructureRef = std::unique_ptr<IAccelerationStructure>;
 
-struct IShaderModule
+struct IShader
 {
-	virtual ~IShaderModule() {}
+	virtual ~IShader() {}
 };
-using IShaderModuleRef = std::unique_ptr<IShaderModule>;
+using IShaderRef = std::unique_ptr<IShader>;
+
+struct IShaderInstance
+{
+	virtual ~IShaderInstance() {}
+};
+using IShaderInstanceRef = std::unique_ptr<IShaderInstance>;
 
 struct IRenderPipeline
 {

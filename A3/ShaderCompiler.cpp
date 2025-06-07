@@ -124,9 +124,9 @@ std::string insertPredefines( const std::string& shaderText, const ShaderDesc& d
     return outText;
 }
 
-IShaderModuleRef VulkanRenderBackend::createShaderModule( const ShaderDesc& desc )
+IShaderRef VulkanRenderBackend::createShader( const ShaderDesc& desc )
 {
-    VulkanShaderModule* outModule = new VulkanShaderModule();
+    VulkanShader* outShader = new VulkanShader();
 
     std::string shaderText;
     Utility::loadTextFile( shaderText, desc.fileName );
@@ -140,10 +140,10 @@ IShaderModuleRef VulkanRenderBackend::createShaderModule( const ShaderDesc& desc
         .pCode = spv_blob.data(),
     };
 
-	if( vkCreateShaderModule( device, &createInfo, nullptr, &outModule->module ) != VK_SUCCESS )
+	if( vkCreateShaderModule( device, &createInfo, nullptr, &outShader->module ) != VK_SUCCESS )
 	{
 		throw std::runtime_error( "failed to create shader module!" );
 	}
 
-    return IShaderModuleRef( outModule );
+    return IShaderRef( outShader );
 }

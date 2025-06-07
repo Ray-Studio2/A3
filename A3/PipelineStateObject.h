@@ -30,11 +30,13 @@ struct ComputePSO
 struct RaytracingPSODesc
 {
 	std::vector<ShaderDesc> shaders;
+
+	int32 hitGroupDataCount;
 };
 
 struct RaytracingPSO
 {
-	std::vector<IShaderModule*> shaders;
+	std::vector<IShader*> shaders;
 
 	IRenderPipelineRef pipeline;
 };

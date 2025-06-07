@@ -153,10 +153,10 @@ void VulkanRenderBackend::beginRaytracingPipeline( IRenderPipeline* inPipeline )
 
     vkCmdTraceRaysKHR(
         commandBuffers[ imageIndex ],
-        &rgenSbt,
-        &missSbt,
-        &hitgSbt,
-        &callSbt,
+        &pipeline->sbtAddresses[ VSG_RayGeneration ],
+        &pipeline->sbtAddresses[ VSG_Miss ],
+        &pipeline->sbtAddresses[ VSG_Hit ],
+        &pipeline->sbtAddresses[ VSG_Callable ],
         RenderSettings::screenWidth, RenderSettings::screenHeight, 1 );
 
     setImageLayout(
@@ -1140,6 +1140,7 @@ void VulkanRenderBackend::createTLAS( const std::vector<BLASBatch*>& batches )
 
         for( int32 instanceIndex = 0; instanceIndex < batch->transforms.size(); ++instanceIndex )
         {
+            // @TODO: Support multiple geometries.
             instance.instanceShaderBindingTableRecordOffset = instanceData.size();
             memcpy( &instance, &batch->transforms[ instanceIndex ], sizeof( Mat3x4 ) );
 
@@ -1314,7 +1315,7 @@ void VulkanRenderBackend::createUniformBuffer()
     vkUnmapMemory( device, uniformBufferMem );
 }
 
-VkShaderStageFlagBits getVulkanShaderStage( EShaderStage stage )
+static VkShaderStageFlagBits getVulkanShaderStage( EShaderStage stage )
 {
     switch( stage )
     {
@@ -1331,7 +1332,7 @@ VkShaderStageFlagBits getVulkanShaderStage( EShaderStage stage )
     return VK_SHADER_STAGE_ALL;
 }
 
-VkRayTracingShaderGroupTypeKHR getVulkanShaderGroup( EShaderStage stage )
+static VkRayTracingShaderGroupTypeKHR getVulkanShaderGroup( EShaderStage stage )
 {
     switch( stage )
     {
@@ -1343,7 +1344,21 @@ VkRayTracingShaderGroupTypeKHR getVulkanShaderGroup( EShaderStage stage )
     return VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR;
 }
 
-VkDescriptorType getVulkanShaderDescriptorType( EShaderResourceDescriptor type )
+static EVulkanShaderBindingTableShaderGroup getVulkanShaderBindingTableGroup( EShaderStage stage )
+{
+    switch( stage )
+    {
+        case SS_RayGeneration:  return VSG_RayGeneration;
+        case SS_AnyHit:
+        case SS_ClosestHit:     return VSG_Hit;
+        case SS_Miss:           return VSG_Miss;
+    }
+
+    // Should not reach here
+    return VSG_COUNT;
+}
+
+static VkDescriptorType getVulkanShaderDescriptorType( EShaderResourceDescriptor type )
 {
     switch( type )
     {
@@ -1357,14 +1372,21 @@ VkDescriptorType getVulkanShaderDescriptorType( EShaderResourceDescriptor type )
     return VK_DESCRIPTOR_TYPE_MAX_ENUM;
 }
 
-bool isVulkanClosestHitShader( EShaderStage stage ) { return stage == SS_ClosestHit; }
-bool isVulkanAnyHitShader( EShaderStage stage ) { return stage == SS_AnyHit; }
-bool isVulkanIntersectionShader( EShaderStage stage ) { return stage == SS_Intersection; }
-bool isVulkanGeneralShader( EShaderStage stage ) { return !isVulkanClosestHitShader( stage ) && !isVulkanAnyHitShader( stage ) && !isVulkanIntersectionShader( stage ); }
+static bool isVulkanClosestHitShader( EShaderStage stage ) { return stage == SS_ClosestHit; }
+static bool isVulkanAnyHitShader( EShaderStage stage ) { return stage == SS_AnyHit; }
+static bool isVulkanIntersectionShader( EShaderStage stage ) { return stage == SS_Intersection; }
+static bool isVulkanGeneralShader( EShaderStage stage ) { return !isVulkanClosestHitShader( stage ) && !isVulkanAnyHitShader( stage ) && !isVulkanIntersectionShader( stage ); }
+
+static uint64 getAlignedAddress( uint64 value, uint64 alignment )
+{
+    return ( value + alignment - 1 ) & ~( alignment - 1 );
+}
 
 IRenderPipelineRef VulkanRenderBackend::createRayTracingPipeline( const RaytracingPSODesc& psoDesc, RaytracingPSO* pso )
 {
     VulkanPipeline* outPipeline = new VulkanPipeline();
+
+    const int32 shaderGroupCount = psoDesc.shaders.size();
 
     //==========================================================
     // Pipeline layout
@@ -1401,11 +1423,11 @@ IRenderPipelineRef VulkanRenderBackend::createRayTracingPipeline( const Raytraci
     //==========================================================
     // Pipeline 
     //==========================================================
-    std::vector<VkPipelineShaderStageCreateInfo> stages( psoDesc.shaders.size() );
-    std::vector<VkRayTracingShaderGroupCreateInfoKHR> groups( psoDesc.shaders.size() );
+    std::vector<VkPipelineShaderStageCreateInfo> stages( shaderGroupCount );
+    std::vector<VkRayTracingShaderGroupCreateInfoKHR> groups( shaderGroupCount );
     for( int32 index = 0; index < stages.size(); ++index )
     {
-        VulkanShaderModule* vkModule = static_cast< VulkanShaderModule* >( pso->shaders[ index ] );
+        VulkanShader* vkModule = static_cast< VulkanShader* >( pso->shaders[ index ] );
         const ShaderDesc& desc = psoDesc.shaders[ index ];
 
         stages[ index ] = VkPipelineShaderStageCreateInfo
@@ -1527,100 +1549,106 @@ IRenderPipelineRef VulkanRenderBackend::createRayTracingPipeline( const Raytraci
         vkUpdateDescriptorSets( device, writeDescriptorSets.descriptors.size(), writeDescriptorSets.descriptors.data(), 0, VK_NULL_HANDLE );
     }
 
-    //==========================================================
-    // Shader binding table 
-    //==========================================================
+    return IRenderPipelineRef( outPipeline );
+}
+
+void VulkanRenderBackend::updateShaderBindingTable( const RaytracingPSODesc& psoDesc, IRenderPipeline* pipelineInterface, uint8* sbtCustomData )
+{
+    VulkanPipeline* pipeline = static_cast< VulkanPipeline* >( pipelineInterface );
+
+    const int32 shaderGroupCount = psoDesc.shaders.size();
+
     struct ShaderGroupHandle
     {
         uint8 data[ RenderSettings::shaderGroupHandleSize ];
     };
 
-    struct HitgCustomData
+    constexpr uint32 handleSize = RenderSettings::shaderGroupHandleSize;
+
+    std::vector<ShaderGroupHandle> handles( shaderGroupCount );
+    vkGetRayTracingShaderGroupHandlesKHR( device, pipeline->pipeline, 0, shaderGroupCount, handleSize * shaderGroupCount, handles.data() );
+
+    struct SBTGroupDesc
     {
-        float color[ 3 ];
+        std::vector<ShaderGroupHandle> handles;
+        int32 count;
+        int32 shaderRecordByteSize;
+        uint64 offset;
+        uint64 stride;
     };
+    SBTGroupDesc sbtGroupDescs[ VSG_COUNT ] = {};
+    for( int32 index = 0; index < shaderGroupCount; ++index )
+    {
+        const ShaderDesc& shaderDesc = psoDesc.shaders[ index ];
+        const EVulkanShaderBindingTableShaderGroup sbtShaderGroup = getVulkanShaderBindingTableGroup( shaderDesc.type );
 
-    auto alignTo = []( auto value, auto alignment ) -> decltype( value )
+        sbtGroupDescs[ sbtShaderGroup ].handles.push_back( handles[ index ] );
+        sbtGroupDescs[ sbtShaderGroup ].count++;
+        sbtGroupDescs[ sbtShaderGroup ].shaderRecordByteSize = std::max( shaderDesc.shaderRecordByteSize, 0u );
+    }
+
+    uint64 sbtSize = 0;
+    for( int32 index = 0; index < VSG_COUNT; ++index )
+    {
+        SBTGroupDesc& desc = sbtGroupDescs[ index ];
+        desc.stride = getAlignedAddress( handleSize + desc.shaderRecordByteSize, rtProperties.shaderGroupHandleAlignment );
+        desc.offset = sbtSize;
+
+        int32 sbtCount = desc.count;
+        if( index == VSG_Hit )
         {
-            return ( value + ( decltype( value ) )alignment - 1 ) & ~( ( decltype( value ) )alignment - 1 );
-        };
-    const uint32 handleSize = RenderSettings::shaderGroupHandleSize;
-    const uint32 groupCount = 4; // 1 raygen, 2 miss, 1 hit group
-    std::vector<ShaderGroupHandle> handles( groupCount );
-    vkGetRayTracingShaderGroupHandlesKHR( device, outPipeline->pipeline, 0, groupCount, handleSize* groupCount, handles.data() );
-    ShaderGroupHandle rgenHandle = handles[ 0 ];
-    ShaderGroupHandle missHandle = handles[ 1 ];
-    ShaderGroupHandle hitgHandle = handles[ 2 ];
-    ShaderGroupHandle shadowMissHandle = handles[ 3 ];
+            sbtCount *= psoDesc.hitGroupDataCount;
+        }
 
-    const uint32 rgenStride = alignTo( handleSize, rtProperties.shaderGroupHandleAlignment );
-    rgenSbt = { 0, rgenStride, rgenStride };
+        sbtSize += getAlignedAddress( sbtCount * desc.stride, rtProperties.shaderGroupBaseAlignment );
+    }
 
-    const uint64 missOffset = alignTo( rgenSbt.size, rtProperties.shaderGroupBaseAlignment );
-    const uint32 missStride = alignTo( handleSize, rtProperties.shaderGroupHandleAlignment );
-    missSbt = { 0, missStride, missStride * 2 };
-
-    std::vector<MeshObject*> objects = tempScenePointer->collectMeshObjects();
-    const uint32 hitgCustomDataSize = sizeof( HitgCustomData );
-    const uint32 geometryCount = objects.size();
-    const uint64 hitgOffset = alignTo( missOffset + missSbt.size, rtProperties.shaderGroupBaseAlignment );
-    const uint32 hitgStride = alignTo( handleSize + hitgCustomDataSize, rtProperties.shaderGroupHandleAlignment );
-    hitgSbt = { 0, hitgStride, hitgStride * geometryCount };
-
-    const uint64 sbtSize = hitgOffset + hitgSbt.size;
-    std::tie( sbtBuffer, sbtBufferMem ) = createBuffer(
+    std::tie( pipeline->sbtDescriptor, pipeline->sbtMemory ) = createBuffer(
         sbtSize,
         VK_BUFFER_USAGE_SHADER_BINDING_TABLE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT );
-
-    auto sbtAddress = getDeviceAddressOf( sbtBuffer );
-    if( sbtAddress != alignTo( sbtAddress, rtProperties.shaderGroupBaseAlignment ) )
-    {
-        throw std::runtime_error( "It will not be happened!" );
-    }
-    rgenSbt.deviceAddress = sbtAddress;
-    missSbt.deviceAddress = sbtAddress + missOffset;
-    hitgSbt.deviceAddress = sbtAddress + hitgOffset;
+    VkDeviceAddress sbtAddress = getDeviceAddressOf( pipeline->sbtDescriptor );
 
     uint8* dst;
-    vkMapMemory( device, sbtBufferMem, 0, sbtSize, 0, ( void** )&dst );
-    {
-        *( ShaderGroupHandle* )dst = rgenHandle;
-        *( ShaderGroupHandle* )( dst + missOffset + 0 * missStride ) = missHandle;
-        *( ShaderGroupHandle* )( dst + missOffset + 1 * missStride ) = shadowMissHandle;
+    vkMapMemory( device, pipeline->sbtMemory, 0, sbtSize, 0, ( void** )&dst );
 
-        const HitgCustomData sampleColorTable[] =
-        { 
-            { 0.6f, 0.1f, 0.2f }  // Deep Red Wine
-            , { 0.1f, 0.8f, 0.4f } // Emerald Green
-            , { 0.9f, 0.7f, 0.1f } // Golden Yellow
-            , { 0.3f, 0.6f, 0.9f } // Dawn Sky Blue
+    for( int32 vsgIndex = 0; vsgIndex < VSG_COUNT; ++vsgIndex )
+    {
+        const SBTGroupDesc& desc = sbtGroupDescs[ vsgIndex ];
+
+        if( desc.stride == 0 )
+            continue;
+
+        uint32 permutationCount = 1;
+        if( vsgIndex == VSG_Hit )
+        {
+            permutationCount = psoDesc.hitGroupDataCount;
+        }
+
+        pipeline->sbtAddresses[ vsgIndex ] = VkStridedDeviceAddressRegionKHR
+        {
+            .deviceAddress = sbtAddress + desc.offset,
+            .stride = desc.stride,
+            .size = desc.stride * desc.count * permutationCount
         };
 
-        std::random_device rd;
-        std::mt19937 gen(rd());
-        std::uniform_real_distribution<float> dist(0.0f, 1.0f);
-
-        for (size_t i = 0; i < geometryCount; ++i)
+        for( int32 shaderIndex = 0; shaderIndex < desc.count; ++shaderIndex )
         {
-            HitgCustomData color;
-            if (i < IM_ARRAYSIZE(sampleColorTable))
+            for( int32 permutationIndex = 0; permutationIndex < permutationCount; ++permutationIndex )
             {
-                color = sampleColorTable[i];
+                uint8* dstTemp = dst + desc.offset + ( shaderIndex * permutationCount + permutationIndex ) * desc.stride;
+                memcpy( dstTemp, desc.handles[ shaderIndex ].data, sizeof( ShaderGroupHandle ) );
+
+                if( desc.shaderRecordByteSize > 0 )
+                {
+                    memcpy( dstTemp + handleSize, sbtCustomData, desc.shaderRecordByteSize );
+                    sbtCustomData += desc.shaderRecordByteSize;
+                }
             }
-            else
-            {
-                color.color[0] = dist(gen);
-                color.color[1] = dist(gen);
-				color.color[2] = dist(gen);
-            }
-            *(ShaderGroupHandle*)(dst + hitgOffset + i * hitgStride) = hitgHandle;
-            *(HitgCustomData*)(dst + hitgOffset + i * hitgStride + handleSize) = color;
         }
     }
-    vkUnmapMemory( device, sbtBufferMem );
 
-    return IRenderPipelineRef( outPipeline );
+    vkUnmapMemory( device, pipeline->sbtMemory );
 }
 
 /*

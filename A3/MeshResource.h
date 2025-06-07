@@ -1,5 +1,6 @@
 #pragma once
 
+#include "SceneResource.h"
 #include <vector>
 #include "EngineTypes.h"
 
@@ -16,7 +17,7 @@ struct VertexAttributes
     float uvs[ 4 ];
 };
 
-struct MeshResource
+struct MeshResource : public ISceneResource
 {
     std::vector<VertexPosition> positions;
     std::vector<VertexAttributes> attributes;

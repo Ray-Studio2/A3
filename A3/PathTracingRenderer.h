@@ -2,6 +2,7 @@
 
 #include "EngineTypes.h"
 #include "Shader.h"
+#include "Material.h"
 #include <memory>
 
 namespace A3
@@ -22,7 +23,7 @@ public:
 	void endFrame() const;
 
 private:
-	void buildSamplePSO();
+	void buildSamplePSO( const Scene& scene );
 	void buildAccelerationStructure( const Scene& scene ) const;
 
 private:

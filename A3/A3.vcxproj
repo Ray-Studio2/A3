@@ -117,7 +117,7 @@
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>vulkan-1.lib;glfw3.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>vulkan-1.lib;glfw3.lib;glslangd.lib;glslang-default-resource-limitsd.lib;SPIRV-Toolsd.lib;SPIRV-Tools-optd.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -166,6 +166,7 @@
     <ClInclude Include="Addon_imgui.h" />
     <ClInclude Include="CameraObject.h" />
     <ClInclude Include="Json.hpp" />
+    <ClInclude Include="Material.h" />
     <ClInclude Include="PipelineStateObject.h" />
     <ClInclude Include="RenderResource.h" />
     <ClInclude Include="Matrix.h" />
@@ -173,6 +174,7 @@
     <ClInclude Include="RenderBackend.h" />
     <ClInclude Include="Scene.h" />
     <ClInclude Include="SceneObject.h" />
+    <ClInclude Include="SceneResource.h" />
     <ClInclude Include="Shader.h" />
     <ClInclude Include="Utility.h" />
     <ClInclude Include="Engine.h" />
@@ -196,7 +198,6 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="SampleRaytracing.glsl" />
-    <None Include="scene.json" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

@@ -64,7 +64,7 @@ void Scene::load(const std::string &path) {
 
 			if (resources.find(mesh) == resources.end()) {
 				MeshResource resource;
-				Utility::loadMeshFile(resource, "../asset/" + ((std::string)mesh) + ".obj");
+				Utility::loadMeshFile(resource, "../Assets/" + ((std::string)mesh) + ".obj");
 				resources[mesh] = new MeshResource(resource);
 			}
 

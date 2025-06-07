@@ -4,88 +4,12 @@
 #extension GL_EXT_scalar_block_layout : require
 #extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
 
-#define MAX_DEPTH 10
-#define SAMPLE_COUNT 2000
-
-struct RayPayload
-{
-	vec3 radiance;
-	vec3 HitLightColor;
-	uint depth;
-};
-
-#if RAY_GENERATION_SHADER
-//=========================
-//	RAY GENERATION SHADER
-//=========================
-layout( binding = 0 ) uniform accelerationStructureEXT topLevelAS;
-layout( binding = 1, rgba8 ) uniform image2D image;
-layout( binding = 2 ) uniform CameraProperties
-{
-	vec3 cameraPos;
-	float yFov_degree;
-} g;
-
-//layout( location = 0 ) rayPayloadEXT vec3 hitValue;
-layout(location = 0) rayPayloadEXT RayPayload payload;
-
-vec3 toneMapACES(vec3 x) {
-    const float a = 2.51;
-    const float b = 0.03;
-    const float c = 2.43;
-    const float d = 0.59;
-    const float e = 0.14;
-    return clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0, 1.0);
-}
-
-vec3 gammaCorrect(vec3 color) {
-    return pow(color, vec3(1.0 / 2.2));
-}
-
-void main()
-{
-	const vec3 cameraX = vec3( 1, 0, 0 );
-	const vec3 cameraY = vec3( 0, -1, 0 );
-	const vec3 cameraZ = vec3( 0, 0, -1 );
-	const float aspect_y = tan( radians( g.yFov_degree ) * 0.5 );
-	const float aspect_x = aspect_y * float( gl_LaunchSizeEXT.x ) / float( gl_LaunchSizeEXT.y );
-
-	const vec2 screenCoord = vec2( gl_LaunchIDEXT.xy ) + vec2( 0.5 );
-	const vec2 ndc = screenCoord / vec2( gl_LaunchSizeEXT.xy ) * 2.0 - 1.0;
-	vec3 rayDir = ndc.x * aspect_x * cameraX + ndc.y * aspect_y * cameraY + cameraZ;
-
-	payload.radiance = vec3( 0.0 );
-	payload.HitLightColor = vec3(0.0);
-	payload.depth = 0;
-
-	traceRayEXT(
-		topLevelAS,                         // topLevel
-		gl_RayFlagsOpaqueEXT, 0xff,         // rayFlags, cullMask
-		0, 1, 0,                            // sbtRecordOffset, sbtRecordStride, missIndex
-		g.cameraPos, 0.0, rayDir, 100.0,    // origin, tmin, direction, tmax
-		0 );                                 // payload
-
-	vec3 finalColor = payload.radiance / float(MAX_DEPTH);
-	finalColor = toneMapACES(finalColor);
-	//finalColor = gammaCorrect(finalColor);
-
-	imageStore( image, ivec2( gl_LaunchIDEXT.xy ), vec4( finalColor, 0.0 ) );
-}
-#endif
-
-#if CLOSEST_HIT_SHADER
-//=========================
-//	CLOSEST HIT SHADER
-//=========================
-
-// 난수 함수 (예시: 해시 기반)
 float rand(vec2 co) {
     return fract(sin(dot(co.xy ,vec2(12.9898,78.233))) * 43758.5453);
 }
 
-// 반구 샘플링
 vec3 randomHemisphereNormal(vec3 normal, vec2 seed) {
-    float theta = acos(rand(seed)); // [0, π/2]
+    float theta = acos(rand(seed)); // [0, ��/2]
     float phi = rand(seed.yx + vec2(0.123, 0.456)) * 6.2831853;
 
     vec3 dir = vec3(
@@ -94,7 +18,7 @@ vec3 randomHemisphereNormal(vec3 normal, vec2 seed) {
         cos(theta)
     );
 
-    // local space → world space
+    // local space �� world space
     if (dot(dir, normal) < 0.0) dir = -dir;
     return normalize(dir);
 }
@@ -115,11 +39,79 @@ vec3 RandomDirection(inout uint state) {
     return normalize(vec3(x, y, z));
 }
 vec3 RandomHemisphereDirection(vec3 normal, inout uint state) {
-    vec3 dir = RandomDirection(state);
-    return dir * sign(dot(normal, dir));
+    // Cosine-weighted hemisphere sampling
+    float r1 = RandomValue(state);
+    float r2 = RandomValue(state);
+    
+    float theta = acos(sqrt(1.0 - r1)); // cosine-weighted
+    float phi = 2.0 * 3.14159265 * r2;
+    
+    // Generate direction in local space
+    vec3 localDir = vec3(
+        sin(theta) * cos(phi),
+        sin(theta) * sin(phi),
+        cos(theta)
+    );
+    
+    // Transform to world space aligned with normal
+    vec3 tangent = abs(normal.x) > 0.9 ? vec3(0, 1, 0) : vec3(1, 0, 0);
+    tangent = normalize(cross(tangent, normal));
+    vec3 bitangent = cross(normal, tangent);
+    
+    return tangent * localDir.x + bitangent * localDir.y + normal * localDir.z;
 }
 
+struct RayPayload 
+{
+	vec3 color;
+	int depth;
+};
 
+#define MAX_DEPTH 1
+
+#if RAY_GENERATION_SHADER
+//=========================
+//	RAY GENERATION SHADER
+//=========================
+layout( binding = 0 ) uniform accelerationStructureEXT topLevelAS;
+layout( binding = 1, rgba8 ) uniform image2D image;
+layout( binding = 2 ) uniform CameraProperties
+{
+	vec3 cameraPos;
+	float yFov_degree;
+} g;
+
+layout( location = 0 ) rayPayloadEXT RayPayload payload;
+
+void main()
+{
+	const vec3 cameraX = vec3( 1, 0, 0 );
+	const vec3 cameraY = vec3( 0, -1, 0 );
+	const vec3 cameraZ = vec3( 0, 0, -1 );
+	const float aspect_y = tan( radians( g.yFov_degree ) * 0.5 );
+	const float aspect_x = aspect_y * float( gl_LaunchSizeEXT.x ) / float( gl_LaunchSizeEXT.y );
+
+	const vec2 screenCoord = vec2( gl_LaunchIDEXT.xy ) + vec2( 0.5 );
+	const vec2 ndc = screenCoord / vec2( gl_LaunchSizeEXT.xy ) * 2.0 - 1.0;
+	vec3 rayDir = ndc.x * aspect_x * cameraX + ndc.y * aspect_y * cameraY + cameraZ;
+
+	payload = RayPayload(vec3(0.0), 0);
+
+	traceRayEXT(
+		topLevelAS,                         // topLevel
+		gl_RayFlagsOpaqueEXT, 0xff,         // rayFlags, cullMask
+		0, 1, 0,                            // sbtRecordOffset, sbtRecordStride, missIndex
+		g.cameraPos, 0.0, rayDir, 100.0,    // origin, tmin, direction, tmax
+		0 );                                 // payload
+
+	imageStore( image, ivec2( gl_LaunchIDEXT.xy ), vec4( payload.color, 0.0 ) );
+}
+#endif
+
+#if CLOSEST_HIT_SHADER
+//=========================
+//	CLOSEST HIT SHADER
+//=========================
 struct VertexAttributes
 {
 	vec4 norm;
@@ -139,7 +131,7 @@ layout(buffer_reference, scalar) buffer IndexBuffer { ivec3 i[]; }; // Triangle 
 layout( binding = 3, scalar) buffer ObjectDescBuffer
 {
 	ObjectDesc desc[];
-} gObjectDescs;
+} objectDescs;
 
 layout( shaderRecordEXT ) buffer CustomData
 {
@@ -147,14 +139,15 @@ layout( shaderRecordEXT ) buffer CustomData
 };
 
 layout( binding = 0 ) uniform accelerationStructureEXT topLevelAS;
-layout(location = 0) rayPayloadInEXT RayPayload gPayload;
+
+layout( location = 0 ) rayPayloadInEXT RayPayload payload;
+layout( location = 1 ) rayPayloadEXT uint missCount;
 hitAttributeEXT vec2 attribs;
 
-#define LIGHT_INSTANCE_INDEX 6
+#define AO_SAMPLES 128
 
-void main()
-{
-	ObjectDesc objDesc = gObjectDescs.desc[gl_InstanceCustomIndexEXT];
+void main() {
+	ObjectDesc objDesc = objectDescs.desc[gl_InstanceCustomIndexEXT];
 
 	IndexBuffer indexBuffer = IndexBuffer(objDesc.indexDeviceAddress);
 	ivec3 index = indexBuffer.i[gl_PrimitiveID];
@@ -179,44 +172,40 @@ void main()
  	vec3 n2 = normalize(vertexAttributes2.norm.xyz);
 	vec3 localNormal = normalize(w * n0 + u * n1 + v * n2);
 
-	vec3 worldPos = (gl_ObjectToWorldEXT * vec4(position, 1.0)).xyz;
-    vec3 worldNormal = normalize(gl_ObjectToWorldEXT * vec4(localNormal, 0.0));
+	mat4x3 objToWorld = gl_ObjectToWorldEXT;
+	vec3 worldNormal = normalize(objToWorld * vec4(localNormal, 0.0));
+	vec3 worldPos = objToWorld * vec4(position, 1.0);
 	
-	if (LIGHT_INSTANCE_INDEX == gl_InstanceCustomIndexEXT) 
-	{
-		gPayload.HitLightColor = vec3(255.0, 255.0, 255.0);
+	uvec2 pixelCoord = gl_LaunchIDEXT.xy;
+	uvec2 screenSize = gl_LaunchSizeEXT.xy;
+	uint rngState = pixelCoord.y * screenSize.x + pixelCoord.x;
+	// Add more entropy to reduce pixel correlation
+	rngState = rngState * 1664525u + 1013904223u;
+	rngState ^= rngState >> 16;
+	rngState *= 0x85ebca6bu;
+	rngState ^= rngState >> 13;
+
+
+	float ao = 0;
+
+	for (int i = 0; i < AO_SAMPLES; ++i) {
+		vec3 aoDir = RandomHemisphereDirection(worldNormal, rngState);
+			
+		missCount = 0;
+
+		traceRayEXT(
+			topLevelAS,
+			gl_RayFlagsOpaqueEXT | gl_RayFlagsTerminateOnFirstHitEXT | gl_RayFlagsSkipClosestHitShaderEXT, 0xff,
+			0, 1, 1,
+			worldPos + worldNormal * 0.01, 0.001, aoDir, 0.7, // origin, tmin, direction, tmax
+			1 );                                // payload location (use 1 for missCount)
+			
+		ao += float(missCount);
 	}
 
-	if(gPayload.depth + 1 < MAX_DEPTH)
-	{
-		uvec2 pixelCoord = gl_LaunchIDEXT.xy;
-		uvec2 screenSize = gl_LaunchSizeEXT.xy;
-		uint rngState = pixelCoord.y * screenSize.x + pixelCoord.x;
-		gPayload.depth += 1;
-		for (int i = 0; i < SAMPLE_COUNT; ++i)
-		{
-			gPayload.HitLightColor = vec3(0.0);
-			//vec2 seed = vec2(i, gl_LaunchIDEXT.x ^ gl_LaunchIDEXT.y);
-			//vec2 seed = vec2(gl_LaunchSizeEXT.x + i, gl_LaunchSizeEXT.y + i);
-			//vec2 seed = vec2(float(gl_LaunchIDEXT.x + i * 17), float(gl_LaunchIDEXT.y + i * 21));
-			//vec3 rayDir = randomHemisphereNormal(worldNormal, seed);
-			vec3 rayDir = RandomHemisphereDirection(worldNormal, rngState);
-			traceRayEXT(
-				topLevelAS,
-				gl_RayFlagsOpaqueEXT,
-				0xFF,
-				0, 1, 0,
-				worldPos,
-				0.0001,
-				rayDir,
-				100.0,
-				0
-			);
+	ao /= float(AO_SAMPLES);
 
-			vec3 finalColor = color * gPayload.HitLightColor / float(SAMPLE_COUNT);
-			gPayload.radiance += finalColor;
-		}
-	}
+	payload.color = color * ao;
 }
 
 #endif
@@ -225,11 +214,11 @@ void main()
 //=========================
 //	SHADOW MISS SHADER
 //=========================
-//layout( location = 1 ) rayPayloadInEXT uint missCount;
+layout( location = 1 ) rayPayloadInEXT uint missCount;
 
 void main()
 {
-
+	missCount = 1;
 }
 #endif
 
@@ -238,10 +227,10 @@ void main()
 //=========================
 //	ENVIRONMENT MISS SHADER
 //=========================
-//layout( location = 0 ) rayPayloadInEXT vec3 hitValue;
+layout( location = 0 ) rayPayloadInEXT RayPayload payload;
 
 void main()
 {
-	//hitValue = vec3( 0.0, 0.0, 0.2 );
+	payload.color = vec3( 0.0, 0.0, 0.2 );  // Dark blue background
 }
 #endif

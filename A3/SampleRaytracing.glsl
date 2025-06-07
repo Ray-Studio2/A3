@@ -61,6 +61,7 @@ vec3 cosineSampleHemisphere(uvec2 pixel, uint sampleIndex, uint depth, vec3 norm
 struct Payload {
     vec3 hitValue;
     uint depth;
+    vec3 rayDirection;
 };
 
 #define LIGHT_INSTANCE_INDEX 6
@@ -93,6 +94,7 @@ void main()
 
 	payload.hitValue = vec3( 0.0 );
 	payload.depth = 1;
+	payload.rayDirection = rayDir;
 
 	traceRayEXT(
 		topLevelAS,                         // topLevel
@@ -199,6 +201,7 @@ void main()
         // 📌 traceRayEXT 호출 전 반드시 초기화
         payload.hitValue = vec3(0.0);
         payload.depth = depthBeforeTrace + 1;
+        payload.rayDirection = sampleDir;
         
         traceRayEXT(
             topLevelAS,
@@ -235,16 +238,22 @@ void main()
 }
 #endif
 
+
 #if ENVIRONMENT_MISS_SHADER
 //=========================
-//	ENVIRONMENT MISS SHADER
+//   ENVIRONMENT MISS SHADER
 //=========================
 layout(location = 0) rayPayloadInEXT  Payload payload;
+layout(set = 0, binding = 4) uniform sampler2D environmentMap;
 
 void main()
 {
-	payload.hitValue = vec3(0.f);
+    vec3 dir = normalize(payload.rayDirection); // ray direction 넘겨줘야 함
+    vec2 uv = vec2(
+        atan(dir.z, dir.x) / (2.0 * 3.1415926535) + 0.5,
+        acos(clamp(dir.y, -1.0, 1.0)) / 3.1415926535
+    );
+    vec3 color = texture(environmentMap, uv).rgb;
+    payload.hitValue = color;
 }
 #endif
-
-

@@ -67,7 +67,8 @@ struct RayPayload
 	int depth;
 };
 
-#define MAX_DEPTH 1
+#define MAX_DEPTH 5
+#define SAMPLE_COUNT 64
 
 #if RAY_GENERATION_SHADER
 //=========================
@@ -185,27 +186,42 @@ void main() {
 	rngState *= 0x85ebca6bu;
 	rngState ^= rngState >> 13;
 
-
-	float ao = 0;
-
-	for (int i = 0; i < AO_SAMPLES; ++i) {
-		vec3 aoDir = RandomHemisphereDirection(worldNormal, rngState);
-			
-		missCount = 0;
-
+	// Path tracing - only trace one ray per pixel per frame
+	if (payload.depth >= MAX_DEPTH) {
+		payload.color = vec3(0);
+		return;
+	}
+	
+	// Simple Lambertian BRDF
+	vec3 albedo = color;
+	
+	vec3 accumulated = vec3(0);
+	
+	payload.depth++;
+	for (int i = 0; i < SAMPLE_COUNT; i++) {
+		// Sample random direction for next bounce
+		vec3 bounceDir = RandomHemisphereDirection(worldNormal, rngState);
+		
+		// Trace next ray
+		payload.color = vec3(0);
+		
 		traceRayEXT(
 			topLevelAS,
-			gl_RayFlagsOpaqueEXT | gl_RayFlagsTerminateOnFirstHitEXT | gl_RayFlagsSkipClosestHitShaderEXT, 0xff,
-			0, 1, 1,
-			worldPos + worldNormal * 0.01, 0.001, aoDir, 0.7, // origin, tmin, direction, tmax
-			1 );                                // payload location (use 1 for missCount)
-			
-		ao += float(missCount);
+			gl_RayFlagsOpaqueEXT, 0xff,
+			0, 1, 0,
+			worldPos + worldNormal * 0.01, 0.001, bounceDir, 100.0,
+			0 );
+		
+		// BRDF evaluation
+		float cosTheta = max(0.0, dot(worldNormal, bounceDir));
+		vec3 brdf = albedo / 3.14159265;
+		float pdf = 0.5 / 3.14159265;
+		
+		// Accumulate Li * BRDF * cosTheta / PDF
+		accumulated += payload.color * brdf * cosTheta / pdf;
 	}
 
-	ao /= float(AO_SAMPLES);
-
-	payload.color = color * ao;
+	payload.color = accumulated / float(SAMPLE_COUNT);
 }
 
 #endif
@@ -231,6 +247,7 @@ layout( location = 0 ) rayPayloadInEXT RayPayload payload;
 
 void main()
 {
-	payload.color = vec3( 0.0, 0.0, 0.2 );  // Dark blue background
+	vec3 skyColor = vec3(0.7, 0.8, 1.0);  // Light blue sky
+	payload.color = skyColor;
 }
 #endif

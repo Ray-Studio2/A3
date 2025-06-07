@@ -113,17 +113,18 @@ static bool IsExtensionAvailable( const std::vector<VkExtensionProperties>& prop
 
 void VulkanRenderBackend::beginFrame( int32 screenWidth, int32 screenHeight )
 {
-    VkSemaphore image_acquired_semaphore = imageAvailableSemaphores[ semaphoreIndex ];
-    VkSemaphore render_complete_semaphore = renderFinishedSemaphores[ semaphoreIndex ];
+    VkSemaphore image_acquired_semaphore = imageAvailableSemaphores[ imageIndex ];
+    VkSemaphore render_complete_semaphore = renderFinishedSemaphores[ imageIndex ];
     VkResult err = vkAcquireNextImageKHR( device, swapChain, UINT64_MAX, image_acquired_semaphore, VK_NULL_HANDLE, &imageIndex );
 
-    {
-        err = vkWaitForFences( device, 1, &fences[ imageIndex ], VK_TRUE, UINT64_MAX );    // wait indefinitely instead of periodically checking
-        check_vk_result( err );
+    //{
+    //    VkResult err;
+    //    err = vkWaitForFences(device, 1, &fences[imageIndex], VK_TRUE, UINT64_MAX);    // wait indefinitely instead of periodically checking
+    //    check_vk_result(err);
 
-        err = vkResetFences( device, 1, &fences[ imageIndex ] );
-        check_vk_result( err );
-    }
+    //    err = vkResetFences(device, 1, &fences[imageIndex]);
+    //    check_vk_result(err);
+    //}
 }
 
 void VulkanRenderBackend::endFrame()
@@ -131,15 +132,13 @@ void VulkanRenderBackend::endFrame()
     VkPresentInfoKHR presentInfo{
         .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
         .waitSemaphoreCount = 1,
-        .pWaitSemaphores = &renderFinishedSemaphores[ semaphoreIndex ],
+        .pWaitSemaphores = &renderFinishedSemaphores[ imageIndex ],
         .swapchainCount = 1,
         .pSwapchains = &swapChain,
         .pImageIndices = &imageIndex,
     };
 
-    vkQueuePresentKHR( graphicsQueue, &presentInfo );
-
-    semaphoreIndex = ( semaphoreIndex + 1 ) % 3;
+    vkQueuePresentKHR(graphicsQueue, &presentInfo);
 }
 
 void VulkanRenderBackend::beginRaytracingPipeline( IRenderPipeline* inPipeline )
@@ -200,29 +199,27 @@ void VulkanRenderBackend::beginRaytracingPipeline( IRenderPipeline* inPipeline )
         subresourceRange );
 
     VkPipelineStageFlags wait_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    VkSubmitInfo submitInfo
-    {
+    //VkSubmitInfo submitInfo
+    //{
+    //    .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+    //    .waitSemaphoreCount = 1,
+    //    .pWaitSemaphores = &imageAvailableSemaphores[ imageIndex ],
+    //    .pWaitDstStageMask = &wait_stage,
+    //    .commandBufferCount = 1,
+    //    .pCommandBuffers = &commandBuffers[ imageIndex ],
+    //    .signalSemaphoreCount = 1,
+    //    .pSignalSemaphores = &renderFinishedSemaphores[ imageIndex ],
+    //};
+    VkSubmitInfo submitInfo{
         .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-        .waitSemaphoreCount = 1,
-        .pWaitSemaphores = &imageAvailableSemaphores[ semaphoreIndex ],
-        .pWaitDstStageMask = &wait_stage,
         .commandBufferCount = 1,
-        .pCommandBuffers = &commandBuffers[ imageIndex ],
-        .signalSemaphoreCount = 1,
-        .pSignalSemaphores = &renderFinishedSemaphores[ semaphoreIndex ],
+        .pCommandBuffers = &commandBuffers[imageIndex],
     };
 
     vkEndCommandBuffer( commandBuffers[ imageIndex ] );
-    vkQueueSubmit( graphicsQueue, 1, &submitInfo, fences[ imageIndex ] );
 
-    {
-        VkResult err;
-        err = vkWaitForFences( device, 1, &fences[ imageIndex ], VK_TRUE, UINT64_MAX );    // wait indefinitely instead of periodically checking
-        check_vk_result( err );
-
-        err = vkResetFences( device, 1, &fences[ imageIndex ] );
-        check_vk_result( err );
-    }
+    vkQueueSubmit( graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
+    vkQueueWaitIdle(graphicsQueue);
 }
 
 void VulkanRenderBackend::rebuildAccelerationStructure()
@@ -572,7 +569,7 @@ void VulkanRenderBackend::createSwapChain()
     VkSurfaceCapabilitiesKHR capabilities;
     vkGetPhysicalDeviceSurfaceCapabilitiesKHR( physicalDevice, surface, &capabilities );
 
-    const VkColorSpaceKHR defaultSpace = VK_COLOR_SPACE_EXTENDED_SRGB_LINEAR_EXT;// VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
+    const VkColorSpaceKHR defaultSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;// VK_COLOR_SPACE_EXTENDED_SRGB_LINEAR_EXT;
     {
         uint32_t formatCount;
         vkGetPhysicalDeviceSurfaceFormatsKHR( physicalDevice, surface, &formatCount, nullptr );
@@ -612,7 +609,7 @@ void VulkanRenderBackend::createSwapChain()
         }
     }
 
-    uint32 imageCount = 3;// capabilities.minImageCount + 1;
+    uint32 imageCount = 2;// capabilities.minImageCount + 1;
     VkSwapchainCreateInfoKHR createInfo{
         .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
         .surface = surface,
@@ -1398,7 +1395,7 @@ void VulkanRenderBackend::createTLAS( const std::vector<BLASBatch*>& batches )
 
 void VulkanRenderBackend::createOutImage()
 {
-    VkFormat format = VK_FORMAT_R16G16B16A16_SFLOAT;// VK_FORMAT_B8G8R8A8_UNORM; //VK_FORMAT_R8G8B8A8_SRGB, VK_FORMAT_B8G8R8A8_SRGB(==swapChainImageFormat)
+    VkFormat format = VK_FORMAT_B8G8R8A8_UNORM;// VK_FORMAT_R16G16B16A16_SFLOAT; //VK_FORMAT_R8G8B8A8_SRGB, VK_FORMAT_B8G8R8A8_SRGB(==swapChainImageFormat)
     std::tie( outImage, outImageMem ) = createImage(
         { RenderSettings::screenWidth, RenderSettings::screenHeight },
         format,

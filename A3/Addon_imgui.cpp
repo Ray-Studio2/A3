@@ -104,7 +104,7 @@ Addon_imgui::Addon_imgui( GLFWwindow* window, VulkanRenderBackend* vulkan, int32
     wd->PresentMode = VK_PRESENT_MODE_MAILBOX_KHR;
 
     wd->Swapchain = vulkan->swapChain;
-    wd->ImageCount = 3;
+    wd->ImageCount = 2;
 
     wd->SemaphoreCount = wd->ImageCount;
     wd->Frames.resize( wd->ImageCount );
@@ -285,24 +285,30 @@ void Addon_imgui::renderFrame( GLFWwindow* window, VulkanRenderBackend* vulkan )
         vkCmdEndRenderPass( fd->CommandBuffer );
         {
             VkPipelineStageFlags wait_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-            VkSubmitInfo info = {};
+            /*VkSubmitInfo info = {};
             info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
             info.waitSemaphoreCount = 1;
-            info.pWaitSemaphores = &render_complete_semaphore;
+            info.pWaitSemaphores = &image_acquired_semaphore;
             info.pWaitDstStageMask = &wait_stage;
             info.commandBufferCount = 1;
             info.pCommandBuffers = &fd->CommandBuffer;
             info.signalSemaphoreCount = 1;
-            info.pSignalSemaphores = &render_complete_semaphore;
-
+            info.pSignalSemaphores = &render_complete_semaphore;*/
+            VkSubmitInfo info{
+                .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+                .commandBufferCount = 1,
+                .pCommandBuffers = &fd->CommandBuffer,
+            };
             err = vkEndCommandBuffer( fd->CommandBuffer );
             check_vk_result( err );
-            err = vkQueueSubmit( vulkan->graphicsQueue, 1, &info, fd->Fence );
+            err = vkQueueSubmit( vulkan->graphicsQueue, 1, &info, VK_NULL_HANDLE);
+            check_vk_result(err);
+            err = vkQueueWaitIdle(vulkan->graphicsQueue);
             check_vk_result( err );
         }
 
         wd->SemaphoreIndex = ( wd->SemaphoreIndex + 1 ) % wd->SemaphoreCount; // Now we can use the next set of semaphores
-        wd->FrameIndex = ( wd->FrameIndex + 1 ) % 3; // @FIXME: Workaround
+        wd->FrameIndex = ( wd->FrameIndex + 1 ) % 2; // @FIXME: Workaround
     }
 
     // Update and Render additional Platform Windows

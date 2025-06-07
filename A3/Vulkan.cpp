@@ -491,6 +491,9 @@ void VulkanRenderBackend::createVkQueueFamily()
         .queueCount = 1,
         .pQueuePriorities = &queuePriority,
     };
+    
+    VkPhysicalDeviceFeatures features = {};
+    features.shaderInt64 = VK_TRUE; // 64비트 정수 연산 활성화
 
     VkDeviceCreateInfo createInfo{
         .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
@@ -498,6 +501,7 @@ void VulkanRenderBackend::createVkQueueFamily()
         .pQueueCreateInfos = &queueCreateInfo,
         .enabledExtensionCount = ( uint32 )deviceExtensions.size(),
         .ppEnabledExtensionNames = deviceExtensions.data(),
+        .pEnabledFeatures = &features, // 추가
     };
 
     VkPhysicalDeviceBufferDeviceAddressFeatures f1{
@@ -1469,7 +1473,7 @@ IRenderPipelineRef VulkanRenderBackend::createRayTracingPipeline( const Raytraci
         .pStages = stages.data(),
         .groupCount = ( uint32 )groups.size(),
         .pGroups = groups.data(),
-        .maxPipelineRayRecursionDepth = 1,
+        .maxPipelineRayRecursionDepth = 10,
         .layout = outPipeline->pipelineLayout,
     };
     vkCreateRayTracingPipelinesKHR( device, VK_NULL_HANDLE, VK_NULL_HANDLE, 1, &pipelineCreateInfo, nullptr, &outPipeline->pipeline );
@@ -1630,7 +1634,14 @@ IRenderPipelineRef VulkanRenderBackend::createRayTracingPipeline( const Raytraci
         *( ShaderGroupHandle* )( dst + missOffset + 1 * missStride ) = shadowMissHandle;
 
         const HitgCustomData sampleColorTable[] =
-        { 
+        {
+            { 1.0f, 1.0f, 1.0f },
+            { 1.0f, 1.0f, 1.0f },
+            { 1.0f, 0.0f, 0.0f },
+            { 0.0f, 1.0f, 0.0f },
+            { 1.0f, 1.0f, 1.0f },
+            { 1.0f, 1.0f, 1.0f },
+            { 0.0f, 0.0f, 0.0f },
             { 0.6f, 0.1f, 0.2f }  // Deep Red Wine
             , { 0.1f, 0.8f, 0.4f } // Emerald Green
             , { 0.9f, 0.7f, 0.1f } // Golden Yellow
@@ -1652,12 +1663,13 @@ IRenderPipelineRef VulkanRenderBackend::createRayTracingPipeline( const Raytraci
             {
                 color.color[0] = dist(gen);
                 color.color[1] = dist(gen);
-				color.color[2] = dist(gen);
+                color.color[2] = dist(gen);
             }
             *(ShaderGroupHandle*)(dst + hitgOffset + i * hitgStride) = hitgHandle;
             *(HitgCustomData*)(dst + hitgOffset + i * hitgStride + handleSize) = color;
         }
     }
+    
     vkUnmapMemory( device, sbtBufferMem );
 
     return IRenderPipelineRef( outPipeline );

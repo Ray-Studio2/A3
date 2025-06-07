@@ -8,6 +8,8 @@ namespace A3
 class SceneObject
 {
 public:
+	virtual ~SceneObject() = default;
+
 	SceneObject()
 		: localToWorld( Mat3x4::identity )
 	{}

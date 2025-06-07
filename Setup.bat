@@ -47,25 +47,30 @@ echo Using Visual Studio 2022 at: %VS2022_PATH%
 call "%VS2022_PATH%"
 :-----------------------------------------------------------------------------------------------------------------------------
 
-mkdir ThirdParty
-pushd .\ThirdParty
-echo [vcpkg task]
-if not exist "ThirdParty/vcpkg" (
-	git clone https://github.com/microsoft/vcpkg
-	call .\vcpkg\bootstrap-vcpkg.bat
+REM 공용 VCPKG 경로
+set "VCPKG_ROOT=C:\vcpkg"
+REM vcpkg 설치 여부 확인
+if not exist "%VCPKG_ROOT%" (
+    echo [INFO] vcpkg not found at %VCPKG_ROOT%
+    git clone https://github.com/microsoft/vcpkg "%VCPKG_ROOT%"
+    call "%VCPKG_ROOT%\bootstrap-vcpkg.bat"
 )
 
-.\vcpkg\vcpkg install glfw3:x64-windows
-.\vcpkg\vcpkg install glslang:x64-windows
-.\vcpkg\vcpkg install vulkan:x64-windows
-.\vcpkg\vcpkg install vulkan-validationlayers:x64-windows
-.\vcpkg\vcpkg install spirv-tools:x64-windows
-echo [VK_ADD_LAYER_PATH]
-echo %cd%\vcpkg\installed\x64-windows\bin
-setx VK_ADD_LAYER_PATH "%cd%\vcpkg\installed\x64-windows\bin"
+REM vcpkg install 부분
+%VCPKG_ROOT%\vcpkg install glfw3
+%VCPKG_ROOT%\vcpkg install glslang
+%VCPKG_ROOT%\vcpkg install vulkan
+REM %VCPKG_ROOT%\vcpkg install vulkan-validationlayers
+%VCPKG_ROOT%\vcpkg install spirv-tools
+%VCPKG_ROOT%\vcpkg install stb
+REM vulkan Validation layer용 환경변수
+REM echo [VK_ADD_LAYER_PATH]
+REM echo %VCPKG_ROOT%\installed\x64-windows\bin
+REM setx VK_ADD_LAYER_PATH "%VCPKG_ROOT%\installed\x64-windows\bin"
 
-.\vcpkg\vcpkg integrate install
-popd
+%VCPKG_ROOT%\vcpkg integrate install
+
+echo [INFO] vcpkg setup complete
 
 echo [Done]
 pause

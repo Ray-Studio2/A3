@@ -492,12 +492,16 @@ void VulkanRenderBackend::createVkQueueFamily()
         .pQueuePriorities = &queuePriority,
     };
 
+    VkPhysicalDeviceFeatures deviceFeatures{};
+    deviceFeatures.shaderInt64 = VK_TRUE;
+
     VkDeviceCreateInfo createInfo{
         .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
         .queueCreateInfoCount = 1,
         .pQueueCreateInfos = &queueCreateInfo,
         .enabledExtensionCount = ( uint32 )deviceExtensions.size(),
         .ppEnabledExtensionNames = deviceExtensions.data(),
+        .pEnabledFeatures = &deviceFeatures,
     };
 
     VkPhysicalDeviceBufferDeviceAddressFeatures f1{
@@ -978,8 +982,11 @@ IAccelerationStructureRef VulkanRenderBackend::createBLAS(
     const Mat3x4& transformData )
 {
     VulkanAccelerationStructure* outBlas = new VulkanAccelerationStructure();
+    VkDeviceMemory vertexPositionBufferMem;
+    VkDeviceMemory vertexAttributeBufferMem;
+    VkDeviceMemory indexBufferMem;
 
-    std::tie( vertexPositionBuffer, vertexPositionBufferMem ) = createBuffer(
+    std::tie( outBlas->vertexPositionBuffer, vertexPositionBufferMem ) = createBuffer(
         positionData.size() * sizeof( VertexPosition ),
         VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | 
         VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | 
@@ -987,7 +994,7 @@ IAccelerationStructureRef VulkanRenderBackend::createBLAS(
         VK_BUFFER_USAGE_TRANSFER_DST_BIT,
         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT );
 
-    std::tie( vertexAttributeBuffer, vertexAttributeBufferMem ) = createBuffer(
+    std::tie( outBlas->vertexAttributeBuffer, vertexAttributeBufferMem ) = createBuffer(
         attributeData.size() * sizeof( VertexAttributes ),
         VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
         VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR |
@@ -995,7 +1002,7 @@ IAccelerationStructureRef VulkanRenderBackend::createBLAS(
         VK_BUFFER_USAGE_TRANSFER_DST_BIT,
         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT );
 
-    std::tie( indexBuffer, indexBufferMem ) = createBuffer(
+    std::tie( outBlas->indexBuffer, indexBufferMem ) = createBuffer(
         indexData.size() * sizeof( uint32 ),
         VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
         VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR |
@@ -1033,11 +1040,11 @@ IAccelerationStructureRef VulkanRenderBackend::createBLAS(
             .triangles = {
                 .sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_TRIANGLES_DATA_KHR,
                 .vertexFormat = VK_FORMAT_R32G32B32_SFLOAT,
-                .vertexData = {.deviceAddress = getDeviceAddressOf( vertexPositionBuffer ) },
+                .vertexData = {.deviceAddress = getDeviceAddressOf( outBlas->vertexPositionBuffer ) },
                 .vertexStride = sizeof( VertexPosition ),
 				.maxVertex = ( uint32 )positionData.size() - 1,
                 .indexType = VK_INDEX_TYPE_UINT32,
-                .indexData = {.deviceAddress = getDeviceAddressOf( indexBuffer ) },
+                .indexData = {.deviceAddress = getDeviceAddressOf( outBlas->indexBuffer ) },
                 .transformData = {.deviceAddress = getDeviceAddressOf( geoTransformBuffer ) },
             },
         },
@@ -1123,30 +1130,67 @@ IAccelerationStructureRef VulkanRenderBackend::createBLAS(
     return IAccelerationStructureRef( outBlas );
 }
 
+struct ObjectDesc
+{
+    uint64 vertexPositionDeviceAddress = 0;
+    uint64 vertexAttributeDeviceAddress = 0;
+    uint64 indexDeviceAddress = 0;
+};
+
 // @TODO: Support more than 1 instance
 void VulkanRenderBackend::createTLAS( const std::vector<BLASBatch*>& batches )
 {
     std::vector<VkAccelerationStructureInstanceKHR> instanceData;
+    void* dst;
 
-    for( int32 batchIndex = 0; batchIndex < batches.size(); ++batchIndex )
+    size_t objectBufferCount = 0;
+
+    for (int32 batchIndex = 0; batchIndex < batches.size(); ++batchIndex)
     {
-        BLASBatch* batch = batches[ batchIndex ];
+        BLASBatch* batch = batches[batchIndex];
+        objectBufferCount += batch->transforms.size();
+    }
+
+    const uint64 objectDescBufferSize = objectBufferCount * sizeof(ObjectDesc);
+    VkDeviceMemory objectBufferMem;
+    std::tie(objectBuffer, objectBufferMem) = createBuffer( // Q: what's in objectBuffer ? 
+        objectDescBufferSize, 
+        VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
+        VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR |
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+        VK_BUFFER_USAGE_TRANSFER_DST_BIT, 
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+        VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+    vkMapMemory(device, objectBufferMem, 0, objectDescBufferSize, 0, &dst);
+
+    for (int32 batchIndex = 0, objectIndex = 0; batchIndex < batches.size(); ++batchIndex) // Q: So what's the TLAS structure rn? An array of objects?
+    {
+        BLASBatch* batch = batches[batchIndex];
         VulkanAccelerationStructure* blas = static_cast<VulkanAccelerationStructure*>( batch->blas.get() );
 
         VkAccelerationStructureInstanceKHR instance{};
-        instance.instanceCustomIndex = 100;
         instance.mask = 0xFF;
         instance.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
         instance.accelerationStructureReference = getDeviceAddressOf( blas->handle );
 
-        for( int32 instanceIndex = 0; instanceIndex < batch->transforms.size(); ++instanceIndex )
+        for( int32 instanceIndex = 0; instanceIndex < batch->transforms.size(); ++instanceIndex, ++objectIndex )
         {
+            instance.instanceCustomIndex = objectIndex;
             instance.instanceShaderBindingTableRecordOffset = instanceData.size();
             memcpy( &instance, &batch->transforms[ instanceIndex ], sizeof( Mat3x4 ) );
 
             instanceData.push_back( instance );
+            ObjectDesc objectDesc{
+                .vertexPositionDeviceAddress = getDeviceAddressOf(blas->vertexPositionBuffer),
+                .vertexAttributeDeviceAddress = getDeviceAddressOf(blas->vertexAttributeBuffer),
+                .indexDeviceAddress = getDeviceAddressOf(blas->indexBuffer),
+            };
+            memcpy((ObjectDesc*)dst + objectIndex, &objectDesc, sizeof(ObjectDesc));
         }
     }
+
+    vkUnmapMemory(device, objectBufferMem);
 
     const int64 instanceDataByteSize = instanceData.size() * sizeof( VkAccelerationStructureInstanceKHR );
 
@@ -1155,7 +1199,6 @@ void VulkanRenderBackend::createTLAS( const std::vector<BLASBatch*>& batches )
         VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR,
         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT );
 
-    void* dst;
     vkMapMemory( device, instanceBufferMem, 0, instanceDataByteSize, 0, &dst );
     memcpy( dst, instanceData.data(), instanceDataByteSize );
     vkUnmapMemory( device, instanceBufferMem );
@@ -1290,29 +1333,50 @@ void VulkanRenderBackend::createOutImage()
 }
 
 #include "CameraObject.h"
+#include "SampleQuality.h"
 #include "Scene.h"
 void VulkanRenderBackend::createUniformBuffer()
 {
-    struct Data
     {
-        float cameraPos[ 3 ];
-        float yFov_degree;
-    } dataSrc;
+        struct Data
+        {
+            float cameraPos[3];
+            float yFov_degree;
+        } dataSrc;
 
-    std::tie( uniformBuffer, uniformBufferMem ) = createBuffer(
-        sizeof( dataSrc ),
-        VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT );
+        std::tie(uniformCameraBuffer, uniformCameraBufferMem) = createBuffer(
+            sizeof(dataSrc),
+            VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 
-    CameraObject* co = tempScenePointer->getCamera();
-    const Vec3& pos = co->getPosition();
-    float cameraPos[3] = { pos.x, pos.y, pos.z };
-    float fov = co->getFov();
+        CameraObject* co = tempScenePointer->getCamera();
+        const Vec3& pos = co->getPosition();
+        float cameraPos[3] = { pos.x, pos.y, pos.z };
+        float fov = co->getFov();
 
-    void* dst;
-    vkMapMemory( device, uniformBufferMem, 0, sizeof( dataSrc ), 0, &dst );
-    *( Data* )dst = { cameraPos[0], cameraPos[1], cameraPos[2], fov};
-    vkUnmapMemory( device, uniformBufferMem );
+        void* dst;
+        vkMapMemory(device, uniformCameraBufferMem, 0, sizeof(dataSrc), 0, &dst);
+        *(Data*)dst = { cameraPos[0], cameraPos[1], cameraPos[2], fov };
+        vkUnmapMemory(device, uniformCameraBufferMem);
+    }
+
+    {
+        SampleQuality dataSrc;
+
+        std::tie(uniformQualityBuffer, uniformQualityBufferMem) = createBuffer(
+            sizeof(dataSrc),
+            VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+        SampleQuality* sq = tempScenePointer->getSampleQuality();
+        uint32 maxDepth = sq->maxDepth;
+        uint32 numSamples = sq->numSamples;
+
+        void* dst;
+        vkMapMemory(device, uniformQualityBufferMem, 0, sizeof(dataSrc), 0, &dst);
+        *(SampleQuality*)dst = { maxDepth, numSamples };
+        vkUnmapMemory(device, uniformQualityBufferMem);
+    }
 }
 
 VkShaderStageFlagBits getVulkanShaderStage( EShaderStage stage )
@@ -1370,7 +1434,7 @@ IRenderPipelineRef VulkanRenderBackend::createRayTracingPipeline( const Raytraci
     //==========================================================
     // Pipeline layout
     //==========================================================
-    std::vector<VkDescriptorSetLayoutBinding> bindings( 6 );
+    std::vector<VkDescriptorSetLayoutBinding> bindings( 5 ); // Look PathTracingRenderer.cpp
     for( const ShaderDesc& shaderDesc : psoDesc.shaders )
     {
         for( const ShaderResourceDescriptor& descriptor : shaderDesc.descriptors )
@@ -1435,7 +1499,7 @@ IRenderPipelineRef VulkanRenderBackend::createRayTracingPipeline( const Raytraci
         .pStages = stages.data(),
         .groupCount = ( uint32 )groups.size(),
         .pGroups = groups.data(),
-        .maxPipelineRayRecursionDepth = 1,
+        .maxPipelineRayRecursionDepth = 30,
         .layout = outPipeline->pipelineLayout,
     };
     vkCreateRayTracingPipelinesKHR( device, VK_NULL_HANDLE, VK_NULL_HANDLE, 1, &pipelineCreateInfo, nullptr, &outPipeline->pipeline );
@@ -1472,7 +1536,7 @@ IRenderPipelineRef VulkanRenderBackend::createRayTracingPipeline( const Raytraci
         }
 
         // @TODO: Move to scene level
-        std::vector<VkBuffer> storageBuffers = { nullptr, nullptr, uniformBuffer, vertexPositionBuffer, vertexAttributeBuffer, indexBuffer };
+        std::vector<VkBuffer> storageBuffers = { nullptr, nullptr, uniformCameraBuffer, objectBuffer, uniformQualityBuffer };
 
         for( int32 index = 0; index < bindings.size(); ++index )
         {
@@ -1591,11 +1655,25 @@ IRenderPipelineRef VulkanRenderBackend::createRayTracingPipeline( const Raytraci
         *( ShaderGroupHandle* )( dst + missOffset + 1 * missStride ) = shadowMissHandle;
 
         const HitgCustomData sampleColorTable[] =
-        { 
-            { 0.6f, 0.1f, 0.2f }  // Deep Red Wine
-            , { 0.1f, 0.8f, 0.4f } // Emerald Green
-            , { 0.9f, 0.7f, 0.1f } // Golden Yellow
-            , { 0.3f, 0.6f, 0.9f } // Dawn Sky Blue
+        {
+            { 1.0f, 1.0f, 1.0f },
+            { 1.0f, 1.0f, 1.0f },
+            { 1.0f, 0.0f, 0.0f },
+            { 0.0f, 1.0f, 0.0f },
+            { 1.0f, 1.0f, 1.0f },
+            { 1.0f, 1.0f, 1.0f },
+            { 0.0f, 0.0f, 0.0f },
+
+            { 0.6f, 0.1f, 0.2f },   // Deep Red Wine
+            { 0.1f, 0.8f, 0.4f },   // Emerald Green
+            { 0.9f, 0.7f, 0.1f },   // Golden Yellow
+            { 0.3f, 0.6f, 0.9f },   // Dawn Sky Blue
+            { 0.8f, 0.2f, 0.6f },   // Rose Violet
+            { 0.2f, 0.5f, 0.9f },   // Azure Blue
+            { 0.9f, 0.4f, 0.1f },   // Burnt Orange
+            { 0.2f, 0.9f, 0.8f },   // Mint Cyan
+            { 0.7f, 0.8f, 0.2f },   // Olive Lime
+            { 0.5f, 0.5f, 0.5f }    // Neutral Gray
         };
 
         std::random_device rd;

@@ -149,17 +149,22 @@ private:
     VkDeviceMemory outImageMem;
     VkImageView outImageView;
 
-    VkBuffer uniformBuffer;
-    VkDeviceMemory uniformBufferMem;
+    VkBuffer uniformCameraBuffer;
+    VkDeviceMemory uniformCameraBufferMem;
 
-    VkBuffer vertexPositionBuffer;
-    VkDeviceMemory vertexPositionBufferMem;
+    //VkBuffer vertexPositionBuffer;
+    //VkDeviceMemory vertexPositionBufferMem;
 
-    VkBuffer vertexAttributeBuffer;
-    VkDeviceMemory vertexAttributeBufferMem;
+    //VkBuffer vertexAttributeBuffer;
+    //VkDeviceMemory vertexAttributeBufferMem;
 
-    VkBuffer indexBuffer;
-    VkDeviceMemory indexBufferMem;
+    //VkBuffer indexBuffer;
+    //VkDeviceMemory indexBufferMem;
+
+    VkBuffer objectBuffer;
+
+    VkBuffer uniformQualityBuffer;
+    VkDeviceMemory uniformQualityBufferMem;
 
     VkDescriptorPool descriptorPool;
 

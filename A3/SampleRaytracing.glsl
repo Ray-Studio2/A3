@@ -258,6 +258,6 @@ void main()
         acos(clamp(dir.y, -1.0, 1.0)) / 3.1415926535
     );
     vec3 color = texture(environmentMap, uv).rgb;
-    payload.hitValue = color;
+    gPayload.radiance = toneMapACES(color);
 }
 #endif

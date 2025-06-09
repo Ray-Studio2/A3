@@ -63,7 +63,7 @@ void Engine::Run()
             renderer.beginFrame( screenWidth, screenHeight );
 
             renderer.render( scene );
-            imgui.renderFrame( window, &gfxBackend );
+            imgui.renderFrame( window, &gfxBackend, &scene );
 
             renderer.endFrame();
 

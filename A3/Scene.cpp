@@ -23,6 +23,8 @@ Scene::Scene()
 	// mo1->setPosition( Vec3( 2, 0, 0 ) );
 	// objects.emplace_back( mo0 );
 	// objects.emplace_back( mo1 );
+
+	this->sampleQuality = std::make_unique<SampleQuality>();
 }
 
 Scene::~Scene() {
@@ -88,7 +90,7 @@ void Scene::beginFrame()
 
 void Scene::endFrame()
 {
-	bSceneDirty = false;
+	//bSceneDirty = false;
 }
 
 std::vector<MeshObject*> Scene::collectMeshObjects() const

@@ -28,7 +28,7 @@ VulkanRenderBackend::VulkanRenderBackend( GLFWwindow* window, std::vector<const 
     createCommandCenter();
 
     //std::tie(envImage, envImageMem, envImageView, envSampler) = createEnvironmentMap("../asset/autumn_field_puresky_4k.hdr");
-    std::tie(envImage, envImageMem, envImageView, envSampler) = createEnvironmentMap("../asset/bloem_hill_01_4k.hdr");
+    std::tie(envImage, envImageMem, envImageView, envSampler) = createEnvironmentMap("../asset/overcast_soil_puresky_4k.hdr");
 }
 
 VulkanRenderBackend::~VulkanRenderBackend()
@@ -1446,26 +1446,46 @@ void VulkanRenderBackend::createOutImage()
 #include "Scene.h"
 void VulkanRenderBackend::createUniformBuffer()
 {
-    struct Data
     {
-        float cameraPos[ 3 ];
-        float yFov_degree;
-    } dataSrc;
+        struct Data
+        {
+            float cameraPos[3];
+            float yFov_degree;
+        } dataSrc;
 
-    std::tie( uniformBuffer, uniformBufferMem ) = createBuffer(
-        sizeof( dataSrc ),
-        VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT );
+        std::tie(uniformCameraBuffer, uniformCameraBufferMem) = createBuffer(
+            sizeof(dataSrc),
+            VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 
-    CameraObject* co = tempScenePointer->getCamera();
-    const Vec3& pos = co->getPosition();
-    float cameraPos[3] = { pos.x, pos.y, pos.z };
-    float fov = co->getFov();
+        CameraObject* co = tempScenePointer->getCamera();
+        const Vec3& pos = co->getPosition();
+        float cameraPos[3] = { pos.x, pos.y, pos.z };
+        float fov = co->getFov();
 
-    void* dst;
-    vkMapMemory( device, uniformBufferMem, 0, sizeof( dataSrc ), 0, &dst );
-    *( Data* )dst = { cameraPos[0], cameraPos[1], cameraPos[2], fov};
-    vkUnmapMemory( device, uniformBufferMem );
+        void* dst;
+        vkMapMemory(device, uniformCameraBufferMem, 0, sizeof(dataSrc), 0, &dst);
+        *(Data*)dst = { cameraPos[0], cameraPos[1], cameraPos[2], fov };
+        vkUnmapMemory(device, uniformCameraBufferMem);
+    }
+
+    {
+        SampleQuality dataSrc;
+
+        std::tie(uniformQualityBuffer, uniformQualityBufferMem) = createBuffer(
+            sizeof(dataSrc),
+            VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+        SampleQuality* sq = tempScenePointer->getSampleQuality();
+        uint32 maxDepth = sq->maxDepth;
+        uint32 numSamples = sq->numSamples;
+
+        void* dst;
+        vkMapMemory(device, uniformQualityBufferMem, 0, sizeof(dataSrc), 0, &dst);
+        *(SampleQuality*)dst = { maxDepth, numSamples };
+        vkUnmapMemory(device, uniformQualityBufferMem);
+    }
 }
 
 VkShaderStageFlagBits getVulkanShaderStage( EShaderStage stage )
@@ -1524,7 +1544,7 @@ IRenderPipelineRef VulkanRenderBackend::createRayTracingPipeline( const Raytraci
     //==========================================================
     // Pipeline layout
     //==========================================================
-    std::vector<VkDescriptorSetLayoutBinding> bindings( 5 );
+    std::vector<VkDescriptorSetLayoutBinding> bindings( 6 );
     for( const ShaderDesc& shaderDesc : psoDesc.shaders )
     {
         for( const ShaderResourceDescriptor& descriptor : shaderDesc.descriptors )
@@ -1629,7 +1649,7 @@ IRenderPipelineRef VulkanRenderBackend::createRayTracingPipeline( const Raytraci
         std::vector<VkBuffer> storageBuffers = 
         { 
             nullptr, nullptr,
-            uniformBuffer, objectBuffer,
+            uniformCameraBuffer, objectBuffer, nullptr, uniformQualityBuffer
             /*vertexPositionBuffer, vertexAttributeBuffer, indexBuffer*/ 
         };
 

@@ -175,7 +175,8 @@ Addon_imgui::Addon_imgui( GLFWwindow* window, VulkanRenderBackend* vulkan, int32
     ImGui_ImplVulkan_Init( &init_info );
 }
 
-void Addon_imgui::renderFrame( GLFWwindow* window, VulkanRenderBackend* vulkan )
+#include "Scene.h"  // FIXME: here for now to avoid incomplete type; needs to be improved
+void Addon_imgui::renderFrame( GLFWwindow* window, VulkanRenderBackend* vulkan, Scene* scene)
 {
     // Our state
     static bool show_demo_window = true;
@@ -200,40 +201,31 @@ void Addon_imgui::renderFrame( GLFWwindow* window, VulkanRenderBackend* vulkan )
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
 
-    // 1. Show the big demo window (Most of the sample code is in ImGui::ShowDemoWindow()! You can browse its code to learn more about Dear ImGui!).
-    if( show_demo_window )
-        ImGui::ShowDemoWindow( &show_demo_window );
-
-    // 2. Show a simple window that we create ourselves. We use a Begin/End pair to create a named window.
     {
-        static float f = 0.0f;
-        static int counter = 0;
+        static float f[3] = { 0.0f, 0.0f, 0.0f };
 
-        ImGui::Begin( "Hello, world!" );                          // Create a window called "Hello, world!" and append into it.
+        ImGui::Begin("A3 Pathtracer");
 
-        ImGui::Text( "This is some useful text." );               // Display some text (you can use a format strings too)
-        ImGui::Checkbox( "Demo Window", &show_demo_window );      // Edit bools storing our window open/close state
-        ImGui::Checkbox( "Another Window", &show_another_window );
+        ImGui::SeparatorText("Quality");
 
-        ImGui::SliderFloat( "float", &f, 0.0f, 1.0f );            // Edit 1 float using a slider from 0.0f to 1.0f
-        ImGui::ColorEdit3( "clear color", ( float* )&clear_color ); // Edit 3 floats representing a color
+        int depth = static_cast<int>(scene->getSampleQuality()->maxDepth);
+        if (ImGui::InputInt("Depth", &depth)) {
+            if (depth < 0) depth = 0;
+            if (depth > 5) depth = 5;
+            scene->getSampleQuality()->maxDepth = static_cast<uint32>(depth);
+            scene->markSceneDirty();
+        }
 
-        if( ImGui::Button( "Button" ) )                            // Buttons return true when clicked (most widgets return true when edited/activated)
-            counter++;
-        ImGui::SameLine();
-        ImGui::Text( "counter = %d", counter );
+        int numSamples = static_cast<int>(scene->getSampleQuality()->numSamples);
+        if (ImGui::SliderInt("Number of samples", &numSamples, 1, 64)) {
+            scene->getSampleQuality()->numSamples = static_cast<uint32>(numSamples);
+            scene->markSceneDirty();
+        }
 
-        ImGui::Text( "Application average %.3f ms/frame (%.1f FPS)", 1000.0f / io.Framerate, io.Framerate );
-        ImGui::End();
-    }
+        ImGui::SeparatorText("Light");
+        ImGui::DragFloat3("Light position", f, 0.005f, -3.0f, 3.0f);
 
-    // 3. Show another simple window.
-    if( show_another_window )
-    {
-        ImGui::Begin( "Another Window", &show_another_window );   // Pass a pointer to our bool variable (the window will have a closing button that will clear the bool when clicked)
-        ImGui::Text( "Hello from another window!" );
-        if( ImGui::Button( "Close Me" ) )
-            show_another_window = false;
+        ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / io.Framerate, io.Framerate);
         ImGui::End();
     }
 

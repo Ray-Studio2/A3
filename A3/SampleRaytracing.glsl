@@ -55,6 +55,15 @@ vec3 cosineSampleHemisphere(uvec2 pixel, uint sampleIndex, uint depth, vec3 norm
     return normalize(tangent * direction.x + bitangent * direction.y + normal * direction.z);
 }
 
+vec3 toneMapACES(vec3 x) {
+    const float a = 2.51;
+    const float b = 0.03;
+    const float c = 2.43;
+    const float d = 0.59;
+    const float e = 0.14;
+    return clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0, 1.0);
+}
+
 struct Payload
 {
     vec3 hitValue;
@@ -258,6 +267,6 @@ void main()
         acos(clamp(dir.y, -1.0, 1.0)) / 3.1415926535
     );
     vec3 color = texture(environmentMap, uv).rgb;
-    gPayload.radiance = toneMapACES(color);
+    payload.hitValue = toneMapACES(color);
 }
 #endif

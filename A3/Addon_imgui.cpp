@@ -209,7 +209,7 @@ void Addon_imgui::renderFrame( GLFWwindow* window, VulkanRenderBackend* vulkan, 
         ImGui::SeparatorText("Quality");
 
         int depth = static_cast<int>(scene->getSampleQuality()->maxDepth);
-        if (ImGui::InputInt("Depth", &depth)) {
+        if (ImGui::InputInt("Max depth", &depth)) {
             if (depth < 0) depth = 0;
             if (depth > 5) depth = 5;
             scene->getSampleQuality()->maxDepth = static_cast<uint32>(depth);

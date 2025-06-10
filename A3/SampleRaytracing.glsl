@@ -117,6 +117,57 @@ vec3 RandomHemisphereDirection(vec3 normal, inout uint state) {
     return dir * sign(dot(normal, dir));
 }
 
+uint wang_hash(uint seed)
+{
+    seed = uint(seed ^ uint(61)) ^ uint(seed >> uint(16));
+    seed *= uint(9);
+    seed = seed ^ (seed >> 4);
+    seed *= uint(0x27d4eb2d);
+    seed = seed ^ (seed >> 15);
+    return seed;
+}
+
+uint generateSeed(uvec2 pixel, uint sampleIndex, uint depth, uint axis)
+{
+    uint base = pixel.x * 1973 + pixel.y * 9277 + sampleIndex * 26699 + depth * 59359 + axis * 19937;
+    return wang_hash(base);
+}
+
+float random(uvec2 pixel, uint sampleIndex, uint depth, uint axis)
+{
+    return float(generateSeed(pixel, sampleIndex, depth, axis)) / 4294967296.0;
+}
+// Uniform sampling on unit sphere
+vec3 uniformSampleSphere(uvec2 pixel, uint sampleIndex, uint depth)
+{
+    float z = random(pixel, sampleIndex, depth, 0) * 2.0 - 1.0;
+    float phi = random(pixel, sampleIndex, depth, 1) * 2.0 * 3.14159265;
+    float r = sqrt(1.0 - z * z);
+    return normalize(vec3(r * cos(phi), r * sin(phi), z));
+}
+
+// Cosine weighted sampling on hemisphere
+vec3 cosineSampleHemisphere(uvec2 pixel, uint sampleIndex, uint depth, vec3 normal)
+{
+    float r1 = random(pixel, sampleIndex, depth, 0);
+    float r2 = random(pixel, sampleIndex, depth, 1);
+    
+    float phi = 2.0 * 3.14159265 * r1;
+    float cosTheta = sqrt(r2);
+    float sinTheta = sqrt(1.0 - r2);
+    
+    vec3 direction = vec3(
+        cos(phi) * sinTheta,
+        sin(phi) * sinTheta,
+        cosTheta
+    );
+    
+    vec3 bitangent = normalize(cross(abs(normal.y) < 0.999 ? vec3(0, 1, 0) : vec3(1, 0, 0), normal));
+    vec3 tangent = cross(normal, bitangent);
+    
+    return normalize(tangent * direction.x + bitangent * direction.y + normal * direction.z);
+}
+
 void main()
 {
     ObjectDesc objDesc = objectDescs.desc[gl_InstanceCustomIndexEXT];
@@ -162,7 +213,7 @@ void main()
 
 	if (LIGHT_INSTANCE_INDEX == gl_InstanceCustomIndexEXT) 
 	{
-		lightColor = vec3(1.0);
+		lightColor = vec3(5.0);
 	}
 
 	uint numSampleByDepth = (ray.depth == 0 ? sq.numSamples : sq.numSamples > 4 ? 4 : sq.numSamples);
@@ -171,6 +222,7 @@ void main()
 		for (uint i=0; i < numSampleByDepth; ++i) {
 			uint rngState = (pixelCoord.y * screenSize.x + pixelCoord.x) * (ray.depth + 1) * (i + 1);
 			vec3 rayDir = RandomHemisphereDirection(worldNormal, rngState);
+            //vec3 rayDir = uniformSampleSphere(gl_LaunchIDEXT.xy, i, ray.depth);
 
 			traceRayEXT(
 				topLevelAS,                         // topLevel

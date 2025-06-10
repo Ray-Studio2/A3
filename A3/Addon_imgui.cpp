@@ -216,7 +216,7 @@ void Addon_imgui::renderFrame( GLFWwindow* window, VulkanRenderBackend* vulkan, 
         }
 
         int numSamples = static_cast<int>(scene->getSampleQuality()->numSamples);
-        if (ImGui::SliderInt("Number of samples", &numSamples, 1, 64)) {
+        if (ImGui::SliderInt("Number of samples", &numSamples, 1, 128)) {
             scene->getSampleQuality()->numSamples = static_cast<uint32>(numSamples);
             scene->markSceneDirty();
         }

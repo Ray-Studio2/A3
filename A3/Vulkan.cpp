@@ -975,16 +975,21 @@ inline VkDeviceAddress VulkanRenderBackend::getDeviceAddressOf( VkAccelerationSt
 }
 
 // @TODO: Support more than 1 geometry
-IAccelerationStructureRef VulkanRenderBackend::createBLAS(
-    const std::vector<VertexPosition>& positionData, 
-    const std::vector<VertexAttributes>& attributeData, 
-    const std::vector<uint32>& indexData, 
-    const Mat3x4& transformData )
+IAccelerationStructureRef VulkanRenderBackend::createBLAS( const BLASBuildParams params )
 {
     VulkanAccelerationStructure* outBlas = new VulkanAccelerationStructure();
     VkDeviceMemory vertexPositionBufferMem;
     VkDeviceMemory vertexAttributeBufferMem;
     VkDeviceMemory indexBufferMem;
+    VkDeviceMemory cumulativeTriangleAreaMem;
+
+    auto& positionData = params.positionData;
+    auto& attributeData = params.attributeData;
+    auto& indexData = params.indexData;
+    auto& cumulativeTriangleAreaData = params.cumulativeTriangleAreaData;
+    auto& transformData = params.transformData;
+
+    outBlas->triangleCount = params.triangleCount;
 
     std::tie( outBlas->vertexPositionBuffer, vertexPositionBufferMem ) = createBuffer(
         positionData.size() * sizeof( VertexPosition ),
@@ -1010,6 +1015,14 @@ IAccelerationStructureRef VulkanRenderBackend::createBLAS(
         VK_BUFFER_USAGE_TRANSFER_DST_BIT,
         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT );
 
+    std::tie( outBlas->cumulativeTriangleAreaBuffer, cumulativeTriangleAreaMem ) = createBuffer(
+        cumulativeTriangleAreaData.size() * sizeof(float),
+        VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
+        VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR |
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+        VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
     auto [geoTransformBuffer, geoTransformBufferMem] = createBuffer(
         sizeof( Mat3x4 ),
         VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR,
@@ -1028,6 +1041,10 @@ IAccelerationStructureRef VulkanRenderBackend::createBLAS(
     vkMapMemory( device, indexBufferMem, 0, indexData.size() * sizeof( uint32 ), 0, &dst );
     memcpy( dst, indexData.data(), indexData.size() * sizeof( uint32 ) );
     vkUnmapMemory( device, indexBufferMem );
+
+    vkMapMemory(device, cumulativeTriangleAreaMem, 0, cumulativeTriangleAreaData.size() * sizeof(float), 0, &dst);
+    memcpy(dst, cumulativeTriangleAreaData.data(), cumulativeTriangleAreaData.size() * sizeof(float));
+    vkUnmapMemory(device, cumulativeTriangleAreaMem);
 
     vkMapMemory( device, geoTransformBufferMem, 0, sizeof( Mat3x4 ), 0, &dst );
     memcpy( dst, &transformData, sizeof( Mat3x4 ) );
@@ -1135,6 +1152,8 @@ struct ObjectDesc
     uint64 vertexPositionDeviceAddress = 0;
     uint64 vertexAttributeDeviceAddress = 0;
     uint64 indexDeviceAddress = 0;
+    uint64 cumulativeTriangleAreaAddress = 0;
+    uint32 triangleCount = 0;
 };
 
 // @TODO: Support more than 1 instance
@@ -1153,7 +1172,7 @@ void VulkanRenderBackend::createTLAS( const std::vector<BLASBatch*>& batches )
 
     const uint64 objectDescBufferSize = objectBufferCount * sizeof(ObjectDesc);
     VkDeviceMemory objectBufferMem;
-    std::tie(objectBuffer, objectBufferMem) = createBuffer( // Q: what's in objectBuffer ? 
+    std::tie(objectBuffer, objectBufferMem) = createBuffer(
         objectDescBufferSize, 
         VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
         VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR |
@@ -1164,7 +1183,7 @@ void VulkanRenderBackend::createTLAS( const std::vector<BLASBatch*>& batches )
 
     vkMapMemory(device, objectBufferMem, 0, objectDescBufferSize, 0, &dst);
 
-    for (int32 batchIndex = 0, objectIndex = 0; batchIndex < batches.size(); ++batchIndex) // Q: So what's the TLAS structure rn? An array of objects?
+    for (int32 batchIndex = 0, objectIndex = 0; batchIndex < batches.size(); ++batchIndex)
     {
         BLASBatch* batch = batches[batchIndex];
         VulkanAccelerationStructure* blas = static_cast<VulkanAccelerationStructure*>( batch->blas.get() );
@@ -1185,6 +1204,8 @@ void VulkanRenderBackend::createTLAS( const std::vector<BLASBatch*>& batches )
                 .vertexPositionDeviceAddress = getDeviceAddressOf(blas->vertexPositionBuffer),
                 .vertexAttributeDeviceAddress = getDeviceAddressOf(blas->vertexAttributeBuffer),
                 .indexDeviceAddress = getDeviceAddressOf(blas->indexBuffer),
+                .cumulativeTriangleAreaAddress = getDeviceAddressOf(blas->cumulativeTriangleAreaBuffer),
+                .triangleCount = blas->triangleCount,
             };
             memcpy((ObjectDesc*)dst + objectIndex, &objectDesc, sizeof(ObjectDesc));
         }

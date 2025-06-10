@@ -53,7 +53,7 @@
     {
       "name": "teapot",
       "type": "mesh",
-      "position": [ 0.0, 0.0, 0.0 ],
+      "position": [ 0.0, -2.0, 0.0 ],
       "rotation": [ 0.0, 0.0, 0.0 ],
       "scale": [ 0.2, 0.2, 0.2 ],
       "mesh": "teapot",
@@ -62,9 +62,9 @@
     {
       "name": "light_sphere",
       "type": "mesh",
-      "position": [ 3.0, 2.0, -1.0 ],
+      "position": [ 0.0, 2.0, -1.0 ],
       "rotation": [ 0.0, 0.0, 0.0 ],
-      "scale": [ 0.5, 0.5, 0.5 ],
+      "scale": [ 1.0, 1.0, 1.0 ],
       "mesh": "sphere",
       "material": "light"
     }

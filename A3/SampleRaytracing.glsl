@@ -171,6 +171,20 @@ vec3 cosineSampleHemisphere(uvec2 pixel, uint sampleIndex, uint depth, vec3 norm
     return normalize(tangent * direction.x + bitangent * direction.y + normal * direction.z);
 }
 
+uint binarySearchTriangleIdx(float target) {
+	ObjectDesc objDesc = objectDescs.desc[LIGHT_INSTANCE_INDEX];
+	cumulativeTriangleAreaBuffer sum = cumulativeTriangleAreaBuffer(objDesc.cumulativeTriangleAreaAddress);
+
+	uint l = 1;
+	uint r = objDesc.triangleCount;
+	while (l <= r) {
+		uint mid = l + ((r - l) / 2);
+		if (sum.t[mid] < target && target <= sum.t[mid]) return mid;
+		else if (target > sum.t[mid]) l = mid + 1;
+		else r = mid - 1;
+	}
+}
+
 void main()
 {
     ObjectDesc objDesc = objectDescs.desc[gl_InstanceCustomIndexEXT];

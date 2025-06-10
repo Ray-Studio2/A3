@@ -26,6 +26,9 @@ public:
     VkBuffer vertexPositionBuffer;
     VkBuffer vertexAttributeBuffer;
     VkBuffer indexBuffer;
+    VkBuffer cumulativeTriangleAreaBuffer;
+
+    uint32 triangleCount;
 };
 
 struct VulkanShaderModule : public IShaderModule

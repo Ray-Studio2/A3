@@ -1,5 +1,5 @@
 #extension GL_EXT_ray_tracing : enable
-#extension GL_EXT_buffer_reference : require
+#extension GL_EXT_buffer_reference2 : require
 #extension GL_EXT_buffer_reference_uvec2 : require
 #extension GL_EXT_scalar_block_layout : require
 #extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
@@ -69,11 +69,14 @@ struct ObjectDesc {
 	uint64_t vertexPositionDeviceAddress;
 	uint64_t vertexAttributeDeviceAddress;
 	uint64_t indexDeviceAddress;
+	uint64_t cumulativeTriangleAreaAddress;
+	uint triangleCount;
 };
 
 layout(buffer_reference, scalar) buffer PositionBuffer { vec4 p[]; };
 layout(buffer_reference, scalar) buffer AttributeBuffer { VertexAttributes a[]; };
 layout(buffer_reference, scalar) buffer IndexBuffer { uint i[]; };
+layout(buffer_reference, scalar) buffer cumulativeTriangleAreaBuffer { float t[]; };
 
 layout(binding=3, scalar) buffer ObjectDescBuffer {
 	ObjectDesc desc[];

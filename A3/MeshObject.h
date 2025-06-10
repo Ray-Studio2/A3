@@ -19,7 +19,16 @@ public:
 
 	void createRenderResources( IRenderBackend* backend )
 	{
-		blasBatch.blas = backend->createBLAS( resource->positions, resource->attributes, resource->indices, Mat3x4::identity );
+		BLASBuildParams params = {
+			.positionData = resource->positions,
+			.attributeData = resource->attributes,
+			.indexData = resource->indices,
+			.cumulativeTriangleAreaData = resource->cumulativeTriangleArea,
+			.triangleCount = resource->triangleCount,
+			.transformData = Mat3x4::identity,
+		};
+
+		blasBatch.blas = backend->createBLAS( params );
 		blasBatch.transforms = { localToWorld };
 	}
 

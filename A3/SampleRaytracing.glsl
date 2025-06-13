@@ -1,10 +1,11 @@
+#extension GL_EXT_ray_query : require
 #extension GL_EXT_ray_tracing : enable
 #extension GL_EXT_buffer_reference2 : require
 #extension GL_EXT_buffer_reference_uvec2 : require
 #extension GL_EXT_scalar_block_layout : require
 #extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
 
-struct Ray
+struct Payload
 {
     vec3 radiance;
     uint depth;
@@ -22,7 +23,7 @@ layout( binding = 2 ) uniform CameraProperties
 	float yFov_degree;
 } g;
 
-layout( location = 0 ) rayPayloadEXT Ray ray;
+layout( location = 0 ) rayPayloadEXT Payload payload;
 
 void main()
 {
@@ -36,8 +37,8 @@ void main()
 	const vec2 ndc = screenCoord / vec2( gl_LaunchSizeEXT.xy ) * 2.0 - 1.0;
 	vec3 rayDir = ndc.x * aspect_x * cameraX + ndc.y * aspect_y * cameraY + cameraZ;
 
-	ray.radiance = vec3(0.0);
-	ray.depth = 0;
+	payload.radiance = vec3(0.0);
+	payload.depth = 0;
 
 	traceRayEXT(
 		topLevelAS,                         // topLevel
@@ -46,7 +47,7 @@ void main()
 		g.cameraPos, 0.0, rayDir, 100.0,    // origin, tmin, direction, tmax
 		0 );                                 // payload
 
-	vec3 finalColor = ray.radiance;
+	vec3 finalColor = payload.radiance;
 
 	imageStore( image, ivec2( gl_LaunchIDEXT.xy ), vec4( finalColor, 1.0 ) );
 }
@@ -94,7 +95,7 @@ layout( shaderRecordEXT ) buffer CustomData
 
 layout( binding = 0 ) uniform accelerationStructureEXT topLevelAS;
 
-layout( location = 0 ) rayPayloadInEXT Ray ray;
+layout( location = 0 ) rayPayloadInEXT Payload payload;
 hitAttributeEXT vec2 attribs;
 
 float RandomValue(inout uint state) {
@@ -262,11 +263,9 @@ void main()
 //	SHADOW MISS SHADER
 //=========================
 
-layout( location = 0 ) rayPayloadInEXT Ray ray;
-
 void main()
 {
-	ray.radiance = vec3(0.0);
+
 }
 #endif
 
@@ -276,10 +275,10 @@ void main()
 //	ENVIRONMENT MISS SHADER
 //=========================
 
-layout( location = 0 ) rayPayloadInEXT Ray ray;
+layout( location = 0 ) rayPayloadInEXT Payload payload;
 
 void main()
 {
-	ray.radiance = vec3(0.0);
+	payload.radiance = vec3(0.0);
 }
 #endif

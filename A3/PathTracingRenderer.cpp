@@ -6,6 +6,7 @@
 #include "MeshResource.h"
 #include "AccelerationStructure.h"
 #include "PipelineStateObject.h"
+
 using namespace A3;
 
 PathTracingRenderer::PathTracingRenderer( VulkanRenderBackend* inBackend )
@@ -41,6 +42,12 @@ void PathTracingRenderer::render( const Scene& scene )
     
     // Pass frame count to backend
     backend->currentFrameCount = frameCount;
+    
+    // Auto-save at specific frame count
+    if (autoSaveEnabled && frameCount == autoSaveFrameCount) {
+        backend->saveCurrentImage("frame_" + std::to_string(frameCount) + ".png");
+        printf("Saved image at frame %d\n", frameCount);
+    }
     
     backend->beginRaytracingPipeline( samplePSO->pipeline.get() );
 }

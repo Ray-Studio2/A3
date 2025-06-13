@@ -35,5 +35,9 @@ private:
 	
 	// Variable for frame accumulation
 	mutable uint32 frameCount = 0;
+	
+	// Auto-save settings
+	uint32 autoSaveFrameCount = 100; // Save image at this frame count
+	bool autoSaveEnabled = true;
 };
 }

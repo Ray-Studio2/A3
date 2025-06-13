@@ -1,3 +1,5 @@
+#define _CRT_SECURE_NO_WARNINGS
+
 #include "Vulkan.h"
 //#include "shader_module.h"
 #include "RenderSettings.h"
@@ -13,6 +15,9 @@
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
+
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include "stb_image_write.h"
 
 using namespace A3;
 
@@ -1881,5 +1886,148 @@ In the vulkan spec,
 
 As shown in the vulkan spec 40.3.1. Indexing Rules,
     pHitShaderBindingTable->deviceAddress + pHitShaderBindingTable->stride (
-    instanceShaderBindingTableRecordOffset + geometryIndex ?좎룞??sbtRecordStride + sbtRecordOffset )
+    instanceShaderBindingTableRecordOffset + geometryIndex ??sbtRecordStride + sbtRecordOffset )
 */
+
+void VulkanRenderBackend::saveCurrentImage(const std::string& filename)
+{
+    // Wait for rendering to complete
+    vkDeviceWaitIdle(device);
+    
+    // Get image dimensions
+    uint32_t width = swapChainImageExtent.width;
+    uint32_t height = swapChainImageExtent.height;
+    
+    // Create staging buffer for image data
+    VkDeviceSize imageSize = width * height * 4; // RGBA8
+    auto [stagingBuffer, stagingBufferMem] = createBuffer(
+        imageSize,
+        VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
+    );
+    
+    // Create command buffer for copy operation
+    VkCommandBufferAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    allocInfo.commandPool = commandPools[imageIndex];
+    allocInfo.commandBufferCount = 1;
+    
+    VkCommandBuffer cmdBuffer;
+    vkAllocateCommandBuffers(device, &allocInfo, &cmdBuffer);
+    
+    VkCommandBufferBeginInfo beginInfo{};
+    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    
+    vkBeginCommandBuffer(cmdBuffer, &beginInfo);
+    
+    // Transition image layout for transfer
+    VkImageMemoryBarrier barrier{};
+    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    barrier.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
+    barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.image = outImage;
+    barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    barrier.subresourceRange.baseMipLevel = 0;
+    barrier.subresourceRange.levelCount = 1;
+    barrier.subresourceRange.baseArrayLayer = 0;
+    barrier.subresourceRange.layerCount = 1;
+    barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+    barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+    
+    vkCmdPipelineBarrier(
+        cmdBuffer,
+        VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
+        VK_PIPELINE_STAGE_TRANSFER_BIT,
+        0,
+        0, nullptr,
+        0, nullptr,
+        1, &barrier
+    );
+    
+    // Copy image to buffer
+    VkBufferImageCopy region{};
+    region.bufferOffset = 0;
+    region.bufferRowLength = 0;
+    region.bufferImageHeight = 0;
+    region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    region.imageSubresource.mipLevel = 0;
+    region.imageSubresource.baseArrayLayer = 0;
+    region.imageSubresource.layerCount = 1;
+    region.imageOffset = {0, 0, 0};
+    region.imageExtent = {width, height, 1};
+    
+    vkCmdCopyImageToBuffer(
+        cmdBuffer,
+        outImage,
+        VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+        stagingBuffer,
+        1,
+        &region
+    );
+    
+    // Transition back to general layout
+    barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+    barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+    barrier.dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+    
+    vkCmdPipelineBarrier(
+        cmdBuffer,
+        VK_PIPELINE_STAGE_TRANSFER_BIT,
+        VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
+        0,
+        0, nullptr,
+        0, nullptr,
+        1, &barrier
+    );
+    
+    vkEndCommandBuffer(cmdBuffer);
+    
+    VkSubmitInfo submitInfo{};
+    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submitInfo.commandBufferCount = 1;
+    submitInfo.pCommandBuffers = &cmdBuffer;
+    
+    vkQueueSubmit(graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
+    vkQueueWaitIdle(graphicsQueue);
+    
+    vkFreeCommandBuffers(device, commandPools[imageIndex], 1, &cmdBuffer);
+    
+    // Map buffer and save to file
+    void* data;
+    vkMapMemory(device, stagingBufferMem, 0, imageSize, 0, &data);
+    
+    // Convert BGRA to RGBA for stb_image_write
+    uint8_t* pixels = (uint8_t*)data;
+    std::vector<uint8_t> rgbaData(width * height * 4);
+    
+    for (uint32_t y = 0; y < height; y++) {
+        for (uint32_t x = 0; x < width; x++) {
+            uint32_t idx = (y * width + x) * 4;
+            uint32_t outIdx = (y * width + x) * 4;
+            // Convert BGRA to RGBA
+            rgbaData[outIdx + 0] = pixels[idx + 2]; // R (from B position)
+            rgbaData[outIdx + 1] = pixels[idx + 1]; // G
+            rgbaData[outIdx + 2] = pixels[idx + 0]; // B (from R position)
+            rgbaData[outIdx + 3] = pixels[idx + 3]; // A
+        }
+    }
+    
+    // Save as PNG
+    int result = stbi_write_png(filename.c_str(), width, height, 4, rgbaData.data(), width * 4);
+    if (result) {
+        printf("Image saved as: %s\n", filename.c_str());
+    } else {
+        printf("Failed to save image: %s\n", filename.c_str());
+    }
+    
+    vkUnmapMemory(device, stagingBufferMem);
+    
+    // Cleanup
+    vkDestroyBuffer(device, stagingBuffer, nullptr);
+    vkFreeMemory(device, stagingBufferMem, nullptr);
+}

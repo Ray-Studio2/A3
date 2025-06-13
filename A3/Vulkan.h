@@ -53,6 +53,7 @@ public:
     void createAccumulationImage();
     void createUniformBuffer();
     void updateUniformBuffer();
+    void saveCurrentImage(const std::string& filename);
     //////////////////////////
 
 private:

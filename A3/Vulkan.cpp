@@ -1175,6 +1175,7 @@ struct ObjectDesc
     uint64 vertexAttributeDeviceAddress = 0;
     uint64 indexDeviceAddress = 0;
     uint64 cumulativeTriangleAreaAddress = 0;
+    Mat3x4 objToWorld;
     uint32 triangleCount = 0;
 };
 
@@ -1227,6 +1228,7 @@ void VulkanRenderBackend::createTLAS( const std::vector<BLASBatch*>& batches )
                 .vertexAttributeDeviceAddress = getDeviceAddressOf(blas->vertexAttributeBuffer),
                 .indexDeviceAddress = getDeviceAddressOf(blas->indexBuffer),
                 .cumulativeTriangleAreaAddress = getDeviceAddressOf(blas->cumulativeTriangleAreaBuffer),
+                .objToWorld = batch->transforms[instanceIndex],
                 .triangleCount = blas->triangleCount,
             };
             memcpy((ObjectDesc*)dst + objectIndex, &objectDesc, sizeof(ObjectDesc));

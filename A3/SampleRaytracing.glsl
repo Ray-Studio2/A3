@@ -78,12 +78,35 @@ struct VertexAttributes
 };
 
 struct ObjectDesc {
-	uint64_t vertexPositionDeviceAddress;
-	uint64_t vertexAttributeDeviceAddress;
-	uint64_t indexDeviceAddress;
-	uint64_t cumulativeTriangleAreaAddress;
-	uint triangleCount;
+    uint64_t vertexPositionDeviceAddress;
+    uint64_t vertexAttributeDeviceAddress;
+    uint64_t indexDeviceAddress;
+    uint64_t cumulativeTriangleAreaAddress;
+    vec4     objToWorld[3];
+    uint     triangleCount;
 };
+
+// 점(p.x, p.y, p.z, 1)을 변환
+vec3 transformPoint(vec4 row[3], vec3 p)
+{
+    vec4 v = vec4(p, 1.0);
+    return vec3(
+        dot(row[0], v),
+        dot(row[1], v),
+        dot(row[2], v)
+    );
+}
+
+// 방향벡터(p.x, p.y, p.z, 0)을 변환
+vec3 transformVector(vec4 row[3], vec3 v)
+{
+    vec4 w = vec4(v, 0.0);
+    return vec3(
+        dot(row[0], w),
+        dot(row[1], w),
+        dot(row[2], w)
+    );
+}
 
 layout(buffer_reference, scalar) buffer PositionBuffer { vec4 p[]; };
 layout(buffer_reference, scalar) buffer AttributeBuffer { VertexAttributes a[]; };
@@ -186,8 +209,8 @@ vec3 cosineSampleHemisphere(uvec2 pixel, uint sampleIndex, uint depth, vec3 norm
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////
-void binarySearchTriangleIdx(uint state, out uint triangleIdx, out float lightArea) {
-
+void binarySearchTriangleIdx(uint state, out uint triangleIdx, out float lightArea) 
+{
 	ObjectDesc lightObjDesc = objectDescs.desc[LIGHT_INSTANCE_INDEX];
 	cumulativeTriangleAreaBuffer sum = cumulativeTriangleAreaBuffer(lightObjDesc.cumulativeTriangleAreaAddress);
 
@@ -207,7 +230,12 @@ void binarySearchTriangleIdx(uint state, out uint triangleIdx, out float lightAr
 	}
 }
 
-void uniformSamplePointOnTriangle(uint state, uint triangleIdx, out vec3 pointOnTriangle, out vec3 normalOnTriangle) {
+void uniformSamplePointOnTriangle(uint state, uint triangleIdx, 
+								  out vec3 pointOnTriangle, 
+								  out vec3 normalOnTriangle, 
+								  out vec3 pointOnTriangleWorld, 
+								  out vec3 normalOnTriangleWorld) 
+{
 	ObjectDesc lightObjDesc = objectDescs.desc[LIGHT_INSTANCE_INDEX];
 
 	IndexBuffer lightIndexBuffer = IndexBuffer(lightObjDesc.indexDeviceAddress);
@@ -236,6 +264,11 @@ void uniformSamplePointOnTriangle(uint state, uint triangleIdx, out vec3 pointOn
 
 	pointOnTriangle = (w * p0 + u * p1 + v * p2).xyz;
 	normalOnTriangle = normalize(w * n0 + u * n1 + v * n2).xyz;
+	
+	vec4[3] lightTransform = lightObjDesc.objToWorld;
+
+	pointOnTriangleWorld = transformPoint(lightTransform, pointOnTriangle);
+	normalOnTriangleWorld = normalize(transformVector(lightTransform, normalOnTriangle));
 }
 /////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -283,7 +316,7 @@ void main()
 	uint tempDepth = payload.depth;
 	
 	if (gl_InstanceCustomIndexEXT == LIGHT_INSTANCE_INDEX) { // depth = 0
-		payload.radiance = color;
+		payload.radiance = vec3(1.0);
 		return;
 	}
 
@@ -296,13 +329,13 @@ void main()
 
 		uint triangleIdx; float triangleArea;
 		binarySearchTriangleIdx(rngState * 7u, triangleIdx, triangleArea);
-		//triangleIdx = 244; triangleArea = 24.5991;
 
-		vec3 pointOnTriangle, normalOnTriangle;
-		uniformSamplePointOnTriangle(rngState * 11u, triangleIdx, pointOnTriangle, normalOnTriangle);
-
-		vec3 pointOnTriangleWorld = objToWorld * vec4(pointOnTriangle, 1.0);
-		vec3 normalOnTriangleWorld = normalize(objToWorld * vec4(normalOnTriangle, 0.0));
+		vec3 pointOnTriangle, normalOnTriangle, pointOnTriangleWorld, normalOnTriangleWorld;
+		uniformSamplePointOnTriangle(rngState * 11u, triangleIdx, 
+									 pointOnTriangle, 
+									 normalOnTriangle, 
+									 pointOnTriangleWorld, 
+									 normalOnTriangleWorld);
 
 		float distToLight = length(pointOnTriangleWorld - worldPos);
 		vec3 shadowRayDir = normalize(pointOnTriangleWorld - worldPos);
@@ -327,7 +360,8 @@ void main()
 
 		float visibility = visible ? 1.0 : 0.0;
 		vec3 r = pointOnTriangleWorld - worldPos;
-		float P = dot(normalOnTriangleWorld, -shadowRayDir) / dot(r, r);
+		float cosL = max(dot(normalOnTriangleWorld, -shadowRayDir), 0.0);
+		float P = cosL / dot(r, r);
 		tempRadiance += max(dot(worldNormal, shadowRayDir), 0.0) * lightEmittance * visibility * P * triangleArea;
 	}
 	tempRadiance *= (1 / float(directLightSampleCount));

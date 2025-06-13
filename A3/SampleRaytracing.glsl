@@ -258,9 +258,11 @@ void uniformSamplePointOnTriangle(uint state, uint triangleIdx,
 	vec3 n1 = normalize(a1.norm.xyz);
  	vec3 n2 = normalize(a2.norm.xyz);
 
-	float u = RandomValue(state);
-	float v = RandomValue(state * 3u);
-	float w = (1.0f - u - v);
+	vec2 xi   = vec2(RandomValue(state), RandomValue(state*3u));
+	float su0 = sqrt(xi.x);
+	float u  = 1.0 - su0;
+	float v  = xi.y * su0;
+	float w  = 1.0 - u - v;
 
 	pointOnTriangle = (w * p0 + u * p1 + v * p2).xyz;
 	normalOnTriangle = normalize(w * n0 + u * n1 + v * n2).xyz;

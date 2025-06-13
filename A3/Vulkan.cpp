@@ -143,6 +143,9 @@ void VulkanRenderBackend::endFrame()
 void VulkanRenderBackend::beginRaytracingPipeline( IRenderPipeline* inPipeline )
 {
     VulkanPipeline* pipeline = static_cast< VulkanPipeline* >( inPipeline );
+    
+    // Update uniform buffer (including frame count)
+    updateUniformBuffer();
 
     VkCommandBufferBeginInfo info{
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
@@ -804,7 +807,6 @@ void VulkanRenderBackend::createCommandCenter()
 std::tuple<VkImage, VkDeviceMemory, VkImageView, VkSampler>
 A3::VulkanRenderBackend::createEnvironmentMap(std::string_view hdrTexturePath)
 {
-    // --- HDR 濡쒕뱶 ---
     int width, height, channels;
     float* pixels = stbi_loadf(hdrTexturePath.data(), &width, &height, &channels, 0);
     assert(pixels && channels == 3);
@@ -821,7 +823,6 @@ A3::VulkanRenderBackend::createEnvironmentMap(std::string_view hdrTexturePath)
 
     vkQueueWaitIdle(graphicsQueue);
 
-    // --- ?대?吏 ?앹꽦 ---
     VkImage image;
     VkDeviceMemory imageMemory;
     std::tie(image, imageMemory) = createImage(
@@ -830,7 +831,6 @@ A3::VulkanRenderBackend::createEnvironmentMap(std::string_view hdrTexturePath)
         VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
-    // --- ?ㅽ뀒?댁쭠 踰꾪띁 ?앹꽦 ---
     auto [stagingBuffer, stagingMem] = createBuffer(
         imageSize,
         VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
@@ -841,7 +841,6 @@ A3::VulkanRenderBackend::createEnvironmentMap(std::string_view hdrTexturePath)
     memcpy(data, rgbaPixels.data(), static_cast<size_t>(imageSize));
     vkUnmapMemory(device, stagingMem);
 
-    // --- 紐낅졊 踰꾪띁 湲곕줉 ---
     VkCommandBuffer& cmd = commandBuffers[imageIndex];
     vkResetCommandBuffer(cmd, 0);
 
@@ -889,7 +888,6 @@ A3::VulkanRenderBackend::createEnvironmentMap(std::string_view hdrTexturePath)
     vkDestroyBuffer(device, stagingBuffer, nullptr);
     vkFreeMemory(device, stagingMem, nullptr);
 
-    // --- ImageView ?앹꽦 ---
     VkImageView imageView;
     VkImageViewCreateInfo viewInfo{
         .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
@@ -900,7 +898,6 @@ A3::VulkanRenderBackend::createEnvironmentMap(std::string_view hdrTexturePath)
     };
     vkCreateImageView(device, &viewInfo, nullptr, &imageView);
 
-    // --- Sampler ?앹꽦 ---
     VkSampler sampler;
     VkSamplerCreateInfo samplerInfo{
         .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
@@ -1394,7 +1391,7 @@ void VulkanRenderBackend::createTLAS( const std::vector<BLASBatch*>& batches )
 
 void VulkanRenderBackend::createOutImage()
 {
-    VkFormat format = VK_FORMAT_B8G8R8A8_UNORM;// VK_FORMAT_R16G16B16A16_SFLOAT; //VK_FORMAT_R8G8B8A8_SRGB, VK_FORMAT_B8G8R8A8_SRGB(==swapChainImageFormat)
+    VkFormat format = VK_FORMAT_B8G8R8A8_UNORM; // Back to 8-bit for display
     std::tie( outImage, outImageMem ) = createImage(
         { RenderSettings::screenWidth, RenderSettings::screenHeight },
         format,
@@ -1441,6 +1438,52 @@ void VulkanRenderBackend::createOutImage()
     vkQueueWaitIdle( graphicsQueue );
 }
 
+void VulkanRenderBackend::createAccumulationImage()
+{
+    VkFormat format = VK_FORMAT_R32G32B32A32_SFLOAT; // High precision format
+    std::tie( accumulationImage, accumulationImageMem ) = createImage(
+        { RenderSettings::screenWidth, RenderSettings::screenHeight },
+        format,
+        VK_IMAGE_USAGE_STORAGE_BIT,
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT );
+
+    VkImageSubresourceRange subresourceRange{
+        .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+        .levelCount = 1,
+        .layerCount = 1,
+    };
+
+    VkImageViewCreateInfo ci0{
+        .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+        .image = accumulationImage,
+        .viewType = VK_IMAGE_VIEW_TYPE_2D,
+        .format = format,
+        .components = {},
+        .subresourceRange = subresourceRange,
+    };
+    vkCreateImageView( device, &ci0, nullptr, &accumulationImageView );
+
+    vkResetCommandBuffer( commandBuffers[ imageIndex ], 0 );
+    vkBeginCommandBuffer( commandBuffers[ imageIndex ], &beginInfo );
+    {
+        setImageLayout(
+            commandBuffers[ imageIndex ],
+            accumulationImage,
+            VK_IMAGE_LAYOUT_UNDEFINED,
+            VK_IMAGE_LAYOUT_GENERAL,
+            subresourceRange );
+    }
+    vkEndCommandBuffer( commandBuffers[ imageIndex ] );
+
+    VkSubmitInfo submitInfo{
+        .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+        .commandBufferCount = 1,
+        .pCommandBuffers = &commandBuffers[ imageIndex ],
+    };
+    vkQueueSubmit( graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE );
+    vkQueueWaitIdle( graphicsQueue );
+}
+
 #include "CameraObject.h"
 #include "Scene.h"
 void VulkanRenderBackend::createUniformBuffer()
@@ -1449,6 +1492,8 @@ void VulkanRenderBackend::createUniformBuffer()
     {
         float cameraPos[ 3 ];
         float yFov_degree;
+        uint32 frameCount;
+        float padding[3]; // Padding for 16-byte alignment
     } dataSrc;
 
     std::tie( uniformBuffer, uniformBufferMem ) = createBuffer(
@@ -1463,7 +1508,28 @@ void VulkanRenderBackend::createUniformBuffer()
 
     void* dst;
     vkMapMemory( device, uniformBufferMem, 0, sizeof( dataSrc ), 0, &dst );
-    *( Data* )dst = { cameraPos[0], cameraPos[1], cameraPos[2], fov};
+    *( Data* )dst = { cameraPos[0], cameraPos[1], cameraPos[2], fov, 0, {0, 0, 0}};
+    vkUnmapMemory( device, uniformBufferMem );
+}
+
+void VulkanRenderBackend::updateUniformBuffer()
+{
+    struct Data
+    {
+        float cameraPos[ 3 ];
+        float yFov_degree;
+        uint32 frameCount;
+        float padding[3];
+    } dataSrc;
+
+    CameraObject* co = tempScenePointer->getCamera();
+    const Vec3& pos = co->getPosition();
+    float cameraPos[3] = { pos.x, pos.y, pos.z };
+    float fov = co->getFov();
+
+    void* dst;
+    vkMapMemory( device, uniformBufferMem, 0, sizeof( dataSrc ), 0, &dst );
+    *( Data* )dst = { cameraPos[0], cameraPos[1], cameraPos[2], fov, currentFrameCount, {0, 0, 0}};
     vkUnmapMemory( device, uniformBufferMem );
 }
 
@@ -1523,7 +1589,7 @@ IRenderPipelineRef VulkanRenderBackend::createRayTracingPipeline( const Raytraci
     //==========================================================
     // Pipeline layout
     //==========================================================
-    std::vector<VkDescriptorSetLayoutBinding> bindings( 5 );
+    std::vector<VkDescriptorSetLayoutBinding> bindings( 6 ); // Need 6 bindings (0-5)
     for( const ShaderDesc& shaderDesc : psoDesc.shaders )
     {
         for( const ShaderResourceDescriptor& descriptor : shaderDesc.descriptors )
@@ -1658,10 +1724,13 @@ IRenderPipelineRef VulkanRenderBackend::createRayTracingPipeline( const Raytraci
             }
             else if( binding.descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE )
             {
+                // binding 1 is output image, binding 5 is accumulation image
+                VkImageView imageView = (index == 1) ? outImageView : accumulationImageView;
+                
                 writeDescriptorSets.images.emplace_back(
                     VkDescriptorImageInfo
                     {
-                        .imageView = outImageView,
+                        .imageView = imageView,
                         .imageLayout = VK_IMAGE_LAYOUT_GENERAL
                     }
                 );
@@ -1811,6 +1880,6 @@ In the vulkan spec,
 [VUID-vkCmdTraceRaysKHR-pHitShaderBindingTable-03689] pHitShaderBindingTable->deviceAddress must be a multiple of VkPhysicalDeviceRayTracingPipelinePropertiesKHR::shaderGroupBaseAlignment
 
 As shown in the vulkan spec 40.3.1. Indexing Rules,
-    pHitShaderBindingTable->deviceAddress + pHitShaderBindingTable->stride 占쏙옙 (
-    instanceShaderBindingTableRecordOffset + geometryIndex 占쏙옙 sbtRecordStride + sbtRecordOffset )
+    pHitShaderBindingTable->deviceAddress + pHitShaderBindingTable->stride (
+    instanceShaderBindingTableRecordOffset + geometryIndex ?좎룞??sbtRecordStride + sbtRecordOffset )
 */

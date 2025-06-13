@@ -32,5 +32,8 @@ private:
 
 	// @TODO: Move to global variable
 	std::unique_ptr<RaytracingPSO> samplePSO;
+	
+	// Variable for frame accumulation
+	mutable uint32 frameCount = 0;
 };
 }

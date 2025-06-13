@@ -1,6 +1,3 @@
-[submodule "asset"]
-	path = asset
-	url = https://github.com/Ray-Studio2/asset.git
 [submodule "Assets"]
 	path = Assets
 	url = https://github.com/Ray-Studio2/asset.git

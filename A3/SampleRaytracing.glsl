@@ -8,7 +8,7 @@
 #extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
 
 #define MAX_DEPTH 3
-#define SAMPLE_COUNT 20
+#define SAMPLE_COUNT 64  // 최대 샘플로 노이즈 최소화
 
 vec3 toneMapACES(vec3 x) {
     const float a = 2.51;
@@ -17,6 +17,11 @@ vec3 toneMapACES(vec3 x) {
     const float d = 0.59;
     const float e = 0.14;
     return clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0, 1.0);
+}
+
+// Reinhard 톤매핑 (더 부드러운 결과)
+vec3 toneMapReinhard(vec3 color) {
+    return color / (1.0 + color);
 }
 
 struct RayPayload
@@ -41,9 +46,6 @@ layout( binding = 0 ) uniform accelerationStructureEXT topLevelAS;
 layout( binding = 1, rgba8 ) uniform image2D image;
 layout(location = 0) rayPayloadEXT RayPayload gPayload;
 
-vec3 gammaCorrect(vec3 color) {
-    return pow(color, vec3(1.0 / 2.2));
-}
 
 void main()
 {
@@ -73,6 +75,16 @@ void main()
        0 );                                 // payload
     
     vec3 finalColor = gPayload.radiance;
+    
+    // 노출 보정
+    float exposure = 1.5;
+    finalColor *= exposure;
+    
+    // 톤매핑 제거하고 단순 클램핑만 적용
+    finalColor = clamp(finalColor, 0.0, 1.0);
+    
+    // 감마 보정
+    finalColor = pow(finalColor, vec3(1.0 / 2.2));
 
    imageStore( image, ivec2( gl_LaunchIDEXT.xy ), vec4( finalColor, 0.0 ) );
 }
@@ -142,49 +154,35 @@ void main()
     vec3 worldNormal = normalize(transpose(inverse(mat3(gl_ObjectToWorldEXT))) * normal);
     
     uint currentDepthIndex = gPayload.depth;
-    gPayload.depthColor[currentDepthIndex] = color;
+    
+    // 색상 증폭 (셰이더 레코드의 색상이 너무 어두울 수 있음)
+    gPayload.depthColor[currentDepthIndex] = color; // pow(color, vec3(0.8)); // 감마를 조정하여 밝게
+    
 
     // 광원에 맞은 경우
     if (gl_InstanceCustomIndexEXT == LIGHT_INSTANCE_INDEX) 
     {
+        // 광원의 방출광  
+        vec3 lightEmission = vec3(20.0); // 더 밝은 광원
+        
         // 첫 ray가 광원에 맞은 경우
         if(currentDepthIndex == 0)
         {
-            gPayload.radiance = vec3(1.0);
+            gPayload.radiance = lightEmission;
             return;
         }
 
-        const float kDepthWeights[] = float[](
-            1.00,
-            0.60,
-            0.30,
-            0.10,
-            0.05,
-            0.04,
-            0.02,
-            0.01,
-            0.005,
-            0.002
-         );
-        // currentDepthIndex -= 1: 광원 mesh 색상은 일단 무시
-        currentDepthIndex -= 1;
-
-        float weightSum = 0.0;
-        for (uint i = 0; i <= currentDepthIndex; ++i)
-            weightSum += kDepthWeights[i];
-            
-        // 아직은 씬에 맞게 조정 필요.
-        const float magicNumber = float(SAMPLE_COUNT) * 0.5;
-        // 정규화하여 누적
-        for (uint i = 0; i <= currentDepthIndex; ++i)
+        // 간접광의 경우 - 경로상의 모든 색상을 곱함
+        vec3 throughput = vec3(1.0);
+        for (uint i = 0; i < currentDepthIndex; ++i)
         {
-            float normWeight = kDepthWeights[i] / weightSum;
-            gPayload.radiance += gPayload.depthColor[i] * normWeight / magicNumber;
+            throughput *= gPayload.depthColor[i];
         }
+        gPayload.radiance = throughput * lightEmission / float(SAMPLE_COUNT);
         return;
     }
     
-    // Tree Preorder 방식으로 순회 (부모 → 자식)
+    // 원래 알고리즘으로 복원 - Tree Preorder 방식
     if (gPayload.depth + 1 < MAX_DEPTH) 
     {
         uvec2 pixelCoord = gl_LaunchIDEXT.xy;
@@ -194,6 +192,7 @@ void main()
         gPayload.depth += 1;
         for (int i = 0; i < SAMPLE_COUNT; ++i) 
         {
+            rngState = rngState * 1664525u + 1013904223u; // 각 샘플마다 다른 시드
             vec2 seed = vec2(RandomValue2(rngState), RandomValue(rngState));
             vec3 dir = RandomCosineHemisphere(worldNormal, seed);
 

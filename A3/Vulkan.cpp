@@ -12,7 +12,7 @@
 #include <random>
 
 #define STB_IMAGE_IMPLEMENTATION
-#include <stb_image.h>
+#include "stb_image.h"
 
 using namespace A3;
 
@@ -804,7 +804,7 @@ void VulkanRenderBackend::createCommandCenter()
 std::tuple<VkImage, VkDeviceMemory, VkImageView, VkSampler>
 A3::VulkanRenderBackend::createEnvironmentMap(std::string_view hdrTexturePath)
 {
-    // --- HDR 로드 ---
+    // --- HDR 濡쒕뱶 ---
     int width, height, channels;
     float* pixels = stbi_loadf(hdrTexturePath.data(), &width, &height, &channels, 0);
     assert(pixels && channels == 3);
@@ -821,7 +821,7 @@ A3::VulkanRenderBackend::createEnvironmentMap(std::string_view hdrTexturePath)
 
     vkQueueWaitIdle(graphicsQueue);
 
-    // --- 이미지 생성 ---
+    // --- ?대?吏 ?앹꽦 ---
     VkImage image;
     VkDeviceMemory imageMemory;
     std::tie(image, imageMemory) = createImage(
@@ -830,7 +830,7 @@ A3::VulkanRenderBackend::createEnvironmentMap(std::string_view hdrTexturePath)
         VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
-    // --- 스테이징 버퍼 생성 ---
+    // --- ?ㅽ뀒?댁쭠 踰꾪띁 ?앹꽦 ---
     auto [stagingBuffer, stagingMem] = createBuffer(
         imageSize,
         VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
@@ -841,7 +841,7 @@ A3::VulkanRenderBackend::createEnvironmentMap(std::string_view hdrTexturePath)
     memcpy(data, rgbaPixels.data(), static_cast<size_t>(imageSize));
     vkUnmapMemory(device, stagingMem);
 
-    // --- 명령 버퍼 기록 ---
+    // --- 紐낅졊 踰꾪띁 湲곕줉 ---
     VkCommandBuffer& cmd = commandBuffers[imageIndex];
     vkResetCommandBuffer(cmd, 0);
 
@@ -889,7 +889,7 @@ A3::VulkanRenderBackend::createEnvironmentMap(std::string_view hdrTexturePath)
     vkDestroyBuffer(device, stagingBuffer, nullptr);
     vkFreeMemory(device, stagingMem, nullptr);
 
-    // --- ImageView 생성 ---
+    // --- ImageView ?앹꽦 ---
     VkImageView imageView;
     VkImageViewCreateInfo viewInfo{
         .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
@@ -900,7 +900,7 @@ A3::VulkanRenderBackend::createEnvironmentMap(std::string_view hdrTexturePath)
     };
     vkCreateImageView(device, &viewInfo, nullptr, &imageView);
 
-    // --- Sampler 생성 ---
+    // --- Sampler ?앹꽦 ---
     VkSampler sampler;
     VkSamplerCreateInfo samplerInfo{
         .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
@@ -1811,6 +1811,6 @@ In the vulkan spec,
 [VUID-vkCmdTraceRaysKHR-pHitShaderBindingTable-03689] pHitShaderBindingTable->deviceAddress must be a multiple of VkPhysicalDeviceRayTracingPipelinePropertiesKHR::shaderGroupBaseAlignment
 
 As shown in the vulkan spec 40.3.1. Indexing Rules,
-    pHitShaderBindingTable->deviceAddress + pHitShaderBindingTable->stride �� (
-    instanceShaderBindingTableRecordOffset + geometryIndex �� sbtRecordStride + sbtRecordOffset )
+    pHitShaderBindingTable->deviceAddress + pHitShaderBindingTable->stride 占쏙옙 (
+    instanceShaderBindingTableRecordOffset + geometryIndex 占쏙옙 sbtRecordStride + sbtRecordOffset )
 */

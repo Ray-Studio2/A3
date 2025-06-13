@@ -59,6 +59,17 @@ void main()
 //=========================
 
 #define LIGHT_INSTANCE_INDEX 6
+#define PI 3.1415926535
+
+struct TriangleVertices {
+	vec4 p0;
+	vec4 p1;
+	vec4 p2;
+
+	vec4 n0;
+	vec4 n1;
+	vec4 n2;
+};
 
 struct VertexAttributes
 {
@@ -98,29 +109,31 @@ layout( binding = 0 ) uniform accelerationStructureEXT topLevelAS;
 layout( location = 0 ) rayPayloadInEXT Payload payload;
 hitAttributeEXT vec2 attribs;
 
-float RandomValue(inout uint state) {
+/////////////////////////////////////////////////////////////////////////////////////////////
+float RandomValue(uint state) {
     state *= (state + 195439) * (state + 124395) * (state + 845921);
     return state / 4294967295.0; // 2^31 - 1 (uint 최댓값으로 나눔) -> 0~1 사이의 실수
 }
 
-float RandomValueNormalDistribution(inout uint state) {
+float RandomValueNormalDistribution(uint state) {
     float theta = 2 * 3.1415926 * RandomValue(state);
     float rho = sqrt(-2.0 * log(RandomValue(state)));
     return rho * cos(theta);
 }
 
-vec3 RandomDirection(inout uint state) {
+vec3 RandomDirection(uint state) {
     float x = RandomValueNormalDistribution(state);
     float y = RandomValueNormalDistribution(state);
     float z = RandomValueNormalDistribution(state);
     return normalize(vec3(x, y, z));
 }
 
-vec3 RandomHemisphereDirection(vec3 normal, inout uint state) {
+vec3 RandomHemisphereDirection(vec3 normal, uint state) {
     vec3 dir = RandomDirection(state);
     return dir * sign(dot(normal, dir));
 }
 
+/////////////////////////////////////////////////////////////////////////////////////////////
 uint wang_hash(uint seed)
 {
     seed = uint(seed ^ uint(61)) ^ uint(seed >> uint(16));
@@ -172,19 +185,59 @@ vec3 cosineSampleHemisphere(uvec2 pixel, uint sampleIndex, uint depth, vec3 norm
     return normalize(tangent * direction.x + bitangent * direction.y + normal * direction.z);
 }
 
-uint binarySearchTriangleIdx(float target) {
-	ObjectDesc objDesc = objectDescs.desc[LIGHT_INSTANCE_INDEX];
-	cumulativeTriangleAreaBuffer sum = cumulativeTriangleAreaBuffer(objDesc.cumulativeTriangleAreaAddress);
+/////////////////////////////////////////////////////////////////////////////////////////////
+void binarySearchTriangleIdx(uint state, out uint triangleIdx, out float lightArea) {
+
+	ObjectDesc lightObjDesc = objectDescs.desc[LIGHT_INSTANCE_INDEX];
+	cumulativeTriangleAreaBuffer sum = cumulativeTriangleAreaBuffer(lightObjDesc.cumulativeTriangleAreaAddress);
+
+	lightArea = sum.t[lightObjDesc.triangleCount];
+	float target = RandomValue(state) * lightArea;
 
 	uint l = 1;
-	uint r = objDesc.triangleCount;
+	uint r = lightObjDesc.triangleCount;
 	while (l <= r) {
 		uint mid = l + ((r - l) / 2);
-		if (sum.t[mid] < target && target <= sum.t[mid]) return mid;
+		if (sum.t[mid - 1] < target && target <= sum.t[mid]) {
+			triangleIdx = mid;
+			return;
+		}
 		else if (target > sum.t[mid]) l = mid + 1;
 		else r = mid - 1;
 	}
 }
+
+void uniformSamplePointOnTriangle(uint state, uint triangleIdx, out vec3 pointOnTriangle, out vec3 normalOnTriangle) {
+	ObjectDesc lightObjDesc = objectDescs.desc[LIGHT_INSTANCE_INDEX];
+
+	IndexBuffer lightIndexBuffer = IndexBuffer(lightObjDesc.indexDeviceAddress);
+	uvec3 index;
+	uint base = triangleIdx * 3u;
+	index.x = lightIndexBuffer.i[base + 0];
+	index.y = lightIndexBuffer.i[base + 1];
+	index.z = lightIndexBuffer.i[base + 2];
+
+	PositionBuffer lightPositionBuffer = PositionBuffer(lightObjDesc.vertexPositionDeviceAddress);
+	vec4 p0 = lightPositionBuffer.p[index.x];
+    vec4 p1 = lightPositionBuffer.p[index.y];
+    vec4 p2 = lightPositionBuffer.p[index.z];
+
+	AttributeBuffer attributeBuffer = AttributeBuffer(lightObjDesc.vertexAttributeDeviceAddress);
+	VertexAttributes a0 = attributeBuffer.a[index.x];
+	VertexAttributes a1 = attributeBuffer.a[index.y];
+	VertexAttributes a2 = attributeBuffer.a[index.z];
+	vec3 n0 = normalize(a0.norm.xyz);
+	vec3 n1 = normalize(a1.norm.xyz);
+ 	vec3 n2 = normalize(a2.norm.xyz);
+
+	float u = RandomValue(state);
+	float v = RandomValue(state * 3u);
+	float w = (1.0f - u - v);
+
+	pointOnTriangle = (w * p0 + u * p1 + v * p2).xyz;
+	normalOnTriangle = normalize(w * n0 + u * n1 + v * n2).xyz;
+}
+/////////////////////////////////////////////////////////////////////////////////////////////
 
 void main()
 {
@@ -224,37 +277,85 @@ void main()
     uvec2 pixelCoord = gl_LaunchIDEXT.xy;
     uvec2 screenSize = gl_LaunchSizeEXT.xy;
 
-	vec3 lightColor = vec3(0.0);
-	vec3 temp = vec3(0.0);
+	// vec3 lightColor = vec3(0.0);
+	// vec3 temp = vec3(0.0);
 
-	uint tempDepth = ray.depth;
-
-	if (LIGHT_INSTANCE_INDEX == gl_InstanceCustomIndexEXT) 
-	{
-		lightColor = vec3(5.0);
+	uint tempDepth = payload.depth;
+	
+	if (gl_InstanceCustomIndexEXT == LIGHT_INSTANCE_INDEX) { // depth = 0
+		payload.radiance = color;
+		return;
 	}
 
-	uint numSampleByDepth = (ray.depth == 0 ? sq.numSamples : sq.numSamples > 4 ? 4 : sq.numSamples);
-	if (ray.depth + 1 < sq.maxDepth) {
-		ray.depth += 1;
-		for (uint i=0; i < numSampleByDepth; ++i) {
-			uint rngState = (pixelCoord.y * screenSize.x + pixelCoord.x) * (ray.depth + 1) * (i + 1);
-			vec3 rayDir = RandomHemisphereDirection(worldNormal, rngState);
-            //vec3 rayDir = uniformSampleSphere(gl_LaunchIDEXT.xy, i, ray.depth);
+	vec3 lightEmittance = vec3(10.0);
 
-			traceRayEXT(
-				topLevelAS,                         // topLevel
-				gl_RayFlagsOpaqueEXT, 0xff,         // rayFlags, cullMask
-				0, 1, 1,                            // sbtRecordOffset, sbtRecordStride, missIndex
-				worldPos, 0.0001, rayDir, 100.0,  	// origin, tmin, direction, tmax
-				0);                                 // payload 
+	const uint directLightSampleCount = 64;
+	vec3 tempRadiance = vec3(0.0);
+	for (int i=0; i < directLightSampleCount; ++i) {
+		uint rngState = (pixelCoord.y * screenSize.x + pixelCoord.x) * (payload.depth + 1) * (i + 1);
 
-			temp += max(dot(worldNormal, rayDir), 0.0) * ray.radiance;
-		}
-		temp *= 1.0 / float(numSampleByDepth);
-		ray.depth = tempDepth;
+		uint triangleIdx; float triangleArea;
+		binarySearchTriangleIdx(rngState * 7u, triangleIdx, triangleArea);
+		//triangleIdx = 244; triangleArea = 24.5991;
+
+		vec3 pointOnTriangle, normalOnTriangle;
+		uniformSamplePointOnTriangle(rngState * 11u, triangleIdx, pointOnTriangle, normalOnTriangle);
+
+		vec3 pointOnTriangleWorld = objToWorld * vec4(pointOnTriangle, 1.0);
+		vec3 normalOnTriangleWorld = normalize(objToWorld * vec4(normalOnTriangle, 0.0));
+
+		float distToLight = length(pointOnTriangleWorld - worldPos);
+		vec3 shadowRayDir = normalize(pointOnTriangleWorld - worldPos);
+
+		const float eps = 1e-4;
+		float tMax = max(distToLight - eps, 0.0); // 목표 직전까지
+
+		rayQueryEXT rq;
+		rayQueryInitializeEXT(
+			rq, topLevelAS,
+			gl_RayFlagsTerminateOnFirstHitEXT | gl_RayFlagsSkipClosestHitShaderEXT,
+			0xFF,
+			worldPos + worldNormal * eps,
+			0.0,
+			shadowRayDir,
+			tMax
+		);
+		
+		while (rayQueryProceedEXT(rq)) {}
+
+		bool visible = rayQueryGetIntersectionTypeEXT(rq, true) == gl_RayQueryCommittedIntersectionNoneEXT;
+
+		float visibility = visible ? 1.0 : 0.0;
+		vec3 r = pointOnTriangleWorld - worldPos;
+		float P = dot(normalOnTriangleWorld, -shadowRayDir) / dot(r, r);
+		tempRadiance += max(dot(worldNormal, shadowRayDir), 0.0) * lightEmittance * visibility * P * triangleArea;
 	}
-	ray.radiance = lightColor +  2.0 * color * temp; // FIX: doesn't show anything; very bright with no division
+	tempRadiance *= (1 / float(directLightSampleCount));
+	payload.radiance = (color / PI) * tempRadiance;
+
+	// uint numSampleByDepth = (payload.depth == 0 ? sq.numSamples : sq.numSamples > 4 ? 4 : sq.numSamples);
+	// if (payload.depth + 1 < sq.maxDepth) {
+	// 	payload.depth += 1;
+	// 	for (uint i=0; i < numSampleByDepth; ++i) {
+	// 		uint rngState = (pixelCoord.y * screenSize.x + pixelCoord.x) * (payload.depth + 1) * (i + 1);
+    //         //vec3 rayDir = uniformSampleSphere(gl_LaunchIDEXT.xy, i, payload.depth);
+
+
+	// 		vec3 rayDir = RandomHemisphereDirection(worldNormal, rngState);
+
+	// 		traceRayEXT(
+	// 			topLevelAS,                         // topLevel
+	// 			gl_RayFlagsOpaqueEXT, 0xff,         // rayFlags, cullMask
+	// 			0, 1, 1,                            // sbtRecordOffset, sbtRecordStride, missIndex
+	// 			worldPos, 0.0001, rayDir, 100.0,  	// origin, tmin, direction, tmax
+	// 			0);                                 // payload 
+
+	// 		temp += max(dot(worldNormal, rayDir), 0.0) * payload.radiance;
+	// 	}
+	// 	temp *= 1.0 / float(numSampleByDepth);
+	// 	payload.depth = tempDepth;
+	// }
+	// payload.radiance = lightColor +  2.0 * color * temp; // FIX: doesn't show anything; very bright with no division
 }
 #endif
 

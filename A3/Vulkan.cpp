@@ -433,6 +433,7 @@ std::vector<const char*> deviceExtensions = {
     VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME, // not used
     VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME, // not used
     VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
+    VK_KHR_RAY_QUERY_EXTENSION_NAME,
 
     VK_KHR_SPIRV_1_4_EXTENSION_NAME, // not used
     VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME,
@@ -483,8 +484,8 @@ void VulkanRenderBackend::createVkQueueFamily()
         if( queueFamilyIndex >= queueFamilyCount )
             throw std::runtime_error( "failed to find a graphics & present queue!" );
     }
-    float queuePriority = 1.0f;
 
+    float queuePriority = 1.0f;
     VkDeviceQueueCreateInfo queueCreateInfo{
         .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
         .queueFamilyIndex = queueFamilyIndex,
@@ -492,36 +493,57 @@ void VulkanRenderBackend::createVkQueueFamily()
         .pQueuePriorities = &queuePriority,
     };
 
-    VkPhysicalDeviceFeatures deviceFeatures{};
-    deviceFeatures.shaderInt64 = VK_TRUE;
-
-    VkDeviceCreateInfo createInfo{
-        .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
-        .queueCreateInfoCount = 1,
-        .pQueueCreateInfos = &queueCreateInfo,
-        .enabledExtensionCount = ( uint32 )deviceExtensions.size(),
-        .ppEnabledExtensionNames = deviceExtensions.data(),
-        .pEnabledFeatures = &deviceFeatures,
-    };
-
-    VkPhysicalDeviceBufferDeviceAddressFeatures f1{
+    VkPhysicalDeviceBufferDeviceAddressFeatures bdaFeat{
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES,
         .bufferDeviceAddress = VK_TRUE,
     };
 
-    VkPhysicalDeviceAccelerationStructureFeaturesKHR f2{
+    VkPhysicalDeviceRayQueryFeaturesKHR rqFeat{
+    .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_QUERY_FEATURES_KHR,
+    .rayQuery = VK_TRUE
+    };
+
+    VkPhysicalDeviceAccelerationStructureFeaturesKHR asFeat{
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR,
         .accelerationStructure = VK_TRUE,
     };
 
-    VkPhysicalDeviceRayTracingPipelineFeaturesKHR f3{
+    VkPhysicalDeviceRayTracingPipelineFeaturesKHR rtpFeat{
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR,
         .rayTracingPipeline = VK_TRUE,
     };
 
-    createInfo.pNext = &f1;
-    f1.pNext = &f2;
-    f2.pNext = &f3;
+    VkPhysicalDeviceFeatures2 feats2{
+    .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2
+    };
+
+    feats2.pNext = &bdaFeat;
+    bdaFeat.pNext = &rqFeat;
+    rqFeat.pNext = &asFeat;
+    asFeat.pNext = &rtpFeat;
+    rtpFeat.pNext = nullptr;
+
+    vkGetPhysicalDeviceFeatures2(physicalDevice, &feats2);
+
+    if (!rqFeat.rayQuery)
+        throw std::runtime_error("Device doesn't support VK_KHR_ray_query");
+
+    feats2.features.shaderInt64 = VK_TRUE;
+    bdaFeat.bufferDeviceAddress = VK_TRUE;
+    rqFeat.rayQuery = VK_TRUE;
+    asFeat.accelerationStructure = VK_TRUE;
+    rtpFeat.rayTracingPipeline = VK_TRUE;
+
+
+    VkDeviceCreateInfo createInfo{
+        .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+        .pNext = &feats2,
+        .queueCreateInfoCount = 1,
+        .pQueueCreateInfos = &queueCreateInfo,
+        .enabledExtensionCount = ( uint32 )deviceExtensions.size(),
+        .ppEnabledExtensionNames = deviceExtensions.data(),
+        .pEnabledFeatures = nullptr,
+    };
 
     if( vkCreateDevice( physicalDevice, &createInfo, nullptr, &device ) != VK_SUCCESS )
     {

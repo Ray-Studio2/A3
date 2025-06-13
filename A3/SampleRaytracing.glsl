@@ -1,129 +1,99 @@
+#extension GL_GOOGLE_include_directive : require
+#include "Sampler.glsl"
+
 #extension GL_EXT_ray_tracing : enable
 #extension GL_EXT_buffer_reference : require
 #extension GL_EXT_buffer_reference_uvec2 : require
 #extension GL_EXT_scalar_block_layout : require
 #extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
 
-float rand(vec2 co) {
-    return fract(sin(dot(co.xy ,vec2(12.9898,78.233))) * 43758.5453);
+#define MAX_DEPTH 3
+#define SAMPLE_COUNT 20
+
+vec3 toneMapACES(vec3 x) {
+    const float a = 2.51;
+    const float b = 0.03;
+    const float c = 2.43;
+    const float d = 0.59;
+    const float e = 0.14;
+    return clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0, 1.0);
 }
 
-vec3 randomHemisphereNormal(vec3 normal, vec2 seed) {
-    float theta = acos(rand(seed)); // [0, ��/2]
-    float phi = rand(seed.yx + vec2(0.123, 0.456)) * 6.2831853;
-
-    vec3 dir = vec3(
-        sin(theta) * cos(phi),
-        sin(theta) * sin(phi),
-        cos(theta)
-    );
-
-    // local space �� world space
-    if (dot(dir, normal) < 0.0) dir = -dir;
-    return normalize(dir);
-}
-
-float RandomValue(inout uint state) {
-    state *= (state + 195439) * (state + 124395) * (state + 845921);
-    return state / 4294967295.0;
-}
-float RandomValueNormalDistribution(inout uint state) {
-    float theta = 2 * 3.1415926 * RandomValue(state);
-    float rho = sqrt(-2 * log(RandomValue(state)));
-    return rho * cos(theta);
-}
-vec3 RandomDirection(inout uint state) {
-    float x = RandomValueNormalDistribution(state);
-    float y = RandomValueNormalDistribution(state);
-    float z = RandomValueNormalDistribution(state);
-    return normalize(vec3(x, y, z));
-}
-vec3 RandomHemisphereDirection(vec3 normal, inout uint state) {
-    // Cosine-weighted hemisphere sampling
-    float r1 = RandomValue(state);
-    float r2 = RandomValue(state);
-    
-    float theta = acos(sqrt(1.0 - r1)); // cosine-weighted
-    float phi = 2.0 * 3.14159265 * r2;
-    
-    // Generate direction in local space
-    vec3 localDir = vec3(
-        sin(theta) * cos(phi),
-        sin(theta) * sin(phi),
-        cos(theta)
-    );
-    
-    // Transform to world space aligned with normal
-    vec3 tangent = abs(normal.x) > 0.9 ? vec3(0, 1, 0) : vec3(1, 0, 0);
-    tangent = normalize(cross(tangent, normal));
-    vec3 bitangent = cross(normal, tangent);
-    
-    return tangent * localDir.x + bitangent * localDir.y + normal * localDir.z;
-}
-
-struct RayPayload 
+struct RayPayload
 {
-	vec3 color;
-	int depth;
+    vec3 rayDirection;
+    vec3 radiance;
+    vec3 depthColor[MAX_DEPTH];
+    uint depth;
 };
 
-#define MAX_DEPTH 5
-#define SAMPLE_COUNT 64
+layout( binding = 2 ) uniform CameraProperties
+{
+    vec3 cameraPos;
+    float yFov_degree;
+} g;
 
 #if RAY_GENERATION_SHADER
 //=========================
-//	RAY GENERATION SHADER
+//   RAY GENERATION SHADER
 //=========================
 layout( binding = 0 ) uniform accelerationStructureEXT topLevelAS;
 layout( binding = 1, rgba8 ) uniform image2D image;
-layout( binding = 2 ) uniform CameraProperties
-{
-	vec3 cameraPos;
-	float yFov_degree;
-} g;
+layout(location = 0) rayPayloadEXT RayPayload gPayload;
 
-layout( location = 0 ) rayPayloadEXT RayPayload payload;
+vec3 gammaCorrect(vec3 color) {
+    return pow(color, vec3(1.0 / 2.2));
+}
 
 void main()
 {
-	const vec3 cameraX = vec3( 1, 0, 0 );
-	const vec3 cameraY = vec3( 0, -1, 0 );
-	const vec3 cameraZ = vec3( 0, 0, -1 );
-	const float aspect_y = tan( radians( g.yFov_degree ) * 0.5 );
-	const float aspect_x = aspect_y * float( gl_LaunchSizeEXT.x ) / float( gl_LaunchSizeEXT.y );
+    const vec3 cameraX = vec3( 1, 0, 0 );
+    const vec3 cameraY = vec3( 0, -1, 0 );
+    const vec3 cameraZ = vec3( 0, 0, -1 );
+    const float aspect_y = tan( radians( g.yFov_degree ) * 0.5 );
+    const float aspect_x = aspect_y * float( gl_LaunchSizeEXT.x ) / float( gl_LaunchSizeEXT.y );
+    
+    const vec2 screenCoord = vec2( gl_LaunchIDEXT.xy ) + vec2( 0.5 );
+    const vec2 ndc = screenCoord / vec2( gl_LaunchSizeEXT.xy ) * 2.0 - 1.0;
+    vec3 rayDir = ndc.x * aspect_x * cameraX + ndc.y * aspect_y * cameraY + cameraZ;
+    
+    gPayload.radiance = vec3( 0.0 );
+    for(uint i = 0; i < MAX_DEPTH; ++i)
+    {
+       gPayload.depthColor[i] = vec3(0.0);
+    }
+    gPayload.depth = 0;
+    
+    gPayload.rayDirection = rayDir;
+    traceRayEXT(
+       topLevelAS,                         // topLevel
+       gl_RayFlagsOpaqueEXT, 0xff,         // rayFlags, cullMask
+       0, 1, 0,                            // sbtRecordOffset, sbtRecordStride, missIndex
+       g.cameraPos, 0.0, rayDir, 100.0,    // origin, tmin, direction, tmax
+       0 );                                 // payload
+    
+    vec3 finalColor = gPayload.radiance;
 
-	const vec2 screenCoord = vec2( gl_LaunchIDEXT.xy ) + vec2( 0.5 );
-	const vec2 ndc = screenCoord / vec2( gl_LaunchSizeEXT.xy ) * 2.0 - 1.0;
-	vec3 rayDir = ndc.x * aspect_x * cameraX + ndc.y * aspect_y * cameraY + cameraZ;
-
-	payload = RayPayload(vec3(0.0), 0);
-
-	traceRayEXT(
-		topLevelAS,                         // topLevel
-		gl_RayFlagsOpaqueEXT, 0xff,         // rayFlags, cullMask
-		0, 1, 0,                            // sbtRecordOffset, sbtRecordStride, missIndex
-		g.cameraPos, 0.0, rayDir, 100.0,    // origin, tmin, direction, tmax
-		0 );                                 // payload
-
-	imageStore( image, ivec2( gl_LaunchIDEXT.xy ), vec4( payload.color, 0.0 ) );
+   imageStore( image, ivec2( gl_LaunchIDEXT.xy ), vec4( finalColor, 0.0 ) );
 }
 #endif
 
 #if CLOSEST_HIT_SHADER
 //=========================
-//	CLOSEST HIT SHADER
+//   CLOSEST HIT SHADER
 //=========================
+
 struct VertexAttributes
 {
-	vec4 norm;
-	vec4 uv;
+   vec4 norm;
+   vec4 uv;
 };
 
 struct ObjectDesc
 {
-	uint64_t vertexPositionDeviceAddress;
-	uint64_t vertexAttributeDeviceAddress;
-	uint64_t indexDeviceAddress;
+   uint64_t vertexPositionDeviceAddress;
+   uint64_t vertexAttributeDeviceAddress;
+   uint64_t indexDeviceAddress;
 };
 
 layout(buffer_reference, scalar) buffer PositionBuffer { vec4 p[]; };
@@ -131,123 +101,152 @@ layout(buffer_reference, scalar) buffer AttributeBuffer { VertexAttributes a[]; 
 layout(buffer_reference, scalar) buffer IndexBuffer { ivec3 i[]; }; // Triangle indices
 layout( binding = 3, scalar) buffer ObjectDescBuffer
 {
-	ObjectDesc desc[];
-} objectDescs;
+   ObjectDesc desc[];
+} gObjectDescs;
 
 layout( shaderRecordEXT ) buffer CustomData
 {
-	vec3 color;
+   vec3 color;
 };
 
 layout( binding = 0 ) uniform accelerationStructureEXT topLevelAS;
-
-layout( location = 0 ) rayPayloadInEXT RayPayload payload;
-layout( location = 1 ) rayPayloadEXT uint missCount;
+layout(location = 0) rayPayloadInEXT RayPayload gPayload;
 hitAttributeEXT vec2 attribs;
 
-#define AO_SAMPLES 128
+#define LIGHT_INSTANCE_INDEX 6
 
-void main() {
-	ObjectDesc objDesc = objectDescs.desc[gl_InstanceCustomIndexEXT];
+void main()
+{
+    ObjectDesc objDesc = gObjectDescs.desc[gl_InstanceCustomIndexEXT];
 
-	IndexBuffer indexBuffer = IndexBuffer(objDesc.indexDeviceAddress);
-	ivec3 index = indexBuffer.i[gl_PrimitiveID];
-	
-	PositionBuffer positionBuffer = PositionBuffer(objDesc.vertexPositionDeviceAddress);
-	vec4 p0 = positionBuffer.p[index.x];
-    vec4 p1 = positionBuffer.p[index.y];
-    vec4 p2 = positionBuffer.p[index.z];
-	
-	float u = attribs.x;
-	float v = attribs.y;
-	float w = 1.0 - u - v;
-	
-	vec3 position = (w * p0 + u * p1 + v * p2).xyz;
+    IndexBuffer indexBuffer = IndexBuffer(objDesc.indexDeviceAddress);
+    ivec3 index = indexBuffer.i[gl_PrimitiveID];
 
-	AttributeBuffer attributeBuffer = AttributeBuffer(objDesc.vertexAttributeDeviceAddress);
-	VertexAttributes vertexAttributes0 = attributeBuffer.a[index.x];
-	VertexAttributes vertexAttributes1 = attributeBuffer.a[index.y];
-	VertexAttributes vertexAttributes2 = attributeBuffer.a[index.z];
-	vec3 n0 = normalize(vertexAttributes0.norm.xyz);
-	vec3 n1 = normalize(vertexAttributes1.norm.xyz);
- 	vec3 n2 = normalize(vertexAttributes2.norm.xyz);
-	vec3 localNormal = normalize(w * n0 + u * n1 + v * n2);
+    PositionBuffer positionBuffer = PositionBuffer(objDesc.vertexPositionDeviceAddress);
+    vec3 p0 = positionBuffer.p[index.x].xyz;
+    vec3 p1 = positionBuffer.p[index.y].xyz;
+    vec3 p2 = positionBuffer.p[index.z].xyz;
 
-	mat4x3 objToWorld = gl_ObjectToWorldEXT;
-	vec3 worldNormal = normalize(objToWorld * vec4(localNormal, 0.0));
-	vec3 worldPos = objToWorld * vec4(position, 1.0);
-	
-	uvec2 pixelCoord = gl_LaunchIDEXT.xy;
-	uvec2 screenSize = gl_LaunchSizeEXT.xy;
-	uint rngState = pixelCoord.y * screenSize.x + pixelCoord.x;
-	// Add more entropy to reduce pixel correlation
-	rngState = rngState * 1664525u + 1013904223u;
-	rngState ^= rngState >> 16;
-	rngState *= 0x85ebca6bu;
-	rngState ^= rngState >> 13;
+    float u = attribs.x;
+    float v = attribs.y;
+    float w = 1.0 - u - v;
+    vec3 position = w * p0 + u * p1 + v * p2;
 
-	// Path tracing - only trace one ray per pixel per frame
-	if (payload.depth >= MAX_DEPTH) {
-		payload.color = vec3(0);
-		return;
-	}
-	
-	// Simple Lambertian BRDF
-	vec3 albedo = color;
-	
-	vec3 accumulated = vec3(0);
-	
-	payload.depth++;
-	for (int i = 0; i < SAMPLE_COUNT; i++) {
-		// Sample random direction for next bounce
-		vec3 bounceDir = RandomHemisphereDirection(worldNormal, rngState);
-		
-		// Trace next ray
-		payload.color = vec3(0);
-		
-		traceRayEXT(
-			topLevelAS,
-			gl_RayFlagsOpaqueEXT, 0xff,
-			0, 1, 0,
-			worldPos + worldNormal * 0.01, 0.001, bounceDir, 100.0,
-			0 );
-		
-		// BRDF evaluation
-		float cosTheta = max(0.0, dot(worldNormal, bounceDir));
-		vec3 brdf = albedo / 3.14159265;
-		float pdf = 0.5 / 3.14159265;
-		
-		// Accumulate Li * BRDF * cosTheta / PDF
-		accumulated += payload.color * brdf * cosTheta / pdf;
-	}
+    AttributeBuffer attrBuf = AttributeBuffer(objDesc.vertexAttributeDeviceAddress);
+    vec3 n0 = normalize(attrBuf.a[index.x].norm.xyz);
+    vec3 n1 = normalize(attrBuf.a[index.y].norm.xyz);
+    vec3 n2 = normalize(attrBuf.a[index.z].norm.xyz);
+    vec3 normal = normalize(w * n0 + u * n1 + v * n2);
 
-	payload.color = accumulated / float(SAMPLE_COUNT);
+    vec3 worldPos = (gl_ObjectToWorldEXT * vec4(position, 1.0)).xyz;
+    vec3 worldNormal = normalize(transpose(inverse(mat3(gl_ObjectToWorldEXT))) * normal);
+    
+    uint currentDepthIndex = gPayload.depth;
+    gPayload.depthColor[currentDepthIndex] = color;
+
+    // 광원에 맞은 경우
+    if (gl_InstanceCustomIndexEXT == LIGHT_INSTANCE_INDEX) 
+    {
+        // 첫 ray가 광원에 맞은 경우
+        if(currentDepthIndex == 0)
+        {
+            gPayload.radiance = vec3(1.0);
+            return;
+        }
+
+        const float kDepthWeights[] = float[](
+            1.00,
+            0.60,
+            0.30,
+            0.10,
+            0.05,
+            0.04,
+            0.02,
+            0.01,
+            0.005,
+            0.002
+         );
+        // currentDepthIndex -= 1: 광원 mesh 색상은 일단 무시
+        currentDepthIndex -= 1;
+
+        float weightSum = 0.0;
+        for (uint i = 0; i <= currentDepthIndex; ++i)
+            weightSum += kDepthWeights[i];
+            
+        // 아직은 씬에 맞게 조정 필요.
+        const float magicNumber = float(SAMPLE_COUNT) * 0.5;
+        // 정규화하여 누적
+        for (uint i = 0; i <= currentDepthIndex; ++i)
+        {
+            float normWeight = kDepthWeights[i] / weightSum;
+            gPayload.radiance += gPayload.depthColor[i] * normWeight / magicNumber;
+        }
+        return;
+    }
+    
+    // Tree Preorder 방식으로 순회 (부모 → 자식)
+    if (gPayload.depth + 1 < MAX_DEPTH) 
+    {
+        uvec2 pixelCoord = gl_LaunchIDEXT.xy;
+        uvec2 screenSize = gl_LaunchSizeEXT.xy;
+        uint rngState = pixelCoord.y * screenSize.x + pixelCoord.x;
+        RayPayload payloadBackup = gPayload;
+        gPayload.depth += 1;
+        for (int i = 0; i < SAMPLE_COUNT; ++i) 
+        {
+            vec2 seed = vec2(RandomValue2(rngState), RandomValue(rngState));
+            vec3 dir = RandomCosineHemisphere(worldNormal, seed);
+
+            // visit
+            traceRayEXT(
+                topLevelAS,
+                gl_RayFlagsOpaqueEXT, 0xFF,
+                0, 1, 0,
+                worldPos, 0.001, dir, 100.0,
+                0
+            );
+        }
+        vec3 radianceBackup = gPayload.radiance;
+        gPayload = payloadBackup;
+        gPayload.radiance = radianceBackup;
+    }
 }
 
 #endif
 
 #if SHADOW_MISS_SHADER
 //=========================
-//	SHADOW MISS SHADER
+//   SHADOW MISS SHADER
 //=========================
-layout( location = 1 ) rayPayloadInEXT uint missCount;
+//layout( location = 1 ) rayPayloadInEXT uint missCount;
 
 void main()
 {
-	missCount = 1;
+
 }
 #endif
 
 
 #if ENVIRONMENT_MISS_SHADER
 //=========================
-//	ENVIRONMENT MISS SHADER
+//   ENVIRONMENT MISS SHADER
 //=========================
-layout( location = 0 ) rayPayloadInEXT RayPayload payload;
+layout(location = 0) rayPayloadInEXT RayPayload gPayload;
+layout(set = 0, binding = 4) uniform sampler2D environmentMap;
 
 void main()
 {
-	vec3 skyColor = vec3(0.7, 0.8, 1.0);  // Light blue sky
-	payload.color = skyColor;
+    if(gPayload.depth != 0)
+    {
+        return;
+    }
+
+    vec3 dir = normalize(gPayload.rayDirection); // ray direction 넘겨줘야 함
+    vec2 uv = vec2(
+        atan(dir.z, dir.x) / (2.0 * 3.1415926535) + 0.5,
+        acos(clamp(dir.y, -1.0, 1.0)) / 3.1415926535
+    );
+    vec3 color = texture(environmentMap, uv).rgb;
+    gPayload.radiance = toneMapACES(color);
 }
 #endif

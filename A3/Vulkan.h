@@ -61,6 +61,7 @@ private:
     void createSwapChain();
     void createImguiRenderPass( int32 screenWidth, int32 screenHeight );
     void createCommandCenter();
+    std::tuple<VkImage, VkDeviceMemory, VkImageView, VkSampler> createEnvironmentMap(std::string_view hdrTexturePath);
 
     void loadDeviceExtensionFunctions( VkDevice device );
 
@@ -129,7 +130,7 @@ private:
     std::vector<VkImage> swapChainImages;
     std::vector<VkImageView> swapChainImageViews;
     std::vector<VkFramebuffer> framebuffers;
-    const VkFormat swapChainImageFormat = VK_FORMAT_B8G8R8A8_SRGB;    // intentionally chosen to match a specific format
+    const VkFormat swapChainImageFormat = VK_FORMAT_B8G8R8A8_SRGB;// VK_FORMAT_R16G16B16A16_SFLOAT;    // intentionally chosen to match a specific format
     const VkExtent2D swapChainImageExtent = { .width = RenderSettings::screenWidth, .height = RenderSettings::screenHeight };
 
     std::vector<VkCommandPool> commandPools;
@@ -138,12 +139,16 @@ private:
     std::vector<VkSemaphore> imageAvailableSemaphores;
     std::vector<VkSemaphore> renderFinishedSemaphores;
     std::vector<VkFence> fences;
-    uint32 semaphoreIndex;
     uint32 imageIndex;
 
     VkBuffer tlasBuffer;
     VkDeviceMemory tlasBufferMem;
     VkAccelerationStructureKHR tlas;
+
+    VkImage envImage;
+    VkDeviceMemory envImageMem;
+    VkImageView envImageView;
+    VkSampler envSampler;
 
     VkImage outImage;
     VkDeviceMemory outImageMem;

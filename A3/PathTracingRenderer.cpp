@@ -6,13 +6,13 @@
 #include "MeshResource.h"
 #include "AccelerationStructure.h"
 #include "PipelineStateObject.h"
-
 using namespace A3;
 
 PathTracingRenderer::PathTracingRenderer( VulkanRenderBackend* inBackend )
 	: backend( inBackend )
     , samplePSO( new RaytracingPSO() )
 {
+    
 }
 
 PathTracingRenderer::~PathTracingRenderer() {}
@@ -50,17 +50,15 @@ void PathTracingRenderer::buildSamplePSO()
         psoDesc.shaders.emplace_back( SS_Miss, "SampleRaytracing.glsl", "ENVIRONMENT" );
         psoDesc.shaders.emplace_back( SS_ClosestHit, "SampleRaytracing.glsl" );
         psoDesc.shaders.emplace_back( SS_Miss, "SampleRaytracing.glsl", "SHADOW" );
-
         ShaderDesc& rayGeneration = psoDesc.shaders[ 0 ];
         rayGeneration.descriptors.emplace_back( SRD_AccelerationStructure, 0 );
         rayGeneration.descriptors.emplace_back( SRD_StorageImage, 1 );
         rayGeneration.descriptors.emplace_back( SRD_UniformBuffer, 2 );
-
+        ShaderDesc& environmentMiss = psoDesc.shaders[1];
+        environmentMiss.descriptors.emplace_back( SRD_ImageSampler, 4 );
         ShaderDesc& closestHit = psoDesc.shaders[ 2 ];
         closestHit.descriptors.emplace_back( SRD_AccelerationStructure, 0 );
         closestHit.descriptors.emplace_back( SRD_StorageBuffer, 3 );
-        /*closestHit.descriptors.emplace_back( SRD_StorageBuffer, 4 );
-        closestHit.descriptors.emplace_back( SRD_StorageBuffer, 5 );*/
     }
 
     samplePSO->shaders.resize( psoDesc.shaders.size() );

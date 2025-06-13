@@ -57,11 +57,12 @@ if not exist "%VCPKG_ROOT%" (
 )
 
 REM vcpkg install 부분
-%VCPKG_ROOT%\vcpkg install glfw3:x64-windows
-%VCPKG_ROOT%\vcpkg install glslang:x64-windows
-%VCPKG_ROOT%\vcpkg install vulkan:x64-windows
-REM %VCPKG_ROOT%\vcpkg install vulkan-validationlayers:x64-windows
-%VCPKG_ROOT%\vcpkg install spirv-tools:x64-windows
+%VCPKG_ROOT%\vcpkg install glfw3
+%VCPKG_ROOT%\vcpkg install glslang
+%VCPKG_ROOT%\vcpkg install vulkan
+REM %VCPKG_ROOT%\vcpkg install vulkan-validationlayers
+%VCPKG_ROOT%\vcpkg install spirv-tools
+%VCPKG_ROOT%\vcpkg install stb
 REM vulkan Validation layer용 환경변수
 REM echo [VK_ADD_LAYER_PATH]
 REM echo %VCPKG_ROOT%\installed\x64-windows\bin

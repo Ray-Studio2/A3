@@ -8,7 +8,7 @@
 #extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
 
 #define MAX_DEPTH 3
-#define SAMPLE_COUNT 64  // 최대 샘플로 노이즈 최소화
+#define SAMPLES_PER_PIXEL 64
 
 vec3 toneMapACES(vec3 x) {
     const float a = 2.51;
@@ -19,7 +19,6 @@ vec3 toneMapACES(vec3 x) {
     return clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0, 1.0);
 }
 
-// Reinhard 톤매핑 (더 부드러운 결과)
 vec3 toneMapReinhard(vec3 color) {
     return color / (1.0 + color);
 }
@@ -28,15 +27,29 @@ struct RayPayload
 {
     vec3 rayDirection;
     vec3 radiance;
-    vec3 depthColor[MAX_DEPTH];
+    vec3 throughput;
     uint depth;
+    uint rngState;
 };
 
 layout( binding = 2 ) uniform CameraProperties
 {
     vec3 cameraPos;
     float yFov_degree;
+    uint frameCount;
 } g;
+
+// Improved random number generator
+uint pcg_hash(uint seed) {
+    uint state = seed * 747796405u + 2891336453u;
+    uint word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
+    return (word >> 22u) ^ word;
+}
+
+float random(inout uint rngState) {
+    rngState = pcg_hash(rngState);
+    return float(rngState) / float(0xffffffffu);
+}
 
 #if RAY_GENERATION_SHADER
 //=========================
@@ -46,7 +59,6 @@ layout( binding = 0 ) uniform accelerationStructureEXT topLevelAS;
 layout( binding = 1, rgba8 ) uniform image2D image;
 layout(location = 0) rayPayloadEXT RayPayload gPayload;
 
-
 void main()
 {
     const vec3 cameraX = vec3( 1, 0, 0 );
@@ -55,44 +67,58 @@ void main()
     const float aspect_y = tan( radians( g.yFov_degree ) * 0.5 );
     const float aspect_x = aspect_y * float( gl_LaunchSizeEXT.x ) / float( gl_LaunchSizeEXT.y );
     
-    const vec2 screenCoord = vec2( gl_LaunchIDEXT.xy ) + vec2( 0.5 );
-    const vec2 ndc = screenCoord / vec2( gl_LaunchSizeEXT.xy ) * 2.0 - 1.0;
-    vec3 rayDir = ndc.x * aspect_x * cameraX + ndc.y * aspect_y * cameraY + cameraZ;
+    uint pixelIndex = gl_LaunchIDEXT.y * gl_LaunchSizeEXT.x + gl_LaunchIDEXT.x;
+    uint baseSeed = pcg_hash(pixelIndex + g.frameCount * 1664525u);
     
-    gPayload.radiance = vec3( 0.0 );
-    for(uint i = 0; i < MAX_DEPTH; ++i)
+    vec3 totalRadiance = vec3(0.0);
+    
+    for (uint sampleIndex = 0; sampleIndex < SAMPLES_PER_PIXEL; ++sampleIndex)
     {
-       gPayload.depthColor[i] = vec3(0.0);
+        uint rngState = pcg_hash(baseSeed + sampleIndex * 1013904223u);
+        
+        // Anti-aliasing jitter for each sample
+        float r1 = random(rngState);
+        float r2 = random(rngState);
+        
+        const vec2 screenCoord = vec2( gl_LaunchIDEXT.xy ) + vec2( r1, r2 );
+        const vec2 ndc = screenCoord / vec2( gl_LaunchSizeEXT.xy ) * 2.0 - 1.0;
+        vec3 rayDir = ndc.x * aspect_x * cameraX + ndc.y * aspect_y * cameraY + cameraZ;
+        
+        // Initialize payload for this sample
+        gPayload.radiance = vec3( 0.0 );
+        gPayload.throughput = vec3( 1.0 );
+        gPayload.depth = 0;
+        gPayload.rngState = rngState;
+        gPayload.rayDirection = rayDir;
+        
+        // Trace ray for this sample
+        traceRayEXT(
+           topLevelAS,
+           gl_RayFlagsOpaqueEXT, 0xff,
+           0, 1, 0,
+           g.cameraPos, 0.0, rayDir, 100.0,
+           0 );
+        
+        // Accumulate radiance from this sample
+        totalRadiance += gPayload.radiance;
     }
-    gPayload.depth = 0;
     
-    gPayload.rayDirection = rayDir;
-    traceRayEXT(
-       topLevelAS,                         // topLevel
-       gl_RayFlagsOpaqueEXT, 0xff,         // rayFlags, cullMask
-       0, 1, 0,                            // sbtRecordOffset, sbtRecordStride, missIndex
-       g.cameraPos, 0.0, rayDir, 100.0,    // origin, tmin, direction, tmax
-       0 );                                 // payload
+    // Average all samples
+    vec3 finalColor = totalRadiance / float(SAMPLES_PER_PIXEL);
     
-    vec3 finalColor = gPayload.radiance;
-    
-    // 노출 보정
-    float exposure = 1.5;
+    // Tone mapping and gamma correction
+    float exposure = 2.0;
     finalColor *= exposure;
-    
-    // 톤매핑 제거하고 단순 클램핑만 적용
-    finalColor = clamp(finalColor, 0.0, 1.0);
-    
-    // 감마 보정
+    finalColor = toneMapACES(finalColor);
     finalColor = pow(finalColor, vec3(1.0 / 2.2));
 
-   imageStore( image, ivec2( gl_LaunchIDEXT.xy ), vec4( finalColor, 0.0 ) );
+    imageStore( image, ivec2( gl_LaunchIDEXT.xy ), vec4( finalColor, 1.0 ) );
 }
 #endif
 
 #if CLOSEST_HIT_SHADER
 //=========================
-//   CLOSEST HIT SHADER
+//   CLOSEST HIT SHADER (BRUTE FORCE)
 //=========================
 
 struct VertexAttributes
@@ -110,7 +136,7 @@ struct ObjectDesc
 
 layout(buffer_reference, scalar) buffer PositionBuffer { vec4 p[]; };
 layout(buffer_reference, scalar) buffer AttributeBuffer { VertexAttributes a[]; };
-layout(buffer_reference, scalar) buffer IndexBuffer { ivec3 i[]; }; // Triangle indices
+layout(buffer_reference, scalar) buffer IndexBuffer { ivec3 i[]; };
 layout( binding = 3, scalar) buffer ObjectDescBuffer
 {
    ObjectDesc desc[];
@@ -153,62 +179,38 @@ void main()
     vec3 worldPos = (gl_ObjectToWorldEXT * vec4(position, 1.0)).xyz;
     vec3 worldNormal = normalize(transpose(inverse(mat3(gl_ObjectToWorldEXT))) * normal);
     
-    uint currentDepthIndex = gPayload.depth;
-    
-    // 색상 증폭 (셰이더 레코드의 색상이 너무 어두울 수 있음)
-    gPayload.depthColor[currentDepthIndex] = color; // pow(color, vec3(0.8)); // 감마를 조정하여 밝게
-    
-
-    // 광원에 맞은 경우
+    // Light emission check
     if (gl_InstanceCustomIndexEXT == LIGHT_INSTANCE_INDEX) 
     {
-        // 광원의 방출광  
-        vec3 lightEmission = vec3(20.0); // 더 밝은 광원
+        vec3 lightEmission = vec3(15.0);
+        float distance = gl_HitTEXT;
+        float attenuation = 1.0 / (1.0 + 0.05 * distance + 0.005 * distance * distance);
         
-        // 첫 ray가 광원에 맞은 경우
-        if(currentDepthIndex == 0)
-        {
-            gPayload.radiance = lightEmission;
-            return;
-        }
-
-        // 간접광의 경우 - 경로상의 모든 색상을 곱함
-        vec3 throughput = vec3(1.0);
-        for (uint i = 0; i < currentDepthIndex; ++i)
-        {
-            throughput *= gPayload.depthColor[i];
-        }
-        gPayload.radiance = throughput * lightEmission / float(SAMPLE_COUNT);
+        gPayload.radiance = gPayload.throughput * lightEmission * attenuation;
         return;
     }
     
-    // 원래 알고리즘으로 복원 - Tree Preorder 방식
-    if (gPayload.depth + 1 < MAX_DEPTH) 
-    {
-        uvec2 pixelCoord = gl_LaunchIDEXT.xy;
-        uvec2 screenSize = gl_LaunchSizeEXT.xy;
-        uint rngState = pixelCoord.y * screenSize.x + pixelCoord.x;
-        RayPayload payloadBackup = gPayload;
-        gPayload.depth += 1;
-        for (int i = 0; i < SAMPLE_COUNT; ++i) 
-        {
-            rngState = rngState * 1664525u + 1013904223u; // 각 샘플마다 다른 시드
-            vec2 seed = vec2(RandomValue2(rngState), RandomValue(rngState));
-            vec3 dir = RandomCosineHemisphere(worldNormal, seed);
-
-            // visit
-            traceRayEXT(
-                topLevelAS,
-                gl_RayFlagsOpaqueEXT, 0xFF,
-                0, 1, 0,
-                worldPos, 0.001, dir, 100.0,
-                0
-            );
-        }
-        vec3 radianceBackup = gPayload.radiance;
-        gPayload = payloadBackup;
-        gPayload.radiance = radianceBackup;
+    if (gPayload.depth >= MAX_DEPTH) {
+        return;
     }
+    
+    // Update throughput with surface color
+    gPayload.throughput *= color;
+    
+    // Sample next direction
+    float r1 = random(gPayload.rngState);
+    float r2 = random(gPayload.rngState);
+    vec2 seed = vec2(r1, r2);
+    vec3 dir = RandomCosineHemisphere(worldNormal, seed);
+    
+    gPayload.depth += 1;
+    traceRayEXT(
+        topLevelAS,
+        gl_RayFlagsOpaqueEXT, 0xFF,
+        0, 1, 0,
+        worldPos, 0.001, dir, 100.0,
+        0
+    );
 }
 
 #endif
@@ -217,35 +219,30 @@ void main()
 //=========================
 //   SHADOW MISS SHADER
 //=========================
-//layout( location = 1 ) rayPayloadInEXT uint missCount;
-
 void main()
 {
-
+    // Empty
 }
 #endif
 
-
 #if ENVIRONMENT_MISS_SHADER
 //=========================
-//   ENVIRONMENT MISS SHADER
+//   ENVIRONMENT MISS SHADER (BRUTE FORCE)
 //=========================
 layout(location = 0) rayPayloadInEXT RayPayload gPayload;
 layout(set = 0, binding = 4) uniform sampler2D environmentMap;
 
 void main()
 {
-    if(gPayload.depth != 0)
-    {
-        return;
-    }
-
-    vec3 dir = normalize(gPayload.rayDirection); // ray direction 넘겨줘야 함
+    vec3 dir = normalize(gPayload.rayDirection);
     vec2 uv = vec2(
         atan(dir.z, dir.x) / (2.0 * 3.1415926535) + 0.5,
         acos(clamp(dir.y, -1.0, 1.0)) / 3.1415926535
     );
     vec3 color = texture(environmentMap, uv).rgb;
-    gPayload.radiance = toneMapACES(color);
+    
+    // Environment contribution scaled by depth
+    float envScale = (gPayload.depth == 0) ? 1.0 : 0.3;
+    gPayload.radiance += gPayload.throughput * color * envScale;
 }
 #endif

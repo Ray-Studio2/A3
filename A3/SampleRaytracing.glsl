@@ -209,22 +209,26 @@ vec3 cosineSampleHemisphere(uvec2 pixel, uint sampleIndex, uint depth, vec3 norm
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////
-void binarySearchTriangleIdx(uint state, out uint triangleIdx, out float lightArea) 
+float getLightArea() 
 {
 	ObjectDesc lightObjDesc = objectDescs.desc[LIGHT_INSTANCE_INDEX];
 	cumulativeTriangleAreaBuffer sum = cumulativeTriangleAreaBuffer(lightObjDesc.cumulativeTriangleAreaAddress);
 
-	lightArea = sum.t[lightObjDesc.triangleCount];
+	return sum.t[lightObjDesc.triangleCount];
+}
+
+uint binarySearchTriangleIdx(uint state, float lightArea) 
+{
+	ObjectDesc lightObjDesc = objectDescs.desc[LIGHT_INSTANCE_INDEX];
+	cumulativeTriangleAreaBuffer sum = cumulativeTriangleAreaBuffer(lightObjDesc.cumulativeTriangleAreaAddress);
 	float target = RandomValue(state) * lightArea;
 
 	uint l = 1;
 	uint r = lightObjDesc.triangleCount;
 	while (l <= r) {
 		uint mid = l + ((r - l) / 2);
-		if (sum.t[mid - 1] < target && target <= sum.t[mid]) {
-			triangleIdx = mid;
-			return;
-		}
+		if (sum.t[mid - 1] < target && target <= sum.t[mid])
+			return mid;
 		else if (target > sum.t[mid]) l = mid + 1;
 		else r = mid - 1;
 	}
@@ -312,25 +316,26 @@ void main()
     uvec2 pixelCoord = gl_LaunchIDEXT.xy;
     uvec2 screenSize = gl_LaunchSizeEXT.xy;
 
-	// vec3 lightColor = vec3(0.0);
-	// vec3 temp = vec3(0.0);
+	const float eps = 1e-4;
+	vec3 lightEmittance = vec3(5.0);
 
-	uint tempDepth = payload.depth;
-	
-	if (gl_InstanceCustomIndexEXT == LIGHT_INSTANCE_INDEX) { // depth = 0
+	if (payload.depth >= sq.maxDepth) 
+		return;
+
+	if (payload.depth == 0 && gl_InstanceCustomIndexEXT == LIGHT_INSTANCE_INDEX) // depth = 0
+	{
 		payload.radiance = vec3(1.0);
 		return;
 	}
 
-	vec3 lightEmittance = vec3(10.0);
-
-	const uint directLightSampleCount = 64;
-	vec3 tempRadiance = vec3(0.0);
+	//////////////////////////////////////////////////////////////// Direct Light
+	vec3 tempRadianceD = vec3(0.0);
+	float lightArea = getLightArea();
+	const uint directLightSampleCount = (payload.depth == 0 ? sq.numSamples : 1);
 	for (int i=0; i < directLightSampleCount; ++i) {
 		uint rngState = (pixelCoord.y * screenSize.x + pixelCoord.x) * (payload.depth + 1) * (i + 1);
 
-		uint triangleIdx; float triangleArea;
-		binarySearchTriangleIdx(rngState * 7u, triangleIdx, triangleArea);
+		uint triangleIdx = binarySearchTriangleIdx(rngState * 7u, lightArea);
 
 		vec3 pointOnTriangle, normalOnTriangle, pointOnTriangleWorld, normalOnTriangleWorld;
 		uniformSamplePointOnTriangle(rngState * 11u, triangleIdx, 
@@ -342,7 +347,6 @@ void main()
 		float distToLight = length(pointOnTriangleWorld - worldPos);
 		vec3 shadowRayDir = normalize(pointOnTriangleWorld - worldPos);
 
-		const float eps = 1e-4;
 		float tMax = max(distToLight - eps, 0.0); // 목표 직전까지
 
 		rayQueryEXT rq;
@@ -350,8 +354,8 @@ void main()
 			rq, topLevelAS,
 			gl_RayFlagsTerminateOnFirstHitEXT | gl_RayFlagsSkipClosestHitShaderEXT,
 			0xFF,
-			worldPos + worldNormal * eps,
-			0.0,
+			worldPos,
+			eps,
 			shadowRayDir,
 			tMax
 		);
@@ -364,34 +368,38 @@ void main()
 		vec3 r = pointOnTriangleWorld - worldPos;
 		float cosL = max(dot(normalOnTriangleWorld, -shadowRayDir), 0.0);
 		float P = cosL / dot(r, r);
-		tempRadiance += max(dot(worldNormal, shadowRayDir), 0.0) * lightEmittance * visibility * P * triangleArea;
+		tempRadianceD += max(dot(worldNormal, shadowRayDir), 0.0) * visibility * P ;
 	}
-	tempRadiance *= (1 / float(directLightSampleCount));
-	payload.radiance = (color / PI) * tempRadiance;
+	tempRadianceD *= (1 / float(directLightSampleCount)); // average
+	payload.radiance = tempRadianceD * (color / PI) * lightEmittance * lightArea;
+	// tempRadianceD = (color / PI) * lightEmittance * lightArea;
 
-	// uint numSampleByDepth = (payload.depth == 0 ? sq.numSamples : sq.numSamples > 4 ? 4 : sq.numSamples);
-	// if (payload.depth + 1 < sq.maxDepth) {
-	// 	payload.depth += 1;
-	// 	for (uint i=0; i < numSampleByDepth; ++i) {
-	// 		uint rngState = (pixelCoord.y * screenSize.x + pixelCoord.x) * (payload.depth + 1) * (i + 1);
-    //         //vec3 rayDir = uniformSampleSphere(gl_LaunchIDEXT.xy, i, payload.depth);
+	//////////////////////////////////////////////////////////////// Indirect Light
+	// uint tempDepth = payload.depth;
+	// vec3 tempRadianceI = vec3(0.0);
+	// uint numSampleByDepth = (payload.depth == 0 ? sq.numSamples : 1);
 
+	// payload.depth += 1;
+	// for (uint i=0; i < numSampleByDepth; ++i)
+	// {
+	// 	uint rngState = (pixelCoord.y * screenSize.x + pixelCoord.x) * (payload.depth) * (i + 1);
+	// 	//vec3 rayDir = uniformSampleSphere(gl_LaunchIDEXT.xy, i, payload.depth);
+	// 	vec3 rayDir = RandomHemisphereDirection(worldNormal, rngState);
 
-	// 		vec3 rayDir = RandomHemisphereDirection(worldNormal, rngState);
+	// 	traceRayEXT(
+	// 		topLevelAS,                         // topLevel
+	// 		gl_RayFlagsOpaqueEXT, 0xff,         // rayFlags, cullMask
+	// 		0, 1, 1,                            // sbtRecordOffset, sbtRecordStride, missIndex
+	// 		worldPos, eps, rayDir, 100.0,  	// origin, tmin, direction, tmax
+	// 		0);                                 // payload 
 
-	// 		traceRayEXT(
-	// 			topLevelAS,                         // topLevel
-	// 			gl_RayFlagsOpaqueEXT, 0xff,         // rayFlags, cullMask
-	// 			0, 1, 1,                            // sbtRecordOffset, sbtRecordStride, missIndex
-	// 			worldPos, 0.0001, rayDir, 100.0,  	// origin, tmin, direction, tmax
-	// 			0);                                 // payload 
-
-	// 		temp += max(dot(worldNormal, rayDir), 0.0) * payload.radiance;
-	// 	}
-	// 	temp *= 1.0 / float(numSampleByDepth);
-	// 	payload.depth = tempDepth;
+	// 	tempRadianceI += max(dot(worldNormal, rayDir), 0.0) * payload.radiance;
 	// }
-	// payload.radiance = lightColor +  2.0 * color * temp; // FIX: doesn't show anything; very bright with no division
+	// tempRadianceI *= 1.0 / float(numSampleByDepth);
+	// tempRadianceI *= 2.0 * color;
+	// payload.radiance = tempRadianceD + tempRadianceI;
+
+	// payload.depth = tempDepth;
 }
 #endif
 

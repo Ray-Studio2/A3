@@ -6,6 +6,7 @@
 #include "MeshResource.h"
 #include "AccelerationStructure.h"
 #include "PipelineStateObject.h"
+
 using namespace A3;
 
 PathTracingRenderer::PathTracingRenderer( VulkanRenderBackend* inBackend )
@@ -31,8 +32,23 @@ void PathTracingRenderer::render( const Scene& scene )
         buildAccelerationStructure( scene );
 
         buildSamplePSO();
+        
+        // Reset frame count when scene changes
+        frameCount = 0;
     }
 
+    // Increment frame count
+    frameCount++;
+    
+    // Pass frame count to backend
+    backend->currentFrameCount = frameCount;
+    
+    // Auto-save at specific frame count
+    if (autoSaveEnabled && frameCount == autoSaveFrameCount) {
+        backend->saveCurrentImage("frame_" + std::to_string(frameCount) + ".png");
+        printf("Saved image at frame %d\n", frameCount);
+    }
+    
     backend->beginRaytracingPipeline( samplePSO->pipeline.get() );
 }
 
@@ -54,6 +70,7 @@ void PathTracingRenderer::buildSamplePSO()
         rayGeneration.descriptors.emplace_back( SRD_AccelerationStructure, 0 );
         rayGeneration.descriptors.emplace_back( SRD_StorageImage, 1 );
         rayGeneration.descriptors.emplace_back( SRD_UniformBuffer, 2 );
+        rayGeneration.descriptors.emplace_back( SRD_StorageImage, 5 ); // Accumulation image
         ShaderDesc& environmentMiss = psoDesc.shaders[1];
         environmentMiss.descriptors.emplace_back( SRD_ImageSampler, 4 );
         ShaderDesc& closestHit = psoDesc.shaders[ 2 ];
@@ -69,6 +86,7 @@ void PathTracingRenderer::buildSamplePSO()
     }
 
     backend->createOutImage();
+    backend->createAccumulationImage();
     backend->createUniformBuffer();
 
     samplePSO->pipeline = backend->createRayTracingPipeline( psoDesc, samplePSO.get() );

@@ -2,7 +2,7 @@
 // 0.0 ~ 1.0 사이의 float 반환
 float RandomValue(inout uint state) {
     state *= (state + 195439) * (state + 124395) * (state + 845921);
-    return state / 4294967295.0;
+    return float(state) / 4294967295.0;  // float 변환 추가!
 }
 // 0.0 ~ 1.0 사이의 float 반환
 float RandomValue2(inout uint state) {
@@ -18,9 +18,10 @@ float RandomValue2(inout uint state) {
 // 이 로컬 기준 샘플을 월드 기준 normal 방향에 정렬시키기 위해 회전 행렬(TBN)을 생성함
 // TBN은 UE의 TRotationMatrix::MakeFromZ와 동일한 원리
 mat3 CreateTangentSpace(vec3 normal) {
-    vec3 up = abs(normal.z) < 0.999 ? vec3(0.0, 0.0, 1.0) : vec3(1.0, 0.0, 0.0);
+    // 더 안정적인 tangent space 생성
+    vec3 up = abs(normal.y) < 0.999 ? vec3(0.0, 1.0, 0.0) : vec3(0.0, 0.0, 1.0);
     vec3 tangent = normalize(cross(up, normal));
-    vec3 bitangent = cross(normal, tangent);
+    vec3 bitangent = normalize(cross(normal, tangent));
     return mat3(tangent, bitangent, normal);
 }
 vec3 SampleUniformHemisphere(vec2 xi) {

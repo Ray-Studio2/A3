@@ -1,3 +1,5 @@
+#define _CRT_SECURE_NO_WARNINGS
+
 #include "Vulkan.h"
 //#include "shader_module.h"
 #include "RenderSettings.h"
@@ -12,7 +14,10 @@
 #include <random>
 
 #define STB_IMAGE_IMPLEMENTATION
-#include <stb_image.h>
+#include "stb_image.h"
+
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include "stb_image_write.h"
 
 using namespace A3;
 
@@ -143,6 +148,9 @@ void VulkanRenderBackend::endFrame()
 void VulkanRenderBackend::beginRaytracingPipeline( IRenderPipeline* inPipeline )
 {
     VulkanPipeline* pipeline = static_cast< VulkanPipeline* >( inPipeline );
+    
+    // Update uniform buffer (including frame count)
+    updateUniformBuffer();
 
     VkCommandBufferBeginInfo info{
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
@@ -804,7 +812,6 @@ void VulkanRenderBackend::createCommandCenter()
 std::tuple<VkImage, VkDeviceMemory, VkImageView, VkSampler>
 A3::VulkanRenderBackend::createEnvironmentMap(std::string_view hdrTexturePath)
 {
-    // --- HDR 로드 ---
     int width, height, channels;
     float* pixels = stbi_loadf(hdrTexturePath.data(), &width, &height, &channels, 0);
     assert(pixels && channels == 3);
@@ -821,7 +828,6 @@ A3::VulkanRenderBackend::createEnvironmentMap(std::string_view hdrTexturePath)
 
     vkQueueWaitIdle(graphicsQueue);
 
-    // --- 이미지 생성 ---
     VkImage image;
     VkDeviceMemory imageMemory;
     std::tie(image, imageMemory) = createImage(
@@ -830,7 +836,6 @@ A3::VulkanRenderBackend::createEnvironmentMap(std::string_view hdrTexturePath)
         VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
-    // --- 스테이징 버퍼 생성 ---
     auto [stagingBuffer, stagingMem] = createBuffer(
         imageSize,
         VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
@@ -841,7 +846,6 @@ A3::VulkanRenderBackend::createEnvironmentMap(std::string_view hdrTexturePath)
     memcpy(data, rgbaPixels.data(), static_cast<size_t>(imageSize));
     vkUnmapMemory(device, stagingMem);
 
-    // --- 명령 버퍼 기록 ---
     VkCommandBuffer& cmd = commandBuffers[imageIndex];
     vkResetCommandBuffer(cmd, 0);
 
@@ -889,7 +893,6 @@ A3::VulkanRenderBackend::createEnvironmentMap(std::string_view hdrTexturePath)
     vkDestroyBuffer(device, stagingBuffer, nullptr);
     vkFreeMemory(device, stagingMem, nullptr);
 
-    // --- ImageView 생성 ---
     VkImageView imageView;
     VkImageViewCreateInfo viewInfo{
         .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
@@ -900,7 +903,6 @@ A3::VulkanRenderBackend::createEnvironmentMap(std::string_view hdrTexturePath)
     };
     vkCreateImageView(device, &viewInfo, nullptr, &imageView);
 
-    // --- Sampler 생성 ---
     VkSampler sampler;
     VkSamplerCreateInfo samplerInfo{
         .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
@@ -1394,7 +1396,7 @@ void VulkanRenderBackend::createTLAS( const std::vector<BLASBatch*>& batches )
 
 void VulkanRenderBackend::createOutImage()
 {
-    VkFormat format = VK_FORMAT_B8G8R8A8_UNORM;// VK_FORMAT_R16G16B16A16_SFLOAT; //VK_FORMAT_R8G8B8A8_SRGB, VK_FORMAT_B8G8R8A8_SRGB(==swapChainImageFormat)
+    VkFormat format = VK_FORMAT_B8G8R8A8_UNORM; // Back to 8-bit for display
     std::tie( outImage, outImageMem ) = createImage(
         { RenderSettings::screenWidth, RenderSettings::screenHeight },
         format,
@@ -1441,6 +1443,52 @@ void VulkanRenderBackend::createOutImage()
     vkQueueWaitIdle( graphicsQueue );
 }
 
+void VulkanRenderBackend::createAccumulationImage()
+{
+    VkFormat format = VK_FORMAT_R32G32B32A32_SFLOAT; // High precision format
+    std::tie( accumulationImage, accumulationImageMem ) = createImage(
+        { RenderSettings::screenWidth, RenderSettings::screenHeight },
+        format,
+        VK_IMAGE_USAGE_STORAGE_BIT,
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT );
+
+    VkImageSubresourceRange subresourceRange{
+        .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+        .levelCount = 1,
+        .layerCount = 1,
+    };
+
+    VkImageViewCreateInfo ci0{
+        .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+        .image = accumulationImage,
+        .viewType = VK_IMAGE_VIEW_TYPE_2D,
+        .format = format,
+        .components = {},
+        .subresourceRange = subresourceRange,
+    };
+    vkCreateImageView( device, &ci0, nullptr, &accumulationImageView );
+
+    vkResetCommandBuffer( commandBuffers[ imageIndex ], 0 );
+    vkBeginCommandBuffer( commandBuffers[ imageIndex ], &beginInfo );
+    {
+        setImageLayout(
+            commandBuffers[ imageIndex ],
+            accumulationImage,
+            VK_IMAGE_LAYOUT_UNDEFINED,
+            VK_IMAGE_LAYOUT_GENERAL,
+            subresourceRange );
+    }
+    vkEndCommandBuffer( commandBuffers[ imageIndex ] );
+
+    VkSubmitInfo submitInfo{
+        .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+        .commandBufferCount = 1,
+        .pCommandBuffers = &commandBuffers[ imageIndex ],
+    };
+    vkQueueSubmit( graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE );
+    vkQueueWaitIdle( graphicsQueue );
+}
+
 #include "CameraObject.h"
 #include "Scene.h"
 void VulkanRenderBackend::createUniformBuffer()
@@ -1449,6 +1497,8 @@ void VulkanRenderBackend::createUniformBuffer()
     {
         float cameraPos[ 3 ];
         float yFov_degree;
+        uint32 frameCount;
+        float padding[3]; // Padding for 16-byte alignment
     } dataSrc;
 
     std::tie( uniformBuffer, uniformBufferMem ) = createBuffer(
@@ -1463,7 +1513,28 @@ void VulkanRenderBackend::createUniformBuffer()
 
     void* dst;
     vkMapMemory( device, uniformBufferMem, 0, sizeof( dataSrc ), 0, &dst );
-    *( Data* )dst = { cameraPos[0], cameraPos[1], cameraPos[2], fov};
+    *( Data* )dst = { cameraPos[0], cameraPos[1], cameraPos[2], fov, 0, {0, 0, 0}};
+    vkUnmapMemory( device, uniformBufferMem );
+}
+
+void VulkanRenderBackend::updateUniformBuffer()
+{
+    struct Data
+    {
+        float cameraPos[ 3 ];
+        float yFov_degree;
+        uint32 frameCount;
+        float padding[3];
+    } dataSrc;
+
+    CameraObject* co = tempScenePointer->getCamera();
+    const Vec3& pos = co->getPosition();
+    float cameraPos[3] = { pos.x, pos.y, pos.z };
+    float fov = co->getFov();
+
+    void* dst;
+    vkMapMemory( device, uniformBufferMem, 0, sizeof( dataSrc ), 0, &dst );
+    *( Data* )dst = { cameraPos[0], cameraPos[1], cameraPos[2], fov, currentFrameCount, {0, 0, 0}};
     vkUnmapMemory( device, uniformBufferMem );
 }
 
@@ -1523,7 +1594,7 @@ IRenderPipelineRef VulkanRenderBackend::createRayTracingPipeline( const Raytraci
     //==========================================================
     // Pipeline layout
     //==========================================================
-    std::vector<VkDescriptorSetLayoutBinding> bindings( 5 );
+    std::vector<VkDescriptorSetLayoutBinding> bindings( 6 ); // Need 6 bindings (0-5)
     for( const ShaderDesc& shaderDesc : psoDesc.shaders )
     {
         for( const ShaderResourceDescriptor& descriptor : shaderDesc.descriptors )
@@ -1658,10 +1729,13 @@ IRenderPipelineRef VulkanRenderBackend::createRayTracingPipeline( const Raytraci
             }
             else if( binding.descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE )
             {
+                // binding 1 is output image, binding 5 is accumulation image
+                VkImageView imageView = (index == 1) ? outImageView : accumulationImageView;
+                
                 writeDescriptorSets.images.emplace_back(
                     VkDescriptorImageInfo
                     {
-                        .imageView = outImageView,
+                        .imageView = imageView,
                         .imageLayout = VK_IMAGE_LAYOUT_GENERAL
                     }
                 );
@@ -1811,6 +1885,149 @@ In the vulkan spec,
 [VUID-vkCmdTraceRaysKHR-pHitShaderBindingTable-03689] pHitShaderBindingTable->deviceAddress must be a multiple of VkPhysicalDeviceRayTracingPipelinePropertiesKHR::shaderGroupBaseAlignment
 
 As shown in the vulkan spec 40.3.1. Indexing Rules,
-    pHitShaderBindingTable->deviceAddress + pHitShaderBindingTable->stride �� (
-    instanceShaderBindingTableRecordOffset + geometryIndex �� sbtRecordStride + sbtRecordOffset )
+    pHitShaderBindingTable->deviceAddress + pHitShaderBindingTable->stride (
+    instanceShaderBindingTableRecordOffset + geometryIndex ??sbtRecordStride + sbtRecordOffset )
 */
+
+void VulkanRenderBackend::saveCurrentImage(const std::string& filename)
+{
+    // Wait for rendering to complete
+    vkDeviceWaitIdle(device);
+    
+    // Get image dimensions
+    uint32_t width = swapChainImageExtent.width;
+    uint32_t height = swapChainImageExtent.height;
+    
+    // Create staging buffer for image data
+    VkDeviceSize imageSize = width * height * 4; // RGBA8
+    auto [stagingBuffer, stagingBufferMem] = createBuffer(
+        imageSize,
+        VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
+    );
+    
+    // Create command buffer for copy operation
+    VkCommandBufferAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    allocInfo.commandPool = commandPools[imageIndex];
+    allocInfo.commandBufferCount = 1;
+    
+    VkCommandBuffer cmdBuffer;
+    vkAllocateCommandBuffers(device, &allocInfo, &cmdBuffer);
+    
+    VkCommandBufferBeginInfo beginInfo{};
+    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    
+    vkBeginCommandBuffer(cmdBuffer, &beginInfo);
+    
+    // Transition image layout for transfer
+    VkImageMemoryBarrier barrier{};
+    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    barrier.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
+    barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.image = outImage;
+    barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    barrier.subresourceRange.baseMipLevel = 0;
+    barrier.subresourceRange.levelCount = 1;
+    barrier.subresourceRange.baseArrayLayer = 0;
+    barrier.subresourceRange.layerCount = 1;
+    barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+    barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+    
+    vkCmdPipelineBarrier(
+        cmdBuffer,
+        VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
+        VK_PIPELINE_STAGE_TRANSFER_BIT,
+        0,
+        0, nullptr,
+        0, nullptr,
+        1, &barrier
+    );
+    
+    // Copy image to buffer
+    VkBufferImageCopy region{};
+    region.bufferOffset = 0;
+    region.bufferRowLength = 0;
+    region.bufferImageHeight = 0;
+    region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    region.imageSubresource.mipLevel = 0;
+    region.imageSubresource.baseArrayLayer = 0;
+    region.imageSubresource.layerCount = 1;
+    region.imageOffset = {0, 0, 0};
+    region.imageExtent = {width, height, 1};
+    
+    vkCmdCopyImageToBuffer(
+        cmdBuffer,
+        outImage,
+        VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+        stagingBuffer,
+        1,
+        &region
+    );
+    
+    // Transition back to general layout
+    barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+    barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+    barrier.dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+    
+    vkCmdPipelineBarrier(
+        cmdBuffer,
+        VK_PIPELINE_STAGE_TRANSFER_BIT,
+        VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
+        0,
+        0, nullptr,
+        0, nullptr,
+        1, &barrier
+    );
+    
+    vkEndCommandBuffer(cmdBuffer);
+    
+    VkSubmitInfo submitInfo{};
+    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submitInfo.commandBufferCount = 1;
+    submitInfo.pCommandBuffers = &cmdBuffer;
+    
+    vkQueueSubmit(graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
+    vkQueueWaitIdle(graphicsQueue);
+    
+    vkFreeCommandBuffers(device, commandPools[imageIndex], 1, &cmdBuffer);
+    
+    // Map buffer and save to file
+    void* data;
+    vkMapMemory(device, stagingBufferMem, 0, imageSize, 0, &data);
+    
+    // Convert BGRA to RGBA for stb_image_write
+    uint8_t* pixels = (uint8_t*)data;
+    std::vector<uint8_t> rgbaData(width * height * 4);
+    
+    for (uint32_t y = 0; y < height; y++) {
+        for (uint32_t x = 0; x < width; x++) {
+            uint32_t idx = (y * width + x) * 4;
+            uint32_t outIdx = (y * width + x) * 4;
+            // Convert BGRA to RGBA
+            rgbaData[outIdx + 0] = pixels[idx + 2]; // R (from B position)
+            rgbaData[outIdx + 1] = pixels[idx + 1]; // G
+            rgbaData[outIdx + 2] = pixels[idx + 0]; // B (from R position)
+            rgbaData[outIdx + 3] = pixels[idx + 3]; // A
+        }
+    }
+    
+    // Save as PNG
+    int result = stbi_write_png(filename.c_str(), width, height, 4, rgbaData.data(), width * 4);
+    if (result) {
+        printf("Image saved as: %s\n", filename.c_str());
+    } else {
+        printf("Failed to save image: %s\n", filename.c_str());
+    }
+    
+    vkUnmapMemory(device, stagingBufferMem);
+    
+    // Cleanup
+    vkDestroyBuffer(device, stagingBuffer, nullptr);
+    vkFreeMemory(device, stagingBufferMem, nullptr);
+}

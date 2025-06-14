@@ -8,7 +8,6 @@
 #extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
 
 #define MAX_DEPTH 3
-#define SAMPLES_PER_PIXEL 64
 
 vec3 toneMapACES(vec3 x) {
     const float a = 2.51;
@@ -57,6 +56,7 @@ float random(inout uint rngState) {
 //=========================
 layout( binding = 0 ) uniform accelerationStructureEXT topLevelAS;
 layout( binding = 1, rgba8 ) uniform image2D image;
+layout( binding = 5, rgba32f ) uniform image2D accumulationImage;
 layout(location = 0) rayPayloadEXT RayPayload gPayload;
 
 void main()
@@ -67,58 +67,61 @@ void main()
     const float aspect_y = tan( radians( g.yFov_degree ) * 0.5 );
     const float aspect_x = aspect_y * float( gl_LaunchSizeEXT.x ) / float( gl_LaunchSizeEXT.y );
     
+    // Better random seed generation
     uint pixelIndex = gl_LaunchIDEXT.y * gl_LaunchSizeEXT.x + gl_LaunchIDEXT.x;
-    uint baseSeed = pcg_hash(pixelIndex + g.frameCount * 1664525u);
+    uint rngState = pcg_hash(pixelIndex + g.frameCount * 1664525u);
     
-    vec3 totalRadiance = vec3(0.0);
+    // Anti-aliasing jitter
+    float r1 = random(rngState);
+    float r2 = random(rngState);
     
-    for (uint sampleIndex = 0; sampleIndex < SAMPLES_PER_PIXEL; ++sampleIndex)
-    {
-        uint rngState = pcg_hash(baseSeed + sampleIndex * 1013904223u);
-        
-        // Anti-aliasing jitter for each sample
-        float r1 = random(rngState);
-        float r2 = random(rngState);
-        
-        const vec2 screenCoord = vec2( gl_LaunchIDEXT.xy ) + vec2( r1, r2 );
-        const vec2 ndc = screenCoord / vec2( gl_LaunchSizeEXT.xy ) * 2.0 - 1.0;
-        vec3 rayDir = ndc.x * aspect_x * cameraX + ndc.y * aspect_y * cameraY + cameraZ;
-        
-        // Initialize payload for this sample
-        gPayload.radiance = vec3( 0.0 );
-        gPayload.throughput = vec3( 1.0 );
-        gPayload.depth = 0;
-        gPayload.rngState = rngState;
-        gPayload.rayDirection = rayDir;
-        
-        // Trace ray for this sample
-        traceRayEXT(
-           topLevelAS,
-           gl_RayFlagsOpaqueEXT, 0xff,
-           0, 1, 0,
-           g.cameraPos, 0.0, rayDir, 100.0,
-           0 );
-        
-        // Accumulate radiance from this sample
-        totalRadiance += gPayload.radiance;
+    const vec2 screenCoord = vec2( gl_LaunchIDEXT.xy ) + vec2( r1, r2 );
+    const vec2 ndc = screenCoord / vec2( gl_LaunchSizeEXT.xy ) * 2.0 - 1.0;
+    vec3 rayDir = ndc.x * aspect_x * cameraX + ndc.y * aspect_y * cameraY + cameraZ;
+    
+    // Initialize payload for path tracing
+    gPayload.radiance = vec3( 0.0 );
+    gPayload.throughput = vec3( 1.0 );
+    gPayload.depth = 0;
+    gPayload.rngState = rngState;
+    gPayload.rayDirection = rayDir;
+    
+    // Single ray per pixel per frame
+    traceRayEXT(
+       topLevelAS,
+       gl_RayFlagsOpaqueEXT, 0xff,
+       0, 1, 0,
+       g.cameraPos, 0.0, rayDir, 100.0,
+       0 );
+    
+    vec3 currentSample = gPayload.radiance;
+    
+    // Progressive accumulation
+    vec3 previousAccumulation = vec3(0.0);
+    if (g.frameCount > 1) {
+        previousAccumulation = imageLoad(accumulationImage, ivec2(gl_LaunchIDEXT.xy)).rgb;
     }
     
-    // Average all samples
-    vec3 finalColor = totalRadiance / float(SAMPLES_PER_PIXEL);
+    // Proper incremental average
+    vec3 accumulated = (previousAccumulation * float(g.frameCount - 1) + currentSample) / float(g.frameCount);
+    
+    // Store in accumulation buffer
+    imageStore(accumulationImage, ivec2(gl_LaunchIDEXT.xy), vec4(accumulated, 1.0));
     
     // Tone mapping and gamma correction
-    float exposure = 2.0;
+    vec3 finalColor = accumulated;
+    float exposure = 1.0;
     finalColor *= exposure;
     finalColor = toneMapACES(finalColor);
     finalColor = pow(finalColor, vec3(1.0 / 2.2));
 
-    imageStore( image, ivec2( gl_LaunchIDEXT.xy ), vec4( finalColor, 1.0 ) );
+   imageStore( image, ivec2( gl_LaunchIDEXT.xy ), vec4( finalColor, 1.0 ) );
 }
 #endif
 
 #if CLOSEST_HIT_SHADER
 //=========================
-//   CLOSEST HIT SHADER (BRUTE FORCE)
+//   CLOSEST HIT SHADER
 //=========================
 
 struct VertexAttributes
@@ -182,14 +185,15 @@ void main()
     // Light emission check
     if (gl_InstanceCustomIndexEXT == LIGHT_INSTANCE_INDEX) 
     {
-        vec3 lightEmission = vec3(15.0);
+        vec3 lightEmission = vec3(5.0);
         float distance = gl_HitTEXT;
-        float attenuation = 1.0 / (1.0 + 0.05 * distance + 0.005 * distance * distance);
+        float attenuation = 1.0 / (1.0 + 0.1 * distance + 0.01 * distance * distance);
         
         gPayload.radiance = gPayload.throughput * lightEmission * attenuation;
         return;
     }
     
+    // Russian roulette for path termination
     if (gPayload.depth >= MAX_DEPTH) {
         return;
     }
@@ -197,12 +201,14 @@ void main()
     // Update throughput with surface color
     gPayload.throughput *= color;
     
+    
     // Sample next direction
     float r1 = random(gPayload.rngState);
     float r2 = random(gPayload.rngState);
     vec2 seed = vec2(r1, r2);
     vec3 dir = RandomCosineHemisphere(worldNormal, seed);
     
+    // Continue path
     gPayload.depth += 1;
     traceRayEXT(
         topLevelAS,
@@ -221,28 +227,28 @@ void main()
 //=========================
 void main()
 {
-    // Empty
 }
 #endif
 
 #if ENVIRONMENT_MISS_SHADER
 //=========================
-//   ENVIRONMENT MISS SHADER (BRUTE FORCE)
+//   ENVIRONMENT MISS SHADER
 //=========================
 layout(location = 0) rayPayloadInEXT RayPayload gPayload;
 layout(set = 0, binding = 4) uniform sampler2D environmentMap;
 
 void main()
 {
-    vec3 dir = normalize(gPayload.rayDirection);
-    vec2 uv = vec2(
-        atan(dir.z, dir.x) / (2.0 * 3.1415926535) + 0.5,
-        acos(clamp(dir.y, -1.0, 1.0)) / 3.1415926535
-    );
-    vec3 color = texture(environmentMap, uv).rgb;
-    
-    // Environment contribution scaled by depth
-    float envScale = (gPayload.depth == 0) ? 1.0 : 0.3;
-    gPayload.radiance += gPayload.throughput * color * envScale;
+    // Only contribute environment lighting on primary rays
+    if(gPayload.depth == 0)
+    {
+        vec3 dir = normalize(gPayload.rayDirection);
+        vec2 uv = vec2(
+            atan(dir.z, dir.x) / (2.0 * 3.1415926535) + 0.5,
+            acos(clamp(dir.y, -1.0, 1.0)) / 3.1415926535
+        );
+        vec3 color = texture(environmentMap, uv).rgb;
+        gPayload.radiance = gPayload.throughput * color * 0.5;
+    }
 }
 #endif

@@ -4,8 +4,32 @@
 #extension GL_EXT_scalar_block_layout : require
 #extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
 
-#define SAMPLE_COUNT 64
+#define SAMPLE_COUNT 50
 #define MAX_DEPTH 3
+
+struct EnvImportanceSampleData {
+    float conditional_cdf;   // .r
+    float conditional_pdf;   // .g
+    float marginal_pdf;      // .b
+    float marginal_cdf;      // .a
+};
+
+vec3 toneMapACES(vec3 x) {
+    const float a = 2.51;
+    const float b = 0.03;
+    const float c = 2.43;
+    const float d = 0.59;
+    const float e = 0.14;
+    return clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0, 1.0);
+}
+
+vec3 toneMapReinhard(vec3 x) {
+    return x / (1.0 + x);
+}
+
+vec3 applyGamma(vec3 color) {
+    return pow(color, vec3(1.0 / 2.2));
+}
 
 uint wang_hash(uint seed)
 {
@@ -27,6 +51,7 @@ float random(uvec2 pixel, uint sampleIndex, uint depth, uint axis)
 {
     return float(generateSeed(pixel, sampleIndex, depth, axis)) / 4294967296.0;
 }
+
 // Uniform sampling on unit sphere
 vec3 uniformSampleSphere(uvec2 pixel, uint sampleIndex, uint depth)
 {
@@ -62,6 +87,7 @@ struct Payload {
     vec3 hitValue;
     uint depth;
     vec3 rayDirection;
+    bool bUseEnvMap;
 };
 
 #define LIGHT_INSTANCE_INDEX 6
@@ -95,6 +121,7 @@ void main()
 	payload.hitValue = vec3( 0.0 );
 	payload.depth = 1;
 	payload.rayDirection = rayDir;
+	payload.bUseEnvMap = false;
 
 	traceRayEXT(
 		topLevelAS,                         // topLevel
@@ -124,6 +151,9 @@ struct ObjectDesc
 	uint64_t indexDeviceAddress;
 };
 
+#define PI 3.1415926535
+#define EPS 1e-6
+
 layout(buffer_reference, scalar) buffer PositionBuffer { vec4 p[]; };
 layout(buffer_reference, scalar) buffer AttributeBuffer { VertexAttributes a[]; };
 layout(buffer_reference, scalar) buffer IndexBuffer { ivec3 i[]; }; // Triangle indices
@@ -143,6 +173,61 @@ layout( binding = 2 ) uniform CameraProperties
 	vec3 cameraPos;
 	float yFov_degree;
 } g;
+layout(set = 0, binding = 4) uniform sampler2D environmentMap;
+layout(binding = 5, scalar) buffer EnvImportanceSamplingBuffer {
+    EnvImportanceSampleData data[];
+};
+
+vec3 sampleEnvDirection(uvec2 pixel, uint sampleIndex, uint depth, out float pdf)
+{
+    float marginalY = random(pixel, sampleIndex, depth, 0);
+    float conditionalX = random(pixel, sampleIndex, depth, 1);
+
+    ivec2 texSize = textureSize(environmentMap, 0);
+    int width = texSize.x;
+    int height = texSize.y;
+
+    // ---- Marginal CDF 이진 탐색 (Y 방향) ----
+    int yLow = 0;
+    int yHigh = height - 1;
+    while (yLow < yHigh) {
+        int yMid = (yLow + yHigh) / 2;
+        float cdf = data[yMid * width].marginal_cdf;
+        if (cdf < marginalY)
+            yLow = yMid + 1;
+        else
+            yHigh = yMid;
+    }
+    int y = yLow;
+
+    // ---- Conditional CDF 이진 탐색 (X 방향) ----
+    int xLow = 0;
+    int xHigh = width - 1;
+    while (xLow < xHigh) {
+        int xMid = (xLow + xHigh) / 2;
+        float cdf = data[y * width + xMid].conditional_cdf;
+        if (cdf < conditionalX)
+            xLow = xMid + 1;
+        else
+            xHigh = xMid;
+    }
+    int x = xLow;
+
+    // ---- UV to Direction ----
+    float u = float(x) / float(width);
+    float v = float(y) / float(height);
+    float phi = 2.0 * 3.1415926535 * u;
+    float theta = 3.1415926535 * v;
+    float sinTheta = sin(theta);
+
+    vec3 dir = vec3(sinTheta * cos(phi), cos(theta), sinTheta * sin(phi));
+
+    // ---- PDF with solid angle correction ----
+    float texelPdf = data[y * width + x].conditional_pdf * data[y * width + x].marginal_pdf;
+    pdf = width * height * texelPdf / (2.0 * 3.1415926535 * 3.1415926535 * sinTheta + 1e-6); // solid angle 보정
+
+    return normalize(dir);
+}
 
 layout(location = 0) rayPayloadInEXT  Payload payload;
 hitAttributeEXT vec2 attribs;
@@ -151,7 +236,7 @@ void main()
 {
     if (gl_InstanceCustomIndexEXT == LIGHT_INSTANCE_INDEX)
     {
-        payload.hitValue = vec3(5.0); // 임시 조명 색
+        payload.hitValue = vec3(1.0); // 임시 조명 색
         return ;
     }
     
@@ -160,6 +245,11 @@ void main()
         return;
     }
     
+    /** if (payload.bUseEnvMap)
+    {
+        payload.bUseEnvMap = false;
+        return ;
+    } */
   
 	ObjectDesc objDesc = objectDescs.desc[gl_InstanceCustomIndexEXT];
 
@@ -189,40 +279,57 @@ void main()
 	mat4x3 objToWorld = gl_ObjectToWorldEXT;
 	vec3 worldNormal = normalize(objToWorld * vec4(localNormal, 0.0));
 	vec3 worldPos = objToWorld * vec4(position, 1.0);
-    vec3 accumulatedRadiance = vec3(0.0);
-     
-    uint depthBeforeTrace = payload.depth;  // 백업
-    for (uint i = 0; i < SAMPLE_COUNT; ++i)
-    {
-        vec3 sampleDir = cosineSampleHemisphere(gl_LaunchIDEXT.xy, i, payload.depth, worldNormal);
-         if (dot(sampleDir, worldNormal) < 0.0)
-            sampleDir = -sampleDir;
+
+    vec3 accumulated = vec3(0.0);
+    uint depthBeforeTrace = payload.depth;
     
-        // 📌 traceRayEXT 호출 전 반드시 초기화
+    uint S = SAMPLE_COUNT / 2;
+    uint SampleEnabled = 0;
+
+    payload.bUseEnvMap = false;
+    /** for (uint i = 0; i < S; ++i) {
+        vec3 sampleDir = cosineSampleHemisphere(gl_LaunchIDEXT.xy, i, depthBeforeTrace, worldNormal);
+        float cosTheta = max(0.0, dot(worldNormal, sampleDir));
+        float pdf_cos = cosTheta / PI;
+        if (cosTheta <= 0.0) continue;
+
         payload.hitValue = vec3(0.0);
         payload.depth = depthBeforeTrace + 1;
         payload.rayDirection = sampleDir;
-        
-        traceRayEXT(
-            topLevelAS,
-            gl_RayFlagsOpaqueEXT,
-            0xFF, 0, 1, 0,
-            worldPos, 0.001, sampleDir, 1000.0,
-            0// payload
-        );
-         // Lambertian: weight 계산
-        float cosTheta = max(dot(worldNormal, sampleDir), 0.0);
-        float pdf = (cosTheta / 3.14159265);
-    
-        vec3 brdf = color / 3.14159265;
+        traceRayEXT(topLevelAS, gl_RayFlagsOpaqueEXT, 0xFF, 0, 1, 0, worldPos, 0.001, sampleDir, 1000.0, 0);
+        vec3 Li = min(payload.hitValue, vec3(20.0));
+        float pdf_env = 0.f;  // Dummy to balance MIS denominator
+
+        float w = (pdf_cos * pdf_cos) / (pdf_cos * pdf_cos + pdf_env * pdf_env + EPS);
+        accumulated += w * (Li * color / PI) / max(pdf_cos, EPS);
+        SampleEnabled++;
+    } */
+
+    for (uint i = 0; i < S; ++i) {
+        float pdf_env;
+        vec3 sampleDir = sampleEnvDirection(gl_LaunchIDEXT.xy, i, depthBeforeTrace, pdf_env);
+        float cosTheta = max(0.0, dot(worldNormal, sampleDir));
+        if (cosTheta <= 0.0 || pdf_env <= EPS) continue;
+
+        payload.hitValue = vec3(0.0);
+        payload.depth = depthBeforeTrace + 1;
+        payload.rayDirection = sampleDir;
+        payload.bUseEnvMap = true;
+        traceRayEXT(topLevelAS, gl_RayFlagsOpaqueEXT, 0xFF, 0, 1, 0, worldPos, 0.001, sampleDir, 1000.0, 0);
+        // if (payload.bUseEnvMap == false) continue;
         vec3 Li = payload.hitValue;
-    
-        vec3 sampleContribution = brdf * Li * cosTheta / pdf;
-        accumulatedRadiance += sampleContribution;
+        
+        // float pdf_cos = cosTheta / PI;
+        // float w = (pdf_env * pdf_env) / (pdf_env * pdf_env + pdf_cos * pdf_cos + EPS);
+        accumulated += (Li * color / PI) / pdf_env;
+        SampleEnabled++;
     }
-    
-    payload.depth = depthBeforeTrace;
-    payload.hitValue = accumulatedRadiance / float(SAMPLE_COUNT);
+
+    vec3 finalColor = accumulated / SampleEnabled;
+    // finalColor = min(finalColor, vec3(20.0));
+    finalColor = toneMapReinhard(finalColor);
+    finalColor = applyGamma(finalColor);
+    payload.hitValue = finalColor;
 }
 #endif
 
@@ -254,6 +361,6 @@ void main()
         acos(clamp(dir.y, -1.0, 1.0)) / 3.1415926535
     );
     vec3 color = texture(environmentMap, uv).rgb;
-    payload.hitValue = color;
+    payload.hitValue = toneMapACES(color);
 }
 #endif

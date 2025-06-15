@@ -817,7 +817,6 @@ A3::VulkanRenderBackend::createEnvironmentMap(std::string_view hdrTexturePath)
         rgbaPixels[i * 4 + 2] = pixels[i * 3 + 2];
         rgbaPixels[i * 4 + 3] = 1.0f;
     }
-    stbi_image_free(pixels);
 
     vkQueueWaitIdle(graphicsQueue);
 
@@ -914,7 +913,111 @@ A3::VulkanRenderBackend::createEnvironmentMap(std::string_view hdrTexturePath)
     };
     vkCreateSampler(device, &samplerInfo, nullptr, &sampler);
 
+
+    createEnvironmentMapImportanceSampling(pixels, width, height);
+    stbi_image_free(pixels);
     return { image, imageMemory, imageView, sampler };
+}
+
+void VulkanRenderBackend::createEnvironmentMapImportanceSampling(float* pixels, int width, int height)
+{
+    if (pixels == nullptr) return;
+
+    const int texelCount = width * height;
+    std::vector<float> rgbaPixels(texelCount * 4); // RGBA = (conditional_cdf, conditional_pdf, marginal_pdf, marginal_cdf)
+
+    std::vector<float> luminances(texelCount);
+    std::vector<float> sinTheta(height);
+    std::vector<float> marginalPdf(height);
+    std::vector<float> marginalCdf(height);
+
+    float luminanceSum = 0.0f;
+
+    // 1. Luminance × sin(theta) 계산 (soften: gamma 적용)
+    const float gamma = 0.9f;
+    for (int y = 0; y < height; ++y) {
+        float theta = 3.14159265f * (y + 0.5f) / float(height);
+        sinTheta[y] = std::sin(theta);
+        for (int x = 0; x < width; ++x) {
+            int i = y * width + x;
+            float r = pixels[i * 3 + 0];
+            float g = pixels[i * 3 + 1];
+            float b = pixels[i * 3 + 2];
+            float lum = std::pow(0.2126f * r + 0.7152f * g + 0.0722f * b, gamma);
+            luminances[i] = lum * sinTheta[y];
+            luminanceSum += luminances[i];
+        }
+    }
+
+    if (luminanceSum <= 0.0f) luminanceSum = 1e-6f;
+
+    // 2. Marginal PDF & CDF (y 방향)
+    float marginalAccum = 0.0f;
+    for (int y = 0; y < height; ++y) {
+        float rowSum = 0.0f;
+        for (int x = 0; x < width; ++x) {
+            rowSum += luminances[y * width + x];
+        }
+        float pdf = rowSum / luminanceSum;
+        pdf = std::max(pdf, 1e-6f); // clamp 최소값
+        marginalPdf[y] = pdf;
+        marginalAccum += pdf;
+        marginalCdf[y] = marginalAccum;
+    }
+
+    // normalize CDF
+    for (int y = 0; y < height; ++y) {
+        marginalCdf[y] /= marginalAccum;
+    }
+    marginalCdf[height - 1] = 1.0f; // 강제 클램프
+
+    // 3. Conditional PDF & CDF (x 방향 per row)
+    for (int y = 0; y < height; ++y) {
+        float rowSum = 0.0f;
+        for (int x = 0; x < width; ++x) {
+            rowSum += luminances[y * width + x];
+        }
+
+        rowSum = std::max(rowSum, 1e-6f);
+        float accum = 0.0f;
+
+        // CDF 작성
+        for (int x = 0; x < width; ++x) {
+            int i = y * width + x;
+            float pdf = luminances[i] / rowSum;
+            pdf = std::max(pdf, 1e-6f); // clamp
+            accum += pdf;
+            rgbaPixels[i * 4 + 0] = accum;           // conditional CDF
+            rgbaPixels[i * 4 + 1] = pdf;             // conditional PDF
+            rgbaPixels[i * 4 + 2] = marginalPdf[y];  // marginal PDF
+            rgbaPixels[i * 4 + 3] = marginalCdf[y];  // marginal CDF
+        }
+
+        // normalize conditional CDF
+        for (int x = 0; x < width; ++x) {
+            int i = y * width + x;
+            rgbaPixels[i * 4 + 0] /= accum;
+        }
+
+        // 마지막 CDF 클램프
+        int last = y * width + (width - 1);
+        rgbaPixels[last * 4 + 0] = 1.0f;
+    }
+
+    // 4. Vulkan Buffer 업로드
+    VkDeviceSize imageSize = texelCount * 4 * sizeof(float);
+
+    VkDeviceMemory envImportantSamplingMem;
+
+    std::tie(envImportantSamplingBuffer, envImportantSamplingMem) = createBuffer(
+        imageSize,
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+    void* data;
+    vkMapMemory(device, envImportantSamplingMem, 0, imageSize, 0, &data);
+    memcpy(data, rgbaPixels.data(), static_cast<size_t>(imageSize));
+    vkUnmapMemory(device, envImportantSamplingMem);
 }
 
 uint32 VulkanRenderBackend::findMemoryType( uint32_t memoryTypeBits, VkMemoryPropertyFlags reqMemProps )
@@ -1523,7 +1626,7 @@ IRenderPipelineRef VulkanRenderBackend::createRayTracingPipeline( const Raytraci
     //==========================================================
     // Pipeline layout
     //==========================================================
-    std::vector<VkDescriptorSetLayoutBinding> bindings( 5 );
+    std::vector<VkDescriptorSetLayoutBinding> bindings( 6 );
     for( const ShaderDesc& shaderDesc : psoDesc.shaders )
     {
         for( const ShaderResourceDescriptor& descriptor : shaderDesc.descriptors )
@@ -1531,7 +1634,7 @@ IRenderPipelineRef VulkanRenderBackend::createRayTracingPipeline( const Raytraci
             VkDescriptorSetLayoutBinding& binding = bindings[ descriptor.index ];
             binding.binding = descriptor.index;
             binding.descriptorType = getVulkanShaderDescriptorType( descriptor.type );
-            binding.descriptorCount = 1;
+            binding.descriptorCount = 2;
             binding.stageFlags |= getVulkanShaderStage( shaderDesc.type );
         }
     }
@@ -1628,7 +1731,7 @@ IRenderPipelineRef VulkanRenderBackend::createRayTracingPipeline( const Raytraci
         std::vector<VkBuffer> storageBuffers = 
         { 
             nullptr, nullptr,
-            uniformBuffer, objectBuffer,
+            uniformBuffer, objectBuffer, nullptr, envImportantSamplingBuffer
             /*vertexPositionBuffer, vertexAttributeBuffer, indexBuffer*/ 
         };
 

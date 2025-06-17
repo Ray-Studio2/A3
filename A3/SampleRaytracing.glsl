@@ -84,6 +84,8 @@ struct ObjectDesc {
     uint64_t cumulativeTriangleAreaAddress;
     vec4     objToWorld[3];
     uint     triangleCount;
+	uint     padding0; // 4 bytes
+    uint     padding1; // 4 bytes
 };
 
 // 점(p.x, p.y, p.z, 1)을 변환

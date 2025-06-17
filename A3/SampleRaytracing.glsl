@@ -135,25 +135,30 @@ layout( location = 0 ) rayPayloadInEXT Payload payload;
 hitAttributeEXT vec2 attribs;
 
 /////////////////////////////////////////////////////////////////////////////////////////////
-float RandomValue(uint state) {
+float RandomValue2(uint state) {
     state *= (state + 195439) * (state + 124395) * (state + 845921);
-    return state / 4294967295.0; // 2^31 - 1 (uint 최댓값으로 나눔) -> 0~1 사이의 실수
+    return float(state) * (1.0 / 4294967295.0); // 2^31 - 1 (uint 최댓값으로 나눔) -> 0~1 사이의 실수
 }
 
-float RandomValueNormalDistribution(uint state) {
+float RandomValue(inout uint state) {
+    state *= (state + 195439) * (state + 124395) * (state + 845921);
+    return float(state) * (1.0 / 4294967295.0); // 2^31 - 1 (uint 최댓값으로 나눔) -> 0~1 사이의 실수
+}
+
+float RandomValueNormalDistribution(inout uint state) {
     float theta = 2 * 3.1415926 * RandomValue(state);
     float rho = sqrt(-2.0 * log(RandomValue(state)));
     return rho * cos(theta);
 }
 
-vec3 RandomDirection(uint state) {
+vec3 RandomDirection(inout uint state) {
     float x = RandomValueNormalDistribution(state);
     float y = RandomValueNormalDistribution(state);
     float z = RandomValueNormalDistribution(state);
     return normalize(vec3(x, y, z));
 }
 
-vec3 RandomHemisphereDirection(vec3 normal, uint state) {
+vec3 RandomHemisphereDirection(vec3 normal, inout uint state) {
     vec3 dir = RandomDirection(state);
     return dir * sign(dot(normal, dir));
 }
@@ -223,7 +228,7 @@ uint binarySearchTriangleIdx(uint state, float lightArea)
 {
 	ObjectDesc lightObjDesc = objectDescs.desc[LIGHT_INSTANCE_INDEX];
 	cumulativeTriangleAreaBuffer sum = cumulativeTriangleAreaBuffer(lightObjDesc.cumulativeTriangleAreaAddress);
-	float target = RandomValue(state) * lightArea;
+	float target = RandomValue2(state) * lightArea;
 
 	uint l = 1;
 	uint r = lightObjDesc.triangleCount;
@@ -264,7 +269,7 @@ void uniformSamplePointOnTriangle(uint state, uint triangleIdx,
 	vec3 n1 = normalize(a1.norm.xyz);
  	vec3 n2 = normalize(a2.norm.xyz);
 
-	vec2 xi   = vec2(RandomValue(state), RandomValue(state*3u));
+	vec2 xi   = vec2(RandomValue2(state), RandomValue2(state*3u));
 	float su0 = sqrt(xi.x);
 	float u  = 1.0 - su0;
 	float v  = xi.y * su0;
@@ -326,21 +331,20 @@ void main()
 
 	if (payload.depth == 0 && gl_InstanceCustomIndexEXT == LIGHT_INSTANCE_INDEX) // depth = 0
 	{
-		payload.radiance = vec3(1.0);
+		payload.radiance = lightEmittance;
 		return;
 	}
 
+	uint rngState = (pixelCoord.y * screenSize.x + pixelCoord.x) * (payload.depth + 1);
 	//////////////////////////////////////////////////////////////// Direct Light
 	vec3 tempRadianceD = vec3(0.0);
 	float lightArea = getLightArea();
 	const uint directLightSampleCount = (payload.depth == 0 ? sq.numSamples : 1);
 	for (int i=0; i < directLightSampleCount; ++i) {
-		uint rngState = (pixelCoord.y * screenSize.x + pixelCoord.x) * (payload.depth + 1) * (i + 1);
-
-		uint triangleIdx = binarySearchTriangleIdx(rngState * 7u, lightArea);
+		uint triangleIdx = binarySearchTriangleIdx(rngState * (i + 1) * 7u, lightArea);
 
 		vec3 pointOnTriangle, normalOnTriangle, pointOnTriangleWorld, normalOnTriangleWorld;
-		uniformSamplePointOnTriangle(rngState * 11u, triangleIdx, 
+		uniformSamplePointOnTriangle(rngState * (i + 1) * 11u, triangleIdx, 
 									 pointOnTriangle, 
 									 normalOnTriangle, 
 									 pointOnTriangleWorld, 
@@ -370,38 +374,35 @@ void main()
 		vec3 r = pointOnTriangleWorld - worldPos;
 		float cosL = max(dot(normalOnTriangleWorld, -shadowRayDir), 0.0);
 		float P = cosL / dot(r, r);
-		tempRadianceD += max(dot(worldNormal, shadowRayDir), 0.0) * visibility * P ;
+		tempRadianceD += (color / PI) * max(dot(worldNormal, shadowRayDir), 0.0) * lightEmittance * visibility * P * lightArea;
 	}
 	tempRadianceD *= (1 / float(directLightSampleCount)); // average
 	payload.radiance = tempRadianceD * (color / PI) * lightEmittance * lightArea;
-	// tempRadianceD = (color / PI) * lightEmittance * lightArea;
 
 	//////////////////////////////////////////////////////////////// Indirect Light
-	// uint tempDepth = payload.depth;
-	// vec3 tempRadianceI = vec3(0.0);
-	// uint numSampleByDepth = (payload.depth == 0 ? sq.numSamples : 1);
+	uint tempDepth = payload.depth;
+	vec3 tempRadianceI = vec3(0.0);
+	uint numSampleByDepth = (payload.depth == 0 ? sq.numSamples : 1);
 
-	// payload.depth += 1;
-	// for (uint i=0; i < numSampleByDepth; ++i)
-	// {
-	// 	uint rngState = (pixelCoord.y * screenSize.x + pixelCoord.x) * (payload.depth) * (i + 1);
-	// 	//vec3 rayDir = uniformSampleSphere(gl_LaunchIDEXT.xy, i, payload.depth);
-	// 	vec3 rayDir = RandomHemisphereDirection(worldNormal, rngState);
+	payload.depth += 1;
+	for (uint i=0; i < numSampleByDepth; ++i)
+	{
+		uint state = (pixelCoord.y * screenSize.x + pixelCoord.x) * (payload.depth + 1) * (i + 1);
+		vec3 rayDir = RandomHemisphereDirection(worldNormal, state);
 
-	// 	traceRayEXT(
-	// 		topLevelAS,                         // topLevel
-	// 		gl_RayFlagsOpaqueEXT, 0xff,         // rayFlags, cullMask
-	// 		0, 1, 1,                            // sbtRecordOffset, sbtRecordStride, missIndex
-	// 		worldPos, eps, rayDir, 100.0,  	// origin, tmin, direction, tmax
-	// 		0);                                 // payload 
+		traceRayEXT(
+			topLevelAS,                         // topLevel
+			gl_RayFlagsOpaqueEXT, 0xff,         // rayFlags, cullMask
+			0, 1, 1,                            // sbtRecordOffset, sbtRecordStride, missIndex
+			worldPos, eps, rayDir, 100.0,  	// origin, tmin, direction, tmax
+			0);                                 // payload 
 
-	// 	tempRadianceI += max(dot(worldNormal, rayDir), 0.0) * payload.radiance;
-	// }
-	// tempRadianceI *= 1.0 / float(numSampleByDepth);
-	// tempRadianceI *= 2.0 * color;
-	// payload.radiance = tempRadianceD + tempRadianceI;
+		tempRadianceI += 2.0 * color * max(dot(worldNormal, rayDir), 0.0) * payload.radiance;
+	}
+	tempRadianceI *= 1.0 / float(numSampleByDepth);
+	payload.radiance = tempRadianceD + tempRadianceI;
 
-	// payload.depth = tempDepth;
+	payload.depth = tempDepth;
 }
 #endif
 
@@ -410,9 +411,11 @@ void main()
 //	SHADOW MISS SHADER
 //=========================
 
+layout( location = 0 ) rayPayloadInEXT Payload payload;
+
 void main()
 {
-
+	payload.radiance = vec3(0.0);
 }
 #endif
 

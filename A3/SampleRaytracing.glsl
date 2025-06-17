@@ -321,16 +321,15 @@ void main()
 	const float eps = 1e-4;
 	vec3 lightEmittance = vec3(5.0);
 
-	if (payload.depth >= sq.maxDepth) 
-		return;
-
-	if (payload.depth == 0 && gl_InstanceCustomIndexEXT == LIGHT_INSTANCE_INDEX) // depth = 0
+	if (payload.depth == 0 && gl_InstanceCustomIndexEXT == LIGHT_INSTANCE_INDEX)
 	{
 		payload.radiance = lightEmittance;
 		return;
 	}
 
-	uint rngState = (pixelCoord.y * screenSize.x + pixelCoord.x) * (payload.depth + 1);
+	if (payload.depth >= sq.maxDepth) 
+		return;
+
 	//////////////////////////////////////////////////////////////// Direct Light
 	vec3 tempRadianceD = vec3(0.0);
 	float lightArea = getLightArea();
@@ -380,25 +379,24 @@ void main()
 	vec3 tempRadianceI = vec3(0.0);
 	uint numSampleByDepth = (payload.depth == 0 ? sq.numSamples : 1);
 
-	payload.depth += 1;
 	for (uint i=0; i < numSampleByDepth; ++i)
 	{
 		uint rngState = (pixelCoord.y * screenSize.x + pixelCoord.x) * (payload.depth + 1) * (i + 1);
 		vec3 rayDir = RandomHemisphereDirection(worldNormal, rngState);
 
+		payload.depth += 1;
 		traceRayEXT(
 			topLevelAS,                         // topLevel
 			gl_RayFlagsOpaqueEXT, 0xff,         // rayFlags, cullMask
 			0, 1, 1,                            // sbtRecordOffset, sbtRecordStride, missIndex
-			worldPos, eps, rayDir, 100.0,  	// origin, tmin, direction, tmax
+			worldPos, eps, rayDir, 100.0,  		// origin, tmin, direction, tmax
 			0);                                 // payload 
+		payload.depth = tempDepth;
 
 		tempRadianceI += 2.0 * color * max(dot(worldNormal, rayDir), 0.0) * payload.radiance;
 	}
 	tempRadianceI *= 1.0 / float(numSampleByDepth);
 	payload.radiance = tempRadianceD + tempRadianceI;
-
-	payload.depth = tempDepth;
 }
 #endif
 

@@ -135,14 +135,9 @@ layout( location = 0 ) rayPayloadInEXT Payload payload;
 hitAttributeEXT vec2 attribs;
 
 /////////////////////////////////////////////////////////////////////////////////////////////
-float RandomValue2(uint state) {
-    state *= (state + 195439) * (state + 124395) * (state + 845921);
-    return float(state) * (1.0 / 4294967295.0); // 2^31 - 1 (uint 최댓값으로 나눔) -> 0~1 사이의 실수
-}
-
 float RandomValue(inout uint state) {
     state *= (state + 195439) * (state + 124395) * (state + 845921);
-    return float(state) * (1.0 / 4294967295.0); // 2^31 - 1 (uint 최댓값으로 나눔) -> 0~1 사이의 실수
+    return float(state) * (1.0 / 4294967295.0);
 }
 
 float RandomValueNormalDistribution(inout uint state) {
@@ -224,11 +219,11 @@ float getLightArea()
 	return sum.t[lightObjDesc.triangleCount];
 }
 
-uint binarySearchTriangleIdx(uint state, float lightArea) 
+uint binarySearchTriangleIdx(inout uint state, float lightArea) 
 {
 	ObjectDesc lightObjDesc = objectDescs.desc[LIGHT_INSTANCE_INDEX];
 	cumulativeTriangleAreaBuffer sum = cumulativeTriangleAreaBuffer(lightObjDesc.cumulativeTriangleAreaAddress);
-	float target = RandomValue2(state) * lightArea;
+	float target = RandomValue(state) * lightArea;
 
 	uint l = 1;
 	uint r = lightObjDesc.triangleCount;
@@ -241,7 +236,7 @@ uint binarySearchTriangleIdx(uint state, float lightArea)
 	}
 }
 
-void uniformSamplePointOnTriangle(uint state, uint triangleIdx, 
+void uniformSamplePointOnTriangle(inout uint state, uint triangleIdx, 
 								  out vec3 pointOnTriangle, 
 								  out vec3 normalOnTriangle, 
 								  out vec3 pointOnTriangleWorld, 
@@ -269,7 +264,7 @@ void uniformSamplePointOnTriangle(uint state, uint triangleIdx,
 	vec3 n1 = normalize(a1.norm.xyz);
  	vec3 n2 = normalize(a2.norm.xyz);
 
-	vec2 xi   = vec2(RandomValue2(state), RandomValue2(state*3u));
+	vec2 xi   = vec2(RandomValue(state), RandomValue(state));
 	float su0 = sqrt(xi.x);
 	float u  = 1.0 - su0;
 	float v  = xi.y * su0;
@@ -341,10 +336,11 @@ void main()
 	float lightArea = getLightArea();
 	const uint directLightSampleCount = (payload.depth == 0 ? sq.numSamples : 1);
 	for (int i=0; i < directLightSampleCount; ++i) {
-		uint triangleIdx = binarySearchTriangleIdx(rngState * (i + 1) * 7u, lightArea);
+		uint rngState = (pixelCoord.y * screenSize.x + pixelCoord.x) * (payload.depth + 1) * (i + 1);
+		uint triangleIdx = binarySearchTriangleIdx(rngState, lightArea);
 
 		vec3 pointOnTriangle, normalOnTriangle, pointOnTriangleWorld, normalOnTriangleWorld;
-		uniformSamplePointOnTriangle(rngState * (i + 1) * 11u, triangleIdx, 
+		uniformSamplePointOnTriangle(rngState, triangleIdx, 
 									 pointOnTriangle, 
 									 normalOnTriangle, 
 									 pointOnTriangleWorld, 
@@ -387,8 +383,8 @@ void main()
 	payload.depth += 1;
 	for (uint i=0; i < numSampleByDepth; ++i)
 	{
-		uint state = (pixelCoord.y * screenSize.x + pixelCoord.x) * (payload.depth + 1) * (i + 1);
-		vec3 rayDir = RandomHemisphereDirection(worldNormal, state);
+		uint rngState = (pixelCoord.y * screenSize.x + pixelCoord.x) * (payload.depth + 1) * (i + 1);
+		vec3 rayDir = RandomHemisphereDirection(worldNormal, rngState);
 
 		traceRayEXT(
 			topLevelAS,                         // topLevel

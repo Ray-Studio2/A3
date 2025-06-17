@@ -373,7 +373,7 @@ void main()
 		tempRadianceD += (color / PI) * max(dot(worldNormal, shadowRayDir), 0.0) * lightEmittance * visibility * P * lightArea;
 	}
 	tempRadianceD *= (1 / float(directLightSampleCount)); // average
-	payload.radiance = tempRadianceD * (color / PI) * lightEmittance * lightArea;
+	payload.radiance = tempRadianceD;
 
 	//////////////////////////////////////////////////////////////// Indirect Light
 	uint tempDepth = payload.depth;

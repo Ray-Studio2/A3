@@ -1177,6 +1177,8 @@ struct ObjectDesc
     uint64 cumulativeTriangleAreaAddress = 0;
     Mat3x4 objToWorld;
     uint32 triangleCount = 0;
+    uint32 padding0 = 0;
+    uint32 padding1 = 0;
 };
 
 // @TODO: Support more than 1 instance

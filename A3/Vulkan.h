@@ -49,9 +49,11 @@ public:
     virtual void createTLAS( const std::vector<BLASBatch*>& batches ) override;
     virtual IShaderModuleRef createShaderModule( const ShaderDesc& desc ) override;
     virtual IRenderPipelineRef createRayTracingPipeline( const RaytracingPSODesc& psoDesc, RaytracingPSO* pso ) override;
+    virtual void updateLightBuffer( const std::vector<LightData>& lights ) override;
     void createOutImage();
     void createAccumulationImage();
     void createUniformBuffer();
+    void createLightBuffer();
     void updateUniformBuffer();
     void saveCurrentImage(const std::string& filename);
     //////////////////////////
@@ -164,6 +166,9 @@ private:
 
     VkBuffer uniformBuffer;
     VkDeviceMemory uniformBufferMem;
+    
+    VkBuffer lightBuffer;
+    VkDeviceMemory lightBufferMem;
 
     VkDescriptorPool descriptorPool;
     VkBuffer objectBuffer;

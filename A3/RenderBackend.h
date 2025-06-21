@@ -4,12 +4,14 @@
 #include "MeshResource.h"
 #include "Shader.h"
 #include "Matrix.h"
+#include <vector>
 
 namespace A3
 {
 struct BLASBatch;
 struct RaytracingPSO;
 struct RaytracingPSODesc;
+struct LightData;
 
 class IRenderBackend
 {
@@ -32,5 +34,7 @@ public:
     virtual IShaderModuleRef createShaderModule( const ShaderDesc& desc ) = 0;
 
     virtual IRenderPipelineRef createRayTracingPipeline( const RaytracingPSODesc& psoDesc, RaytracingPSO* pso ) = 0;
+    
+    virtual void updateLightBuffer( const std::vector<LightData>& lights ) = 0;
 };
 }

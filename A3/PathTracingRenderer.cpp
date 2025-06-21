@@ -30,6 +30,7 @@ void PathTracingRenderer::render( const Scene& scene )
         // temp
         backend->tempScenePointer = &scene;
         buildAccelerationStructure( scene );
+        updateLightBuffer( scene );
 
         buildSamplePSO();
         
@@ -70,12 +71,14 @@ void PathTracingRenderer::buildSamplePSO()
         rayGeneration.descriptors.emplace_back( SRD_AccelerationStructure, 0 );
         rayGeneration.descriptors.emplace_back( SRD_StorageImage, 1 );
         rayGeneration.descriptors.emplace_back( SRD_UniformBuffer, 2 );
+        rayGeneration.descriptors.emplace_back( SRD_StorageBuffer, 4 ); // Light buffer
         rayGeneration.descriptors.emplace_back( SRD_StorageImage, 5 ); // Accumulation image
         ShaderDesc& environmentMiss = psoDesc.shaders[1];
         environmentMiss.descriptors.emplace_back( SRD_ImageSampler, 4 );
         ShaderDesc& closestHit = psoDesc.shaders[ 2 ];
         closestHit.descriptors.emplace_back( SRD_AccelerationStructure, 0 );
         closestHit.descriptors.emplace_back( SRD_StorageBuffer, 3 );
+        closestHit.descriptors.emplace_back( SRD_StorageBuffer, 4 ); // Light buffer
     }
 
     samplePSO->shaders.resize( psoDesc.shaders.size() );
@@ -107,4 +110,32 @@ void PathTracingRenderer::buildAccelerationStructure( const Scene& scene ) const
     backend->createTLAS( batches );
 
     backend->rebuildAccelerationStructure();
+}
+
+void PathTracingRenderer::updateLightBuffer( const Scene& scene )
+{
+    lights.clear();
+    
+    // Collect all mesh objects that are lights
+    std::vector<MeshObject*> meshObjects = scene.collectMeshObjects();
+    
+    for( size_t i = 0; i < meshObjects.size(); ++i )
+    {
+        MeshObject* meshObj = meshObjects[i];
+        
+        // Check if this is a light (hardcoded for now - later can check material)
+        if( i == 6 ) // LIGHT_INSTANCE_INDEX
+        {
+            LightData light;
+            light.position = meshObj->getWorldPosition();
+            light.radius = 1.0f; // Default sphere radius
+            light.emission = Vec3( 5.0f, 5.0f, 5.0f ); // Default emission
+            light.pad0 = 0.0f;
+            
+            lights.push_back( light );
+        }
+    }
+    
+    // Update light buffer in backend
+    backend->updateLightBuffer( lights );
 }

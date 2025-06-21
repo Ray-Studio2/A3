@@ -9,6 +9,8 @@
 
 #define MAX_DEPTH 3
 
+#define PI 3.1415926535897932384626433832795
+
 vec3 toneMapACES(vec3 x) {
     const float a = 2.51;
     const float b = 0.03;
@@ -31,6 +33,28 @@ struct RayPayload
     uint rngState;
 };
 
+struct ShadowPayload
+{
+    bool inShadow;
+};
+
+struct LightData
+{
+    vec3 position;
+    float radius;
+    vec3 emission;
+    float pad0;  // Alignment for std430
+};
+
+layout(binding = 4, std430) readonly buffer LightBuffer
+{
+    uint lightCount;
+    uint pad1;
+    uint pad2;
+    uint pad3;
+    LightData lights[];
+} lightBuffer;
+
 layout( binding = 2 ) uniform CameraProperties
 {
     vec3 cameraPos;
@@ -50,6 +74,59 @@ float random(inout uint rngState) {
     return float(rngState) / float(0xffffffffu);
 }
 
+// Sample a random light from the scene
+LightData sampleRandomLight(inout uint rngState, out uint lightIndex) {
+    if (lightBuffer.lightCount == 0) {
+        lightIndex = 0;
+        LightData emptyLight;
+        emptyLight.position = vec3(0.0);
+        emptyLight.radius = 0.0;
+        emptyLight.emission = vec3(0.0);
+        emptyLight.pad0 = 0.0;
+        return emptyLight;
+    }
+    
+    lightIndex = uint(random(rngState) * float(lightBuffer.lightCount));
+    lightIndex = min(lightIndex, lightBuffer.lightCount - 1);
+    return lightBuffer.lights[lightIndex];
+}
+
+// Sample a point on a spherical light
+vec3 sampleSphereLight(LightData light, vec3 hitPoint, vec2 u, out float pdf) {
+    vec3 toLight = light.position - hitPoint;
+    float distToLight = length(toLight);
+    
+    if (distToLight < light.radius) {
+        pdf = 0.0;
+        return vec3(0.0);
+    }
+    
+    vec3 lightDir = normalize(toLight);
+    
+    // Sample sphere uniformly
+    float cosTheta = 1.0 - 2.0 * u.x;
+    float sinTheta = sqrt(max(0.0, 1.0 - cosTheta * cosTheta));
+    float phi = 2.0 * PI * u.y;
+    
+    vec3 localDir = vec3(sinTheta * cos(phi), sinTheta * sin(phi), cosTheta);
+    
+    // Transform to world space
+    vec3 up = abs(lightDir.y) < 0.999 ? vec3(0, 1, 0) : vec3(1, 0, 0);
+    vec3 tangent = normalize(cross(up, lightDir));
+    vec3 bitangent = cross(lightDir, tangent);
+    
+    vec3 sampleDir = tangent * localDir.x + bitangent * localDir.y + lightDir * localDir.z;
+    vec3 lightSample = light.position + light.radius * sampleDir;
+    
+    // PDF for sampling the light uniformly
+    pdf = 1.0 / (4.0 * PI * light.radius * light.radius);
+    
+    // Account for multiple lights
+    pdf /= float(lightBuffer.lightCount);
+    
+    return lightSample;
+}
+
 #if RAY_GENERATION_SHADER
 //=========================
 //   RAY GENERATION SHADER
@@ -58,7 +135,7 @@ layout( binding = 0 ) uniform accelerationStructureEXT topLevelAS;
 layout( binding = 1, rgba8 ) uniform image2D image;
 layout( binding = 5, rgba32f ) uniform image2D accumulationImage;
 layout(location = 0) rayPayloadEXT RayPayload gPayload;
-
+layout(location = 1) rayPayloadEXT ShadowPayload gShadowPayload;
 void main()
 {
     const vec3 cameraX = vec3( 1, 0, 0 );
@@ -152,6 +229,7 @@ layout( shaderRecordEXT ) buffer CustomData
 
 layout( binding = 0 ) uniform accelerationStructureEXT topLevelAS;
 layout(location = 0) rayPayloadInEXT RayPayload gPayload;
+layout(location = 1) rayPayloadEXT ShadowPayload gShadowPayload;
 hitAttributeEXT vec2 attribs;
 
 #define LIGHT_INSTANCE_INDEX 6
@@ -198,25 +276,79 @@ void main()
         return;
     }
     
-    // Update throughput with surface color
+    vec3 directLighting = vec3(0.0);
+    
+    // Only do direct lighting if we have lights
+    if (lightBuffer.lightCount > 0) {
+        // Sample a random light for NEE
+        uint lightIndex;
+        LightData light = sampleRandomLight(gPayload.rngState, lightIndex);
+        
+        float r1 = random(gPayload.rngState);
+        float r2 = random(gPayload.rngState);
+        float lightPdf;
+        vec3 lightSample = sampleSphereLight(light, worldPos, vec2(r1, r2), lightPdf);
+    
+    if (lightPdf > 0.0) {
+        vec3 toLight = lightSample - worldPos;
+        float lightDist = length(toLight);
+        vec3 lightDir = toLight / lightDist;
+        
+        float cosTheta = max(0.0, dot(worldNormal, lightDir));
+        
+        if (cosTheta > 0.0) {
+            // Cast shadow ray
+            gShadowPayload.inShadow = false;
+            traceRayEXT(
+                topLevelAS,
+                gl_RayFlagsTerminateOnFirstHitEXT | gl_RayFlagsOpaqueEXT | gl_RayFlagsSkipClosestHitShaderEXT,
+                0xFF,
+                0, 1, 1,  // Use miss shader index 1 for shadows
+                worldPos, 0.001, lightDir, lightDist - 0.001,
+                1  // Use shadow payload
+            );
+            
+            if (!gShadowPayload.inShadow) {
+                // Calculate direct lighting contribution
+                vec3 brdf = color / PI;  // Lambertian BRDF
+                float geometryTerm = cosTheta / (lightDist * lightDist);
+                directLighting = gPayload.throughput * brdf * light.emission * geometryTerm / lightPdf;
+            }
+        }
+    }
+    } // End of light count check
+    
     gPayload.throughput *= color;
     
+    // Russian roulette
+    if (gPayload.depth > 0) {
+        float maxComponent = max(gPayload.throughput.r, max(gPayload.throughput.g, gPayload.throughput.b));
+        float rr_prob = min(maxComponent, 0.95);
+        if (random(gPayload.rngState) > rr_prob) {
+            gPayload.radiance += directLighting;
+            return;
+        }
+        gPayload.throughput /= rr_prob;
+    }
     
-    // Sample next direction
-    float r1 = random(gPayload.rngState);
-    float r2 = random(gPayload.rngState);
-    vec2 seed = vec2(r1, r2);
-    vec3 dir = RandomCosineHemisphere(worldNormal, seed);
+    // Sample indirect direction
+    float r3 = random(gPayload.rngState);
+    float r4 = random(gPayload.rngState);
+    vec2 seed = vec2(r3, r4);
+    vec3 indirectDir = RandomCosineHemisphere(worldNormal, seed);
     
-    // Continue path
+    // Continue path for indirect lighting
     gPayload.depth += 1;
     traceRayEXT(
         topLevelAS,
         gl_RayFlagsOpaqueEXT, 0xFF,
         0, 1, 0,
-        worldPos, 0.001, dir, 100.0,
+        worldPos, 0.001, indirectDir, 100.0,
         0
     );
+    
+    // Add direct lighting to final result
+    gPayload.radiance += directLighting;
 }
 
 #endif
@@ -225,9 +357,13 @@ void main()
 //=========================
 //   SHADOW MISS SHADER
 //=========================
+
+layout(location = 1) rayPayloadInEXT ShadowPayload gShadowPayload;
 void main()
 {
+    gShadowPayload.inShadow = false;
 }
+
 #endif
 
 #if ENVIRONMENT_MISS_SHADER
@@ -244,8 +380,8 @@ void main()
     {
         vec3 dir = normalize(gPayload.rayDirection);
         vec2 uv = vec2(
-            atan(dir.z, dir.x) / (2.0 * 3.1415926535) + 0.5,
-            acos(clamp(dir.y, -1.0, 1.0)) / 3.1415926535
+            atan(dir.z, dir.x) / (2.0 * PI) + 0.5,
+            acos(clamp(dir.y, -1.0, 1.0)) / PI
         );
         vec3 color = texture(environmentMap, uv).rgb;
         gPayload.radiance = gPayload.throughput * color * 0.5;

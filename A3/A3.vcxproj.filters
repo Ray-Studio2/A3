@@ -19,6 +19,9 @@
     <Filter Include="ThirdParty\imgui">
       <UniqueIdentifier>{ad1afb38-41ba-49d0-8321-2143f56caf76}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Scene Config">
+      <UniqueIdentifier>{b3e40dbd-9c16-4755-81f0-23b43f229238}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Main.cpp">
@@ -190,6 +193,16 @@
     <None Include="SampleRaytracing.glsl">
       <Filter>Resource Files</Filter>
     </None>
-    <None Include="scene.json" />
+    <None Include="..\.gitignore" />
+    <None Include="..\.gitmodules" />
+    <None Include="..\Assets\unidirectional_path_tracer_scene.json">
+      <Filter>Scene Config</Filter>
+    </None>
+    <None Include="..\Assets\unidirectional_path_tracer_scene_quad.json">
+      <Filter>Scene Config</Filter>
+    </None>
+    <None Include="..\Assets\unidirectional_path_tracer_scene_scale1.json">
+      <Filter>Scene Config</Filter>
+    </None>
   </ItemGroup>
 </Project>

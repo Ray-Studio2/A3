@@ -53,7 +53,7 @@ void Scene::load(const std::string &path) {
 		this->camera->setFov(fov);
     }
 
-	auto &objects = data["objects"];
+	auto &objects = data["scene"];
 	if (objects.is_array()) {
 		for (auto &object : objects) {
 			// auto &type = object["type"];

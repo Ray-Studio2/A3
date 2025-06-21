@@ -4,8 +4,9 @@
 #extension GL_EXT_scalar_block_layout : require
 #extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
 
-#define SAMPLE_COUNT 50
-#define MAX_DEPTH 3
+#define SAMPLE_COUNT 100
+#define MAX_DEPTH 2
+#define PI 3.1415926535
 
 struct EnvImportanceSampleData {
     float conditional_cdf;   // .r
@@ -87,7 +88,7 @@ struct Payload {
     vec3 hitValue;
     uint depth;
     vec3 rayDirection;
-    bool bUseEnvMap;
+    bool bEnvMap;
 };
 
 #define LIGHT_INSTANCE_INDEX 6
@@ -121,7 +122,7 @@ void main()
 	payload.hitValue = vec3( 0.0 );
 	payload.depth = 1;
 	payload.rayDirection = rayDir;
-	payload.bUseEnvMap = false;
+	payload.bEnvMap = false;
 
 	traceRayEXT(
 		topLevelAS,                         // topLevel
@@ -130,7 +131,16 @@ void main()
 		g.cameraPos, 0.0, rayDir, 100.0,    // origin, tmin, direction, tmax
 		0);                                 // payload
 
-	imageStore( image, ivec2( gl_LaunchIDEXT.xy ), vec4( payload.hitValue, 0.0 ) );
+    vec4 loadColor = imageLoad(image, ivec2(gl_LaunchIDEXT.xy));
+    vec3 prevColor = vec3(loadColor.x, loadColor.y, loadColor.z);
+    vec3 blendColor = (prevColor * (SAMPLE_COUNT - 1) + payload.hitValue) / SAMPLE_COUNT;
+    
+    float exposure = 1.66f; // might be uniform
+    vec3 hdrColor = payload.hitValue; // pathtracer input
+    vec3 ldrColor = 1.0 - exp(-exposure * hdrColor);
+    vec3 finalColor = pow(ldrColor, vec3(1/2.2, 1/2.2, 1/2.2)); // simple gamma correction
+    
+	imageStore( image, ivec2( gl_LaunchIDEXT.xy ), vec4(finalColor, 0.0 ) );
 }
 #endif
 
@@ -214,17 +224,17 @@ vec3 sampleEnvDirection(uvec2 pixel, uint sampleIndex, uint depth, out float pdf
     int x = xLow;
 
     // ---- UV to Direction ----
-    float u = float(x) / float(width);
-    float v = float(y) / float(height);
-    float phi = 2.0 * 3.1415926535 * u;
-    float theta = 3.1415926535 * v;
+    float u = float(x) / float(width - 1);
+    float v = float(y) / float(height - 1);
+    float phi = 2.0 * PI * u;
+    float theta = PI * v;
     float sinTheta = sin(theta);
 
     vec3 dir = vec3(sinTheta * cos(phi), cos(theta), sinTheta * sin(phi));
 
     // ---- PDF with solid angle correction ----
     float texelPdf = data[y * width + x].conditional_pdf * data[y * width + x].marginal_pdf;
-    pdf = width * height * texelPdf / (2.0 * 3.1415926535 * 3.1415926535 * sinTheta + 1e-6); // solid angle 보정
+    pdf = width * height * texelPdf / (2.0 * PI * PI * sinTheta);
 
     return normalize(dir);
 }
@@ -234,23 +244,17 @@ hitAttributeEXT vec2 attribs;
 
 void main()
 {
-    if (gl_InstanceCustomIndexEXT == LIGHT_INSTANCE_INDEX)
-    {
-        payload.hitValue = vec3(1.0); // 임시 조명 색
-        return ;
-    }
-    
     if (payload.depth >= MAX_DEPTH) {
         payload.hitValue = vec3(0);
         return;
     }
     
-    /** if (payload.bUseEnvMap)
+    if (payload.bEnvMap)
     {
-        payload.bUseEnvMap = false;
+        payload.bEnvMap = false;
         return ;
-    } */
-  
+    }
+    
 	ObjectDesc objDesc = objectDescs.desc[gl_InstanceCustomIndexEXT];
 
 	IndexBuffer indexBuffer = IndexBuffer(objDesc.indexDeviceAddress);
@@ -283,52 +287,26 @@ void main()
     vec3 accumulated = vec3(0.0);
     uint depthBeforeTrace = payload.depth;
     
-    uint S = SAMPLE_COUNT / 2;
-    uint SampleEnabled = 0;
-
-    payload.bUseEnvMap = false;
-    /** for (uint i = 0; i < S; ++i) {
-        vec3 sampleDir = cosineSampleHemisphere(gl_LaunchIDEXT.xy, i, depthBeforeTrace, worldNormal);
-        float cosTheta = max(0.0, dot(worldNormal, sampleDir));
-        float pdf_cos = cosTheta / PI;
-        if (cosTheta <= 0.0) continue;
-
-        payload.hitValue = vec3(0.0);
-        payload.depth = depthBeforeTrace + 1;
-        payload.rayDirection = sampleDir;
-        traceRayEXT(topLevelAS, gl_RayFlagsOpaqueEXT, 0xFF, 0, 1, 0, worldPos, 0.001, sampleDir, 1000.0, 0);
-        vec3 Li = min(payload.hitValue, vec3(20.0));
-        float pdf_env = 0.f;  // Dummy to balance MIS denominator
-
-        float w = (pdf_cos * pdf_cos) / (pdf_cos * pdf_cos + pdf_env * pdf_env + EPS);
-        accumulated += w * (Li * color / PI) / max(pdf_cos, EPS);
-        SampleEnabled++;
-    } */
-
-    for (uint i = 0; i < S; ++i) {
+    
+    for (uint i = 0; i < SAMPLE_COUNT; ++i) {
         float pdf_env;
         vec3 sampleDir = sampleEnvDirection(gl_LaunchIDEXT.xy, i, depthBeforeTrace, pdf_env);
         float cosTheta = max(0.0, dot(worldNormal, sampleDir));
-        if (cosTheta <= 0.0 || pdf_env <= EPS) continue;
-
+        if (cosTheta <= 0.f) continue;
+       
         payload.hitValue = vec3(0.0);
         payload.depth = depthBeforeTrace + 1;
         payload.rayDirection = sampleDir;
-        payload.bUseEnvMap = true;
-        traceRayEXT(topLevelAS, gl_RayFlagsOpaqueEXT, 0xFF, 0, 1, 0, worldPos, 0.001, sampleDir, 1000.0, 0);
-        // if (payload.bUseEnvMap == false) continue;
-        vec3 Li = payload.hitValue;
+        payload.bEnvMap = true;
+        traceRayEXT(topLevelAS, gl_RayFlagsOpaqueEXT, 0xFF, 0, 1, 0, worldPos, 0.0001, sampleDir, 1000.0, 0);
+        if (payload.bEnvMap == false) continue;
         
-        // float pdf_cos = cosTheta / PI;
-        // float w = (pdf_env * pdf_env) / (pdf_env * pdf_env + pdf_cos * pdf_cos + EPS);
-        accumulated += (Li * color / PI) / pdf_env;
-        SampleEnabled++;
+        vec3 Li = payload.hitValue;
+        vec3 brdf = color / PI;
+        accumulated += (Li * brdf * cosTheta) / pdf_env;
     }
 
-    vec3 finalColor = accumulated / SampleEnabled;
-    // finalColor = min(finalColor, vec3(20.0));
-    finalColor = toneMapReinhard(finalColor);
-    finalColor = applyGamma(finalColor);
+    vec3 finalColor = accumulated / float(SAMPLE_COUNT);
     payload.hitValue = finalColor;
 }
 #endif
@@ -345,7 +323,6 @@ void main()
 }
 #endif
 
-
 #if ENVIRONMENT_MISS_SHADER
 //=========================
 //   ENVIRONMENT MISS SHADER
@@ -357,10 +334,9 @@ void main()
 {
     vec3 dir = normalize(payload.rayDirection); // ray direction 넘겨줘야 함
     vec2 uv = vec2(
-        atan(dir.z, dir.x) / (2.0 * 3.1415926535) + 0.5,
-        acos(clamp(dir.y, -1.0, 1.0)) / 3.1415926535
+        atan(dir.z, dir.x) / (2.0 * PI) + 0.5,
+        acos(clamp(dir.y, -1.0, 1.0)) / PI
     );
-    vec3 color = texture(environmentMap, uv).rgb;
-    payload.hitValue = toneMapACES(color);
+    payload.hitValue = texture(environmentMap, uv).rgb;
 }
 #endif

@@ -104,7 +104,7 @@ Addon_imgui::Addon_imgui( GLFWwindow* window, VulkanRenderBackend* vulkan, int32
     wd->PresentMode = VK_PRESENT_MODE_MAILBOX_KHR;
 
     wd->Swapchain = vulkan->swapChain;
-    wd->ImageCount = 2;
+    wd->ImageCount = 3;
 
     wd->SemaphoreCount = wd->ImageCount;
     wd->Frames.resize( wd->ImageCount );
@@ -248,12 +248,16 @@ void Addon_imgui::renderFrame( GLFWwindow* window, VulkanRenderBackend* vulkan )
     wd->ClearValue.color.float32[ 3 ] = clear_color.w;
     
     {
-        VkSemaphore image_acquired_semaphore = wd->FrameSemaphores[ wd->SemaphoreIndex ].ImageAcquiredSemaphore;
-        VkSemaphore render_complete_semaphore = wd->FrameSemaphores[ wd->SemaphoreIndex ].RenderCompleteSemaphore;
-        VkResult err;
+        VkSemaphore waitRT = vulkan->rtFinishedSemaphores[wd->SemaphoreIndex];
+        VkSemaphore signalPresent = wd->FrameSemaphores[ wd->SemaphoreIndex ].RenderCompleteSemaphore;
 
+        VkResult err;
         ImGui_ImplVulkanH_Frame* fd = &wd->Frames[ wd->FrameIndex ];
         {
+            err = vkWaitForFences(vulkan->device, 1, &fd->Fence, VK_TRUE, UINT64_MAX);
+            check_vk_result(err);
+            err = vkResetFences(vulkan->device, 1, &fd->Fence);    // 다음 프레임 준비
+            check_vk_result(err);
             err = vkResetCommandPool( vulkan->device, fd->CommandPool, 0 );
             check_vk_result( err );
             VkCommandBufferBeginInfo info{
@@ -285,30 +289,24 @@ void Addon_imgui::renderFrame( GLFWwindow* window, VulkanRenderBackend* vulkan )
         vkCmdEndRenderPass( fd->CommandBuffer );
         {
             VkPipelineStageFlags wait_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-            /*VkSubmitInfo info = {};
+            VkSubmitInfo info = {};
             info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
             info.waitSemaphoreCount = 1;
-            info.pWaitSemaphores = &image_acquired_semaphore;
+            info.pWaitSemaphores = &waitRT;
             info.pWaitDstStageMask = &wait_stage;
             info.commandBufferCount = 1;
             info.pCommandBuffers = &fd->CommandBuffer;
             info.signalSemaphoreCount = 1;
-            info.pSignalSemaphores = &render_complete_semaphore;*/
-            VkSubmitInfo info{
-                .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-                .commandBufferCount = 1,
-                .pCommandBuffers = &fd->CommandBuffer,
-            };
+            info.pSignalSemaphores = &signalPresent;
+
             err = vkEndCommandBuffer( fd->CommandBuffer );
             check_vk_result( err );
-            err = vkQueueSubmit( vulkan->graphicsQueue, 1, &info, VK_NULL_HANDLE);
-            check_vk_result(err);
-            err = vkQueueWaitIdle(vulkan->graphicsQueue);
+            err = vkQueueSubmit( vulkan->graphicsQueue, 1, &info, fd->Fence);
             check_vk_result( err );
         }
 
         wd->SemaphoreIndex = ( wd->SemaphoreIndex + 1 ) % wd->SemaphoreCount; // Now we can use the next set of semaphores
-        wd->FrameIndex = ( wd->FrameIndex + 1 ) % 2; // @FIXME: Workaround
+        wd->FrameIndex = ( wd->FrameIndex + 1 ) % 3; // @FIXME: Workaround
     }
 
     // Update and Render additional Platform Windows

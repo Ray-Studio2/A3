@@ -144,18 +144,18 @@ static bool IsExtensionAvailable( const std::vector<VkExtensionProperties>& prop
 
 void VulkanRenderBackend::beginFrame( int32 screenWidth, int32 screenHeight )
 {
-    VkSemaphore image_acquired_semaphore = imageAvailableSemaphores[ imageIndex ];
-    VkSemaphore render_complete_semaphore = renderFinishedSemaphores[ imageIndex ];
+    VkSemaphore image_acquired_semaphore = imageAvailableSemaphores[ semaphoreIndex ];
+    VkSemaphore render_complete_semaphore = renderFinishedSemaphores[ semaphoreIndex ];
     VkResult err = vkAcquireNextImageKHR( device, swapChain, UINT64_MAX, image_acquired_semaphore, VK_NULL_HANDLE, &imageIndex );
 
-    //{
-    //    VkResult err;
-    //    err = vkWaitForFences(device, 1, &fences[imageIndex], VK_TRUE, UINT64_MAX);    // wait indefinitely instead of periodically checking
-    //    check_vk_result(err);
+    {
+        VkResult err;
+        err = vkWaitForFences(device, 1, &fences[imageIndex], VK_TRUE, UINT64_MAX);    // wait indefinitely instead of periodically checking
+        check_vk_result(err);
 
-    //    err = vkResetFences(device, 1, &fences[imageIndex]);
-    //    check_vk_result(err);
-    //}
+        err = vkResetFences(device, 1, &fences[imageIndex]);
+        check_vk_result(err);
+    }
 }
 
 void VulkanRenderBackend::endFrame()
@@ -163,13 +163,15 @@ void VulkanRenderBackend::endFrame()
     VkPresentInfoKHR presentInfo{
         .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
         .waitSemaphoreCount = 1,
-        .pWaitSemaphores = &renderFinishedSemaphores[ imageIndex ],
+        .pWaitSemaphores = &renderFinishedSemaphores[ semaphoreIndex ],
         .swapchainCount = 1,
         .pSwapchains = &swapChain,
         .pImageIndices = &imageIndex,
     };
 
     vkQueuePresentKHR(graphicsQueue, &presentInfo);
+
+    semaphoreIndex = (semaphoreIndex + 1) % 3;
 }
 
 void VulkanRenderBackend::beginRaytracingPipeline( IRenderPipeline* inPipeline )
@@ -233,40 +235,42 @@ void VulkanRenderBackend::beginRaytracingPipeline( IRenderPipeline* inPipeline )
         subresourceRange );
 
     VkPipelineStageFlags wait_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    //VkSubmitInfo submitInfo
-    //{
-    //    .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-    //    .waitSemaphoreCount = 1,
-    //    .pWaitSemaphores = &imageAvailableSemaphores[ imageIndex ],
-    //    .pWaitDstStageMask = &wait_stage,
-    //    .commandBufferCount = 1,
-    //    .pCommandBuffers = &commandBuffers[ imageIndex ],
-    //    .signalSemaphoreCount = 1,
-    //    .pSignalSemaphores = &renderFinishedSemaphores[ imageIndex ],
-    //};
-    VkSubmitInfo submitInfo{
+    VkSubmitInfo submitInfo
+    {
         .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+        .waitSemaphoreCount = 1,
+        .pWaitSemaphores = &imageAvailableSemaphores[ semaphoreIndex ],
+        .pWaitDstStageMask = &wait_stage,
         .commandBufferCount = 1,
-        .pCommandBuffers = &commandBuffers[imageIndex],
+        .pCommandBuffers = &commandBuffers[ imageIndex ],
+        .signalSemaphoreCount = 1,
+        .pSignalSemaphores = &rtFinishedSemaphores[ semaphoreIndex ],
     };
+    //VkSubmitInfo submitInfo{
+    //    .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+    //    .commandBufferCount = 1,
+    //    .pCommandBuffers = &commandBuffers[imageIndex],
+    //};
 
     VkResult endCmdResult = vkEndCommandBuffer( commandBuffers[ imageIndex ] );
     if (endCmdResult != VK_SUCCESS) {
         printf("ERROR: vkEndCommandBuffer failed with error: %s\n", getVkResultString(endCmdResult));
     }
 
-    VkResult submitResult = vkQueueSubmit( graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
-    if (submitResult != VK_SUCCESS) {
-        printf("ERROR: vkQueueSubmit failed with error: %s (frame: %d)\n", getVkResultString(submitResult), currentFrameCount);
-        if (submitResult == VK_ERROR_DEVICE_LOST) {
-            printf("Device lost during ray tracing submit!\n");
-        }
-    }
-    
-    VkResult waitResult = vkQueueWaitIdle(graphicsQueue);
-    if (waitResult != VK_SUCCESS) {
-        printf("ERROR: vkQueueWaitIdle failed with error: %s\n", getVkResultString(waitResult));
-    }
+    vkQueueSubmit(graphicsQueue, 1, &submitInfo, fences[imageIndex]);
+
+    //VkResult submitResult = vkQueueSubmit( graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
+    //if (submitResult != VK_SUCCESS) {
+    //    printf("ERROR: vkQueueSubmit failed with error: %s (frame: %d)\n", getVkResultString(submitResult), currentFrameCount);
+    //    if (submitResult == VK_ERROR_DEVICE_LOST) {
+    //        printf("Device lost during ray tracing submit!\n");
+    //    }
+    //}
+    //
+    //VkResult waitResult = vkQueueWaitIdle(graphicsQueue);
+    //if (waitResult != VK_SUCCESS) {
+    //    printf("ERROR: vkQueueWaitIdle failed with error: %s\n", getVkResultString(waitResult));
+    //}
 }
 
 void VulkanRenderBackend::rebuildAccelerationStructure()
@@ -445,7 +449,10 @@ void VulkanRenderBackend::createVkInstance( std::vector<const char*>& extensions
 
     VkDebugUtilsMessengerCreateInfoEXT debugCreateInfo{
         .sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
-        .messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT,
+        .messageSeverity = /*VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT | 
+                           VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT |*/ 
+                           VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | 
+                           VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT,
         .messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT,
         .pfnUserCallback = debugCallback,
     };
@@ -695,7 +702,7 @@ void VulkanRenderBackend::createSwapChain()
         }
     }
 
-    uint32 imageCount = 2;// capabilities.minImageCount + 1;
+    uint32 imageCount = 3;// capabilities.minImageCount + 1;
     VkSwapchainCreateInfoKHR createInfo{
         .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
         .surface = surface,
@@ -863,6 +870,7 @@ void VulkanRenderBackend::createCommandCenter()
     commandPools.resize( swapChainImages.size() );
     commandBuffers.resize( swapChainImages.size() );
     imageAvailableSemaphores.resize( swapChainImages.size() );
+    rtFinishedSemaphores.resize( swapChainImages.size() );
     renderFinishedSemaphores.resize( swapChainImages.size() );
     fences.resize( swapChainImages.size() );
 
@@ -880,7 +888,8 @@ void VulkanRenderBackend::createCommandCenter()
         }
 
         if( vkCreateSemaphore( device, &semaphoreInfo, nullptr, &imageAvailableSemaphores[ i ]) != VK_SUCCESS ||
-            vkCreateSemaphore( device, &semaphoreInfo, nullptr, &renderFinishedSemaphores[ i ]) != VK_SUCCESS ||
+            vkCreateSemaphore( device, &semaphoreInfo, nullptr, &rtFinishedSemaphores[ i ]) != VK_SUCCESS ||
+            vkCreateSemaphore(device, &semaphoreInfo, nullptr, &renderFinishedSemaphores[i]) != VK_SUCCESS ||
             vkCreateFence( device, &fenceInfo, nullptr, &fences[ i ] ) != VK_SUCCESS )
         {
             throw std::runtime_error( "failed to create synchronization objects for a frame!" );

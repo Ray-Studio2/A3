@@ -143,8 +143,10 @@ private:
     std::vector<VkCommandBuffer> commandBuffers;
 
     std::vector<VkSemaphore> imageAvailableSemaphores;
+    std::vector<VkSemaphore> rtFinishedSemaphores;
     std::vector<VkSemaphore> renderFinishedSemaphores;
     std::vector<VkFence> fences;
+    uint32 semaphoreIndex;
     uint32 imageIndex;
 
     VkBuffer tlasBuffer;

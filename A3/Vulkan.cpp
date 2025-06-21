@@ -1,3 +1,5 @@
+#define _CRT_SECURE_NO_WARNINGS
+
 #include "Vulkan.h"
 //#include "shader_module.h"
 #include "RenderSettings.h"
@@ -9,14 +11,44 @@
 #include "AccelerationStructure.h"
 #include "Shader.h"
 #include "PipelineStateObject.h"
+#include "PathTracingRenderer.h" // For LightData
 #include <random>
 
 #define STB_IMAGE_IMPLEMENTATION
-#include <stb_image.h>
+#include "stb_image.h"
+
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include "stb_image_write.h"
+
+// Vulkan error checking macro
+#define VK_CHECK(x) \
+    do { \
+        VkResult err = x; \
+        if (err != VK_SUCCESS) { \
+            printf("Vulkan error in %s at line %d: %s (error code: %d)\n", \
+                   __FILE__, __LINE__, #x, err); \
+            assert(false); \
+        } \
+    } while (0)
+
+const char* getVkResultString(VkResult result) {
+    switch(result) {
+        case VK_SUCCESS: return "VK_SUCCESS";
+        case VK_ERROR_DEVICE_LOST: return "VK_ERROR_DEVICE_LOST";
+        case VK_ERROR_OUT_OF_HOST_MEMORY: return "VK_ERROR_OUT_OF_HOST_MEMORY";
+        case VK_ERROR_OUT_OF_DEVICE_MEMORY: return "VK_ERROR_OUT_OF_DEVICE_MEMORY";
+        case VK_ERROR_INITIALIZATION_FAILED: return "VK_ERROR_INITIALIZATION_FAILED";
+        case VK_ERROR_LAYER_NOT_PRESENT: return "VK_ERROR_LAYER_NOT_PRESENT";
+        case VK_ERROR_EXTENSION_NOT_PRESENT: return "VK_ERROR_EXTENSION_NOT_PRESENT";
+        case VK_ERROR_INCOMPATIBLE_DRIVER: return "VK_ERROR_INCOMPATIBLE_DRIVER";
+        default: return "Unknown VkResult";
+    }
+}
 
 using namespace A3;
 
 VulkanRenderBackend::VulkanRenderBackend( GLFWwindow* window, std::vector<const char*>& extensions, int32 screenWidth, int32 screenHeight )
+    : lightBuffer(VK_NULL_HANDLE), lightBufferMem(VK_NULL_HANDLE)
 {
     createVkInstance( extensions );
     createVkPhysicalDevice();
@@ -143,6 +175,9 @@ void VulkanRenderBackend::endFrame()
 void VulkanRenderBackend::beginRaytracingPipeline( IRenderPipeline* inPipeline )
 {
     VulkanPipeline* pipeline = static_cast< VulkanPipeline* >( inPipeline );
+    
+    // Update uniform buffer (including frame count)
+    updateUniformBuffer();
 
     VkCommandBufferBeginInfo info{
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
@@ -215,16 +250,30 @@ void VulkanRenderBackend::beginRaytracingPipeline( IRenderPipeline* inPipeline )
         .pCommandBuffers = &commandBuffers[imageIndex],
     };
 
-    vkEndCommandBuffer( commandBuffers[ imageIndex ] );
+    VkResult endCmdResult = vkEndCommandBuffer( commandBuffers[ imageIndex ] );
+    if (endCmdResult != VK_SUCCESS) {
+        printf("ERROR: vkEndCommandBuffer failed with error: %s\n", getVkResultString(endCmdResult));
+    }
 
-    vkQueueSubmit( graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
-    vkQueueWaitIdle(graphicsQueue);
+    VkResult submitResult = vkQueueSubmit( graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
+    if (submitResult != VK_SUCCESS) {
+        printf("ERROR: vkQueueSubmit failed with error: %s (frame: %d)\n", getVkResultString(submitResult), currentFrameCount);
+        if (submitResult == VK_ERROR_DEVICE_LOST) {
+            printf("Device lost during ray tracing submit!\n");
+        }
+    }
+    
+    VkResult waitResult = vkQueueWaitIdle(graphicsQueue);
+    if (waitResult != VK_SUCCESS) {
+        printf("ERROR: vkQueueWaitIdle failed with error: %s\n", getVkResultString(waitResult));
+    }
 }
 
 void VulkanRenderBackend::rebuildAccelerationStructure()
 {
     createOutImage();
     createUniformBuffer();
+    createLightBuffer();
 }
 
 void VulkanRenderBackend::loadDeviceExtensionFunctions( VkDevice device )
@@ -277,6 +326,44 @@ VKAPI_ATTR VkBool32 VKAPI_CALL VulkanRenderBackend::debugCallback(
     }
 
     std::cout << "[Debug]" << severity << types << pCallbackData->pMessage << std::endl;
+    
+    // Print additional information for errors
+    if (messageSeverity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) {
+        std::cout << "  Message ID: " << pCallbackData->pMessageIdName << std::endl;
+        std::cout << "  Message ID Number: " << pCallbackData->messageIdNumber << std::endl;
+        
+        if (pCallbackData->queueLabelCount > 0) {
+            std::cout << "  Queue Labels:" << std::endl;
+            for (uint32_t i = 0; i < pCallbackData->queueLabelCount; i++) {
+                std::cout << "    " << pCallbackData->pQueueLabels[i].pLabelName << std::endl;
+            }
+        }
+        
+        if (pCallbackData->cmdBufLabelCount > 0) {
+            std::cout << "  Command Buffer Labels:" << std::endl;
+            for (uint32_t i = 0; i < pCallbackData->cmdBufLabelCount; i++) {
+                std::cout << "    " << pCallbackData->pCmdBufLabels[i].pLabelName << std::endl;
+            }
+        }
+        
+        if (pCallbackData->objectCount > 0) {
+            std::cout << "  Objects:" << std::endl;
+            for (uint32_t i = 0; i < pCallbackData->objectCount; i++) {
+                std::cout << "    Type: " << pCallbackData->pObjects[i].objectType 
+                          << ", Handle: " << pCallbackData->pObjects[i].objectHandle;
+                if (pCallbackData->pObjects[i].pObjectName) {
+                    std::cout << ", Name: " << pCallbackData->pObjects[i].pObjectName;
+                }
+                std::cout << std::endl;
+            }
+        }
+        
+        // Break on error for debugging
+        #ifdef _DEBUG
+        // __debugbreak();
+        #endif
+    }
+    
     return VK_FALSE;
 }
 
@@ -358,7 +445,7 @@ void VulkanRenderBackend::createVkInstance( std::vector<const char*>& extensions
 
     VkDebugUtilsMessengerCreateInfoEXT debugCreateInfo{
         .sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
-        .messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT,
+        .messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT,
         .messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT,
         .pfnUserCallback = debugCallback,
     };
@@ -804,7 +891,6 @@ void VulkanRenderBackend::createCommandCenter()
 std::tuple<VkImage, VkDeviceMemory, VkImageView, VkSampler>
 A3::VulkanRenderBackend::createEnvironmentMap(std::string_view hdrTexturePath)
 {
-    // --- HDR 로드 ---
     int width, height, channels;
     float* pixels = stbi_loadf(hdrTexturePath.data(), &width, &height, &channels, 0);
     assert(pixels && channels == 3);
@@ -821,7 +907,6 @@ A3::VulkanRenderBackend::createEnvironmentMap(std::string_view hdrTexturePath)
 
     vkQueueWaitIdle(graphicsQueue);
 
-    // --- 이미지 생성 ---
     VkImage image;
     VkDeviceMemory imageMemory;
     std::tie(image, imageMemory) = createImage(
@@ -830,7 +915,6 @@ A3::VulkanRenderBackend::createEnvironmentMap(std::string_view hdrTexturePath)
         VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
-    // --- 스테이징 버퍼 생성 ---
     auto [stagingBuffer, stagingMem] = createBuffer(
         imageSize,
         VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
@@ -841,7 +925,6 @@ A3::VulkanRenderBackend::createEnvironmentMap(std::string_view hdrTexturePath)
     memcpy(data, rgbaPixels.data(), static_cast<size_t>(imageSize));
     vkUnmapMemory(device, stagingMem);
 
-    // --- 명령 버퍼 기록 ---
     VkCommandBuffer& cmd = commandBuffers[imageIndex];
     vkResetCommandBuffer(cmd, 0);
 
@@ -889,7 +972,6 @@ A3::VulkanRenderBackend::createEnvironmentMap(std::string_view hdrTexturePath)
     vkDestroyBuffer(device, stagingBuffer, nullptr);
     vkFreeMemory(device, stagingMem, nullptr);
 
-    // --- ImageView 생성 ---
     VkImageView imageView;
     VkImageViewCreateInfo viewInfo{
         .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
@@ -900,7 +982,6 @@ A3::VulkanRenderBackend::createEnvironmentMap(std::string_view hdrTexturePath)
     };
     vkCreateImageView(device, &viewInfo, nullptr, &imageView);
 
-    // --- Sampler 생성 ---
     VkSampler sampler;
     VkSamplerCreateInfo samplerInfo{
         .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
@@ -1394,7 +1475,7 @@ void VulkanRenderBackend::createTLAS( const std::vector<BLASBatch*>& batches )
 
 void VulkanRenderBackend::createOutImage()
 {
-    VkFormat format = VK_FORMAT_B8G8R8A8_UNORM;// VK_FORMAT_R16G16B16A16_SFLOAT; //VK_FORMAT_R8G8B8A8_SRGB, VK_FORMAT_B8G8R8A8_SRGB(==swapChainImageFormat)
+    VkFormat format = VK_FORMAT_B8G8R8A8_UNORM; // Back to 8-bit for display
     std::tie( outImage, outImageMem ) = createImage(
         { RenderSettings::screenWidth, RenderSettings::screenHeight },
         format,
@@ -1441,6 +1522,52 @@ void VulkanRenderBackend::createOutImage()
     vkQueueWaitIdle( graphicsQueue );
 }
 
+void VulkanRenderBackend::createAccumulationImage()
+{
+    VkFormat format = VK_FORMAT_R32G32B32A32_SFLOAT; // High precision format
+    std::tie( accumulationImage, accumulationImageMem ) = createImage(
+        { RenderSettings::screenWidth, RenderSettings::screenHeight },
+        format,
+        VK_IMAGE_USAGE_STORAGE_BIT,
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT );
+
+    VkImageSubresourceRange subresourceRange{
+        .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+        .levelCount = 1,
+        .layerCount = 1,
+    };
+
+    VkImageViewCreateInfo ci0{
+        .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+        .image = accumulationImage,
+        .viewType = VK_IMAGE_VIEW_TYPE_2D,
+        .format = format,
+        .components = {},
+        .subresourceRange = subresourceRange,
+    };
+    vkCreateImageView( device, &ci0, nullptr, &accumulationImageView );
+
+    vkResetCommandBuffer( commandBuffers[ imageIndex ], 0 );
+    vkBeginCommandBuffer( commandBuffers[ imageIndex ], &beginInfo );
+    {
+        setImageLayout(
+            commandBuffers[ imageIndex ],
+            accumulationImage,
+            VK_IMAGE_LAYOUT_UNDEFINED,
+            VK_IMAGE_LAYOUT_GENERAL,
+            subresourceRange );
+    }
+    vkEndCommandBuffer( commandBuffers[ imageIndex ] );
+
+    VkSubmitInfo submitInfo{
+        .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+        .commandBufferCount = 1,
+        .pCommandBuffers = &commandBuffers[ imageIndex ],
+    };
+    vkQueueSubmit( graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE );
+    vkQueueWaitIdle( graphicsQueue );
+}
+
 #include "CameraObject.h"
 #include "Scene.h"
 void VulkanRenderBackend::createUniformBuffer()
@@ -1449,6 +1576,8 @@ void VulkanRenderBackend::createUniformBuffer()
     {
         float cameraPos[ 3 ];
         float yFov_degree;
+        uint32 frameCount;
+        float padding[3]; // Padding for 16-byte alignment
     } dataSrc;
 
     std::tie( uniformBuffer, uniformBufferMem ) = createBuffer(
@@ -1463,7 +1592,91 @@ void VulkanRenderBackend::createUniformBuffer()
 
     void* dst;
     vkMapMemory( device, uniformBufferMem, 0, sizeof( dataSrc ), 0, &dst );
-    *( Data* )dst = { cameraPos[0], cameraPos[1], cameraPos[2], fov};
+    *( Data* )dst = { cameraPos[0], cameraPos[1], cameraPos[2], fov, 0, {0, 0, 0}};
+    vkUnmapMemory( device, uniformBufferMem );
+}
+
+void VulkanRenderBackend::createLightBuffer()
+{
+    // Create an initial light buffer with space for up to 16 lights
+    const size_t maxLights = 16;
+    const size_t lightDataSize = sizeof(float) * 8; // Vec3 + float + Vec3 + float padding
+    const size_t bufferSize = sizeof(uint32) * 4 + lightDataSize * maxLights; // header + lights
+    
+    std::tie( lightBuffer, lightBufferMem ) = createBuffer(
+        bufferSize,
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT );
+    
+    // Initialize with zero lights
+    void* dst;
+    vkMapMemory( device, lightBufferMem, 0, bufferSize, 0, &dst );
+    memset( dst, 0, bufferSize );
+    vkUnmapMemory( device, lightBufferMem );
+}
+
+void VulkanRenderBackend::updateLightBuffer( const std::vector<LightData>& lights )
+{
+    struct LightBufferData
+    {
+        uint32 lightCount;
+        uint32 pad1;
+        uint32 pad2;
+        uint32 pad3;
+        // LightData array follows
+    };
+    
+    const size_t headerSize = sizeof(LightBufferData);
+    const size_t lightDataSize = sizeof(float) * 8;
+    const size_t bufferSize = headerSize + lightDataSize * lights.size();
+    
+    void* dst;
+    vkMapMemory( device, lightBufferMem, 0, bufferSize, 0, &dst );
+    
+    // Write header
+    LightBufferData* header = (LightBufferData*)dst;
+    header->lightCount = static_cast<uint32>(lights.size());
+    header->pad1 = 0;
+    header->pad2 = 0;
+    header->pad3 = 0;
+    
+    // Write light data
+    float* lightData = (float*)((uint8*)dst + headerSize);
+    for( size_t i = 0; i < lights.size(); ++i )
+    {
+        const LightData& light = lights[i];
+        size_t offset = i * 8;
+        lightData[offset + 0] = light.position.x;
+        lightData[offset + 1] = light.position.y;
+        lightData[offset + 2] = light.position.z;
+        lightData[offset + 3] = light.radius;
+        lightData[offset + 4] = light.emission.x;
+        lightData[offset + 5] = light.emission.y;
+        lightData[offset + 6] = light.emission.z;
+        lightData[offset + 7] = light.pad0;
+    }
+    
+    vkUnmapMemory( device, lightBufferMem );
+}
+
+void VulkanRenderBackend::updateUniformBuffer()
+{
+    struct Data
+    {
+        float cameraPos[ 3 ];
+        float yFov_degree;
+        uint32 frameCount;
+        float padding[3];
+    } dataSrc;
+
+    CameraObject* co = tempScenePointer->getCamera();
+    const Vec3& pos = co->getPosition();
+    float cameraPos[3] = { pos.x, pos.y, pos.z };
+    float fov = co->getFov();
+
+    void* dst;
+    vkMapMemory( device, uniformBufferMem, 0, sizeof( dataSrc ), 0, &dst );
+    *( Data* )dst = { cameraPos[0], cameraPos[1], cameraPos[2], fov, currentFrameCount, {0, 0, 0}};
     vkUnmapMemory( device, uniformBufferMem );
 }
 
@@ -1523,7 +1736,7 @@ IRenderPipelineRef VulkanRenderBackend::createRayTracingPipeline( const Raytraci
     //==========================================================
     // Pipeline layout
     //==========================================================
-    std::vector<VkDescriptorSetLayoutBinding> bindings( 5 );
+    std::vector<VkDescriptorSetLayoutBinding> bindings( 6 ); // Need 6 bindings (0-5)
     for( const ShaderDesc& shaderDesc : psoDesc.shaders )
     {
         for( const ShaderResourceDescriptor& descriptor : shaderDesc.descriptors )
@@ -1629,14 +1842,17 @@ IRenderPipelineRef VulkanRenderBackend::createRayTracingPipeline( const Raytraci
         { 
             nullptr, nullptr,
             uniformBuffer, objectBuffer,
+            lightBuffer,
             /*vertexPositionBuffer, vertexAttributeBuffer, indexBuffer*/ 
         };
 
+        std::vector<VkWriteDescriptorSet> validDescriptors;
+        
         for( int32 index = 0; index < bindings.size(); ++index )
         {
             const VkDescriptorSetLayoutBinding& binding = bindings[ index ];
 
-            VkWriteDescriptorSet& descriptor = writeDescriptorSets.descriptors[ index ];
+            VkWriteDescriptorSet descriptor{};
             descriptor.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
             descriptor.dstSet = outPipeline->descriptorSet;
             descriptor.descriptorCount = 1;
@@ -1658,10 +1874,13 @@ IRenderPipelineRef VulkanRenderBackend::createRayTracingPipeline( const Raytraci
             }
             else if( binding.descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE )
             {
+                // binding 1 is output image, binding 5 is accumulation image
+                VkImageView imageView = (index == 1) ? outImageView : accumulationImageView;
+                
                 writeDescriptorSets.images.emplace_back(
                     VkDescriptorImageInfo
                     {
-                        .imageView = outImageView,
+                        .imageView = imageView,
                         .imageLayout = VK_IMAGE_LAYOUT_GENERAL
                     }
                 );
@@ -1670,10 +1889,17 @@ IRenderPipelineRef VulkanRenderBackend::createRayTracingPipeline( const Raytraci
             }
             else if( binding.descriptorType == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER || binding.descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER )
             {
+                VkBuffer buffer = storageBuffers[ index ];
+                if (buffer == nullptr) {
+                    printf("WARNING: Storage buffer at index %d is null (binding %d)\n", index, binding.binding);
+                    // Skip this descriptor for now
+                    continue;
+                }
+                
                 writeDescriptorSets.buffers.emplace_back(
                     VkDescriptorBufferInfo
                     {
-                        .buffer = storageBuffers[ index ],
+                        .buffer = buffer,
                         .offset = 0,
                         .range = VK_WHOLE_SIZE
                     }
@@ -1693,9 +1919,13 @@ IRenderPipelineRef VulkanRenderBackend::createRayTracingPipeline( const Raytraci
 
                 descriptor.pImageInfo = &writeDescriptorSets.images.back();
             }
+            
+            validDescriptors.push_back(descriptor);
         }
 
-        vkUpdateDescriptorSets( device, writeDescriptorSets.descriptors.size(), writeDescriptorSets.descriptors.data(), 0, VK_NULL_HANDLE );
+        if (!validDescriptors.empty()) {
+            vkUpdateDescriptorSets( device, validDescriptors.size(), validDescriptors.data(), 0, VK_NULL_HANDLE );
+        }
     }
 
     //==========================================================
@@ -1811,6 +2041,149 @@ In the vulkan spec,
 [VUID-vkCmdTraceRaysKHR-pHitShaderBindingTable-03689] pHitShaderBindingTable->deviceAddress must be a multiple of VkPhysicalDeviceRayTracingPipelinePropertiesKHR::shaderGroupBaseAlignment
 
 As shown in the vulkan spec 40.3.1. Indexing Rules,
-    pHitShaderBindingTable->deviceAddress + pHitShaderBindingTable->stride �� (
-    instanceShaderBindingTableRecordOffset + geometryIndex �� sbtRecordStride + sbtRecordOffset )
+    pHitShaderBindingTable->deviceAddress + pHitShaderBindingTable->stride (
+    instanceShaderBindingTableRecordOffset + geometryIndex ??sbtRecordStride + sbtRecordOffset )
 */
+
+void VulkanRenderBackend::saveCurrentImage(const std::string& filename)
+{
+    // Wait for rendering to complete
+    vkDeviceWaitIdle(device);
+    
+    // Get image dimensions
+    uint32_t width = swapChainImageExtent.width;
+    uint32_t height = swapChainImageExtent.height;
+    
+    // Create staging buffer for image data
+    VkDeviceSize imageSize = width * height * 4; // RGBA8
+    auto [stagingBuffer, stagingBufferMem] = createBuffer(
+        imageSize,
+        VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
+    );
+    
+    // Create command buffer for copy operation
+    VkCommandBufferAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    allocInfo.commandPool = commandPools[imageIndex];
+    allocInfo.commandBufferCount = 1;
+    
+    VkCommandBuffer cmdBuffer;
+    vkAllocateCommandBuffers(device, &allocInfo, &cmdBuffer);
+    
+    VkCommandBufferBeginInfo beginInfo{};
+    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    
+    vkBeginCommandBuffer(cmdBuffer, &beginInfo);
+    
+    // Transition image layout for transfer
+    VkImageMemoryBarrier barrier{};
+    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    barrier.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
+    barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.image = outImage;
+    barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    barrier.subresourceRange.baseMipLevel = 0;
+    barrier.subresourceRange.levelCount = 1;
+    barrier.subresourceRange.baseArrayLayer = 0;
+    barrier.subresourceRange.layerCount = 1;
+    barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+    barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+    
+    vkCmdPipelineBarrier(
+        cmdBuffer,
+        VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
+        VK_PIPELINE_STAGE_TRANSFER_BIT,
+        0,
+        0, nullptr,
+        0, nullptr,
+        1, &barrier
+    );
+    
+    // Copy image to buffer
+    VkBufferImageCopy region{};
+    region.bufferOffset = 0;
+    region.bufferRowLength = 0;
+    region.bufferImageHeight = 0;
+    region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    region.imageSubresource.mipLevel = 0;
+    region.imageSubresource.baseArrayLayer = 0;
+    region.imageSubresource.layerCount = 1;
+    region.imageOffset = {0, 0, 0};
+    region.imageExtent = {width, height, 1};
+    
+    vkCmdCopyImageToBuffer(
+        cmdBuffer,
+        outImage,
+        VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+        stagingBuffer,
+        1,
+        &region
+    );
+    
+    // Transition back to general layout
+    barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+    barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+    barrier.dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+    
+    vkCmdPipelineBarrier(
+        cmdBuffer,
+        VK_PIPELINE_STAGE_TRANSFER_BIT,
+        VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
+        0,
+        0, nullptr,
+        0, nullptr,
+        1, &barrier
+    );
+    
+    vkEndCommandBuffer(cmdBuffer);
+    
+    VkSubmitInfo submitInfo{};
+    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submitInfo.commandBufferCount = 1;
+    submitInfo.pCommandBuffers = &cmdBuffer;
+    
+    vkQueueSubmit(graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
+    vkQueueWaitIdle(graphicsQueue);
+    
+    vkFreeCommandBuffers(device, commandPools[imageIndex], 1, &cmdBuffer);
+    
+    // Map buffer and save to file
+    void* data;
+    vkMapMemory(device, stagingBufferMem, 0, imageSize, 0, &data);
+    
+    // Convert BGRA to RGBA for stb_image_write
+    uint8_t* pixels = (uint8_t*)data;
+    std::vector<uint8_t> rgbaData(width * height * 4);
+    
+    for (uint32_t y = 0; y < height; y++) {
+        for (uint32_t x = 0; x < width; x++) {
+            uint32_t idx = (y * width + x) * 4;
+            uint32_t outIdx = (y * width + x) * 4;
+            // Convert BGRA to RGBA
+            rgbaData[outIdx + 0] = pixels[idx + 2]; // R (from B position)
+            rgbaData[outIdx + 1] = pixels[idx + 1]; // G
+            rgbaData[outIdx + 2] = pixels[idx + 0]; // B (from R position)
+            rgbaData[outIdx + 3] = pixels[idx + 3]; // A
+        }
+    }
+    
+    // Save as PNG
+    int result = stbi_write_png(filename.c_str(), width, height, 4, rgbaData.data(), width * 4);
+    if (result) {
+        printf("Image saved as: %s\n", filename.c_str());
+    } else {
+        printf("Failed to save image: %s\n", filename.c_str());
+    }
+    
+    vkUnmapMemory(device, stagingBufferMem);
+    
+    // Cleanup
+    vkDestroyBuffer(device, stagingBuffer, nullptr);
+    vkFreeMemory(device, stagingBufferMem, nullptr);
+}

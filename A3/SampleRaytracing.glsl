@@ -8,7 +8,8 @@
 #extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
 
 #define MAX_DEPTH 3
-#define SAMPLE_COUNT 20
+
+#define PI 3.1415926535897932384626433832795
 
 vec3 toneMapACES(vec3 x) {
     const float a = 2.51;
@@ -19,19 +20,112 @@ vec3 toneMapACES(vec3 x) {
     return clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0, 1.0);
 }
 
+vec3 toneMapReinhard(vec3 color) {
+    return color / (1.0 + color);
+}
+
 struct RayPayload
 {
     vec3 rayDirection;
     vec3 radiance;
-    vec3 depthColor[MAX_DEPTH];
+    vec3 throughput;
     uint depth;
+    uint rngState;
 };
+
+struct ShadowPayload
+{
+    bool inShadow;
+};
+
+struct LightData
+{
+    vec3 position;
+    float radius;
+    vec3 emission;
+    float pad0;  // Alignment for std430
+};
+
+layout(binding = 4, std430) readonly buffer LightBuffer
+{
+    uint lightCount;
+    uint pad1;
+    uint pad2;
+    uint pad3;
+    LightData lights[];
+} lightBuffer;
 
 layout( binding = 2 ) uniform CameraProperties
 {
     vec3 cameraPos;
     float yFov_degree;
+    uint frameCount;
 } g;
+
+// Improved random number generator
+uint pcg_hash(uint seed) {
+    uint state = seed * 747796405u + 2891336453u;
+    uint word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
+    return (word >> 22u) ^ word;
+}
+
+float random(inout uint rngState) {
+    rngState = pcg_hash(rngState);
+    return float(rngState) / float(0xffffffffu);
+}
+
+// Sample a random light from the scene
+LightData sampleRandomLight(inout uint rngState, out uint lightIndex) {
+    if (lightBuffer.lightCount == 0) {
+        lightIndex = 0;
+        LightData emptyLight;
+        emptyLight.position = vec3(0.0);
+        emptyLight.radius = 0.0;
+        emptyLight.emission = vec3(0.0);
+        emptyLight.pad0 = 0.0;
+        return emptyLight;
+    }
+    
+    lightIndex = uint(random(rngState) * float(lightBuffer.lightCount));
+    lightIndex = min(lightIndex, lightBuffer.lightCount - 1);
+    return lightBuffer.lights[lightIndex];
+}
+
+// Sample a point on a spherical light
+vec3 sampleSphereLight(LightData light, vec3 hitPoint, vec2 u, out float pdf) {
+    vec3 toLight = light.position - hitPoint;
+    float distToLight = length(toLight);
+    
+    if (distToLight < light.radius) {
+        pdf = 0.0;
+        return vec3(0.0);
+    }
+    
+    vec3 lightDir = normalize(toLight);
+    
+    // Sample sphere uniformly
+    float cosTheta = 1.0 - 2.0 * u.x;
+    float sinTheta = sqrt(max(0.0, 1.0 - cosTheta * cosTheta));
+    float phi = 2.0 * PI * u.y;
+    
+    vec3 localDir = vec3(sinTheta * cos(phi), sinTheta * sin(phi), cosTheta);
+    
+    // Transform to world space
+    vec3 up = abs(lightDir.y) < 0.999 ? vec3(0, 1, 0) : vec3(1, 0, 0);
+    vec3 tangent = normalize(cross(up, lightDir));
+    vec3 bitangent = cross(lightDir, tangent);
+    
+    vec3 sampleDir = tangent * localDir.x + bitangent * localDir.y + lightDir * localDir.z;
+    vec3 lightSample = light.position + light.radius * sampleDir;
+    
+    // PDF for sampling the light uniformly
+    pdf = 1.0 / (4.0 * PI * light.radius * light.radius);
+    
+    // Account for multiple lights
+    pdf /= float(lightBuffer.lightCount);
+    
+    return lightSample;
+}
 
 #if RAY_GENERATION_SHADER
 //=========================
@@ -39,12 +133,9 @@ layout( binding = 2 ) uniform CameraProperties
 //=========================
 layout( binding = 0 ) uniform accelerationStructureEXT topLevelAS;
 layout( binding = 1, rgba8 ) uniform image2D image;
+layout( binding = 5, rgba32f ) uniform image2D accumulationImage;
 layout(location = 0) rayPayloadEXT RayPayload gPayload;
-
-vec3 gammaCorrect(vec3 color) {
-    return pow(color, vec3(1.0 / 2.2));
-}
-
+layout(location = 1) rayPayloadEXT ShadowPayload gShadowPayload;
 void main()
 {
     const vec3 cameraX = vec3( 1, 0, 0 );
@@ -53,28 +144,55 @@ void main()
     const float aspect_y = tan( radians( g.yFov_degree ) * 0.5 );
     const float aspect_x = aspect_y * float( gl_LaunchSizeEXT.x ) / float( gl_LaunchSizeEXT.y );
     
-    const vec2 screenCoord = vec2( gl_LaunchIDEXT.xy ) + vec2( 0.5 );
+    // Better random seed generation
+    uint pixelIndex = gl_LaunchIDEXT.y * gl_LaunchSizeEXT.x + gl_LaunchIDEXT.x;
+    uint rngState = pcg_hash(pixelIndex + g.frameCount * 1664525u);
+    
+    // Anti-aliasing jitter
+    float r1 = random(rngState);
+    float r2 = random(rngState);
+    
+    const vec2 screenCoord = vec2( gl_LaunchIDEXT.xy ) + vec2( r1, r2 );
     const vec2 ndc = screenCoord / vec2( gl_LaunchSizeEXT.xy ) * 2.0 - 1.0;
     vec3 rayDir = ndc.x * aspect_x * cameraX + ndc.y * aspect_y * cameraY + cameraZ;
     
+    // Initialize payload for path tracing
     gPayload.radiance = vec3( 0.0 );
-    for(uint i = 0; i < MAX_DEPTH; ++i)
-    {
-       gPayload.depthColor[i] = vec3(0.0);
-    }
+    gPayload.throughput = vec3( 1.0 );
     gPayload.depth = 0;
-    
+    gPayload.rngState = rngState;
     gPayload.rayDirection = rayDir;
-    traceRayEXT(
-       topLevelAS,                         // topLevel
-       gl_RayFlagsOpaqueEXT, 0xff,         // rayFlags, cullMask
-       0, 1, 0,                            // sbtRecordOffset, sbtRecordStride, missIndex
-       g.cameraPos, 0.0, rayDir, 100.0,    // origin, tmin, direction, tmax
-       0 );                                 // payload
     
-    vec3 finalColor = gPayload.radiance;
+    // Single ray per pixel per frame
+    traceRayEXT(
+       topLevelAS,
+       gl_RayFlagsOpaqueEXT, 0xff,
+       0, 1, 0,
+       g.cameraPos, 0.0, rayDir, 100.0,
+       0 );
+    
+    vec3 currentSample = gPayload.radiance;
+    
+    // Progressive accumulation
+    vec3 previousAccumulation = vec3(0.0);
+    if (g.frameCount > 1) {
+        previousAccumulation = imageLoad(accumulationImage, ivec2(gl_LaunchIDEXT.xy)).rgb;
+    }
+    
+    // Proper incremental average
+    vec3 accumulated = (previousAccumulation * float(g.frameCount - 1) + currentSample) / float(g.frameCount);
+    
+    // Store in accumulation buffer
+    imageStore(accumulationImage, ivec2(gl_LaunchIDEXT.xy), vec4(accumulated, 1.0));
+    
+    // Tone mapping and gamma correction
+    vec3 finalColor = accumulated;
+    float exposure = 1.0;
+    finalColor *= exposure;
+    finalColor = toneMapACES(finalColor);
+    finalColor = pow(finalColor, vec3(1.0 / 2.2));
 
-   imageStore( image, ivec2( gl_LaunchIDEXT.xy ), vec4( finalColor, 0.0 ) );
+   imageStore( image, ivec2( gl_LaunchIDEXT.xy ), vec4( finalColor, 1.0 ) );
 }
 #endif
 
@@ -98,7 +216,7 @@ struct ObjectDesc
 
 layout(buffer_reference, scalar) buffer PositionBuffer { vec4 p[]; };
 layout(buffer_reference, scalar) buffer AttributeBuffer { VertexAttributes a[]; };
-layout(buffer_reference, scalar) buffer IndexBuffer { ivec3 i[]; }; // Triangle indices
+layout(buffer_reference, scalar) buffer IndexBuffer { ivec3 i[]; };
 layout( binding = 3, scalar) buffer ObjectDescBuffer
 {
    ObjectDesc desc[];
@@ -111,6 +229,7 @@ layout( shaderRecordEXT ) buffer CustomData
 
 layout( binding = 0 ) uniform accelerationStructureEXT topLevelAS;
 layout(location = 0) rayPayloadInEXT RayPayload gPayload;
+layout(location = 1) rayPayloadEXT ShadowPayload gShadowPayload;
 hitAttributeEXT vec2 attribs;
 
 #define LIGHT_INSTANCE_INDEX 6
@@ -141,75 +260,95 @@ void main()
     vec3 worldPos = (gl_ObjectToWorldEXT * vec4(position, 1.0)).xyz;
     vec3 worldNormal = normalize(transpose(inverse(mat3(gl_ObjectToWorldEXT))) * normal);
     
-    uint currentDepthIndex = gPayload.depth;
-    gPayload.depthColor[currentDepthIndex] = color;
-
-    // 광원에 맞은 경우
+    // Light emission check
     if (gl_InstanceCustomIndexEXT == LIGHT_INSTANCE_INDEX) 
     {
-        // 첫 ray가 광원에 맞은 경우
-        if(currentDepthIndex == 0)
-        {
-            gPayload.radiance = vec3(1.0);
-            return;
-        }
-
-        const float kDepthWeights[] = float[](
-            1.00,
-            0.60,
-            0.30,
-            0.10,
-            0.05,
-            0.04,
-            0.02,
-            0.01,
-            0.005,
-            0.002
-         );
-        // currentDepthIndex -= 1: 광원 mesh 색상은 일단 무시
-        currentDepthIndex -= 1;
-
-        float weightSum = 0.0;
-        for (uint i = 0; i <= currentDepthIndex; ++i)
-            weightSum += kDepthWeights[i];
-            
-        // 아직은 씬에 맞게 조정 필요.
-        const float magicNumber = float(SAMPLE_COUNT) * 0.5;
-        // 정규화하여 누적
-        for (uint i = 0; i <= currentDepthIndex; ++i)
-        {
-            float normWeight = kDepthWeights[i] / weightSum;
-            gPayload.radiance += gPayload.depthColor[i] * normWeight / magicNumber;
-        }
+        vec3 lightEmission = vec3(5.0);
+        float distance = gl_HitTEXT;
+        float attenuation = 1.0 / (1.0 + 0.1 * distance + 0.01 * distance * distance);
+        
+        gPayload.radiance = gPayload.throughput * lightEmission * attenuation;
         return;
     }
     
-    // Tree Preorder 방식으로 순회 (부모 → 자식)
-    if (gPayload.depth + 1 < MAX_DEPTH) 
-    {
-        uvec2 pixelCoord = gl_LaunchIDEXT.xy;
-        uvec2 screenSize = gl_LaunchSizeEXT.xy;
-        uint rngState = pixelCoord.y * screenSize.x + pixelCoord.x;
-        RayPayload payloadBackup = gPayload;
-        gPayload.depth += 1;
-        for (int i = 0; i < SAMPLE_COUNT; ++i) 
-        {
-            vec2 seed = vec2(RandomValue2(rngState), RandomValue(rngState));
-            vec3 dir = RandomCosineHemisphere(worldNormal, seed);
-
-            // visit
+    // Russian roulette for path termination
+    if (gPayload.depth >= MAX_DEPTH) {
+        return;
+    }
+    
+    vec3 directLighting = vec3(0.0);
+    
+    // Only do direct lighting if we have lights
+    if (lightBuffer.lightCount > 0) {
+        // Sample a random light for NEE
+        uint lightIndex;
+        LightData light = sampleRandomLight(gPayload.rngState, lightIndex);
+        
+        float r1 = random(gPayload.rngState);
+        float r2 = random(gPayload.rngState);
+        float lightPdf;
+        vec3 lightSample = sampleSphereLight(light, worldPos, vec2(r1, r2), lightPdf);
+    
+    if (lightPdf > 0.0) {
+        vec3 toLight = lightSample - worldPos;
+        float lightDist = length(toLight);
+        vec3 lightDir = toLight / lightDist;
+        
+        float cosTheta = max(0.0, dot(worldNormal, lightDir));
+        
+        if (cosTheta > 0.0) {
+            // Cast shadow ray
+            gShadowPayload.inShadow = false;
             traceRayEXT(
                 topLevelAS,
-                gl_RayFlagsOpaqueEXT, 0xFF,
-                0, 1, 0,
-                worldPos, 0.001, dir, 100.0,
-                0
+                gl_RayFlagsTerminateOnFirstHitEXT | gl_RayFlagsOpaqueEXT | gl_RayFlagsSkipClosestHitShaderEXT,
+                0xFF,
+                0, 1, 1,  // Use miss shader index 1 for shadows
+                worldPos, 0.001, lightDir, lightDist - 0.001,
+                1  // Use shadow payload
             );
+            
+            if (!gShadowPayload.inShadow) {
+                // Calculate direct lighting contribution
+                vec3 brdf = color / PI;  // Lambertian BRDF
+                float geometryTerm = cosTheta / (lightDist * lightDist);
+                directLighting = gPayload.throughput * brdf * light.emission * geometryTerm / lightPdf;
+            }
         }
-        vec3 radianceBackup = gPayload.radiance;
-        gPayload = payloadBackup;
-        gPayload.radiance = radianceBackup;
     }
+    } // End of light count check
+    
+    gPayload.throughput *= color;
+    
+    // Russian roulette
+    if (gPayload.depth > 0) {
+        float maxComponent = max(gPayload.throughput.r, max(gPayload.throughput.g, gPayload.throughput.b));
+        float rr_prob = min(maxComponent, 0.95);
+        if (random(gPayload.rngState) > rr_prob) {
+            gPayload.radiance += directLighting;
+            return;
+        }
+        gPayload.throughput /= rr_prob;
+    }
+    
+    // Sample indirect direction
+    float r3 = random(gPayload.rngState);
+    float r4 = random(gPayload.rngState);
+    vec2 seed = vec2(r3, r4);
+    vec3 indirectDir = RandomCosineHemisphere(worldNormal, seed);
+    
+    // Continue path for indirect lighting
+    gPayload.depth += 1;
+    traceRayEXT(
+        topLevelAS,
+        gl_RayFlagsOpaqueEXT, 0xFF,
+        0, 1, 0,
+        worldPos, 0.001, indirectDir, 100.0,
+        0
+    );
+    
+    // Add direct lighting to final result
+    gPayload.radiance += directLighting;
 }
 
 #endif
@@ -218,14 +357,14 @@ void main()
 //=========================
 //   SHADOW MISS SHADER
 //=========================
-//layout( location = 1 ) rayPayloadInEXT uint missCount;
 
+layout(location = 1) rayPayloadInEXT ShadowPayload gShadowPayload;
 void main()
 {
-
+    gShadowPayload.inShadow = false;
 }
-#endif
 
+#endif
 
 #if ENVIRONMENT_MISS_SHADER
 //=========================
@@ -236,17 +375,16 @@ layout(set = 0, binding = 4) uniform sampler2D environmentMap;
 
 void main()
 {
-    if(gPayload.depth != 0)
+    // Only contribute environment lighting on primary rays
+    if(gPayload.depth == 0)
     {
-        return;
+        vec3 dir = normalize(gPayload.rayDirection);
+        vec2 uv = vec2(
+            atan(dir.z, dir.x) / (2.0 * PI) + 0.5,
+            acos(clamp(dir.y, -1.0, 1.0)) / PI
+        );
+        vec3 color = texture(environmentMap, uv).rgb;
+        gPayload.radiance = gPayload.throughput * color * 0.5;
     }
-
-    vec3 dir = normalize(gPayload.rayDirection); // ray direction 넘겨줘야 함
-    vec2 uv = vec2(
-        atan(dir.z, dir.x) / (2.0 * 3.1415926535) + 0.5,
-        acos(clamp(dir.y, -1.0, 1.0)) / 3.1415926535
-    );
-    vec3 color = texture(environmentMap, uv).rgb;
-    gPayload.radiance = toneMapACES(color);
 }
 #endif

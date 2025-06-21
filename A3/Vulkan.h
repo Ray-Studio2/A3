@@ -40,6 +40,7 @@ public:
 
     //@TODO: Move to renderer
     const class Scene* tempScenePointer = nullptr;
+    uint32 currentFrameCount = 0;
     virtual IAccelerationStructureRef createBLAS(
         const std::vector<VertexPosition>& positionData,
         const std::vector<VertexAttributes>& attributeData,
@@ -48,8 +49,13 @@ public:
     virtual void createTLAS( const std::vector<BLASBatch*>& batches ) override;
     virtual IShaderModuleRef createShaderModule( const ShaderDesc& desc ) override;
     virtual IRenderPipelineRef createRayTracingPipeline( const RaytracingPSODesc& psoDesc, RaytracingPSO* pso ) override;
+    virtual void updateLightBuffer( const std::vector<LightData>& lights ) override;
     void createOutImage();
+    void createAccumulationImage();
     void createUniformBuffer();
+    void createLightBuffer();
+    void updateUniformBuffer();
+    void saveCurrentImage(const std::string& filename);
     //////////////////////////
 
 private:
@@ -153,9 +159,16 @@ private:
     VkImage outImage;
     VkDeviceMemory outImageMem;
     VkImageView outImageView;
+    
+    VkImage accumulationImage;
+    VkDeviceMemory accumulationImageMem;
+    VkImageView accumulationImageView;
 
     VkBuffer uniformBuffer;
     VkDeviceMemory uniformBufferMem;
+    
+    VkBuffer lightBuffer;
+    VkDeviceMemory lightBufferMem;
 
     VkDescriptorPool descriptorPool;
     VkBuffer objectBuffer;

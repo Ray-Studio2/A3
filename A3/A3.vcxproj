@@ -199,11 +199,15 @@
     <ClInclude Include="VulkanResource.h" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="..\.gitignore" />
+    <None Include="..\Assets\nee-test-scene.json" />
+    <None Include="..\Assets\unidirectional_path_tracer_scene.json" />
+    <None Include="..\Assets\unidirectional_path_tracer_scene_quad.json" />
+    <None Include="..\Assets\unidirectional_path_tracer_scene_scale1.json" />
     <None Include="Sampler.glsl" />
     <None Include="SampleRaytracing.glsl">
       <DeploymentContent>false</DeploymentContent>
     </None>
-    <None Include="scene.json" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

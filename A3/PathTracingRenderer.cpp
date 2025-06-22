@@ -1,3 +1,4 @@
+#include <unordered_map>
 #include "PathTracingRenderer.h"
 #include "RenderSettings.h"
 #include "Vulkan.h"
@@ -74,7 +75,7 @@ void PathTracingRenderer::buildSamplePSO()
         rayGeneration.descriptors.emplace_back( SRD_StorageBuffer, 4 ); // Light buffer
         rayGeneration.descriptors.emplace_back( SRD_StorageImage, 5 ); // Accumulation image
         ShaderDesc& environmentMiss = psoDesc.shaders[1];
-        environmentMiss.descriptors.emplace_back( SRD_ImageSampler, 4 );
+        environmentMiss.descriptors.emplace_back( SRD_ImageSampler, 6 );
         ShaderDesc& closestHit = psoDesc.shaders[ 2 ];
         closestHit.descriptors.emplace_back( SRD_AccelerationStructure, 0 );
         closestHit.descriptors.emplace_back( SRD_StorageBuffer, 3 );

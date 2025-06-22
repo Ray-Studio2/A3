@@ -1745,7 +1745,7 @@ IRenderPipelineRef VulkanRenderBackend::createRayTracingPipeline( const Raytraci
     //==========================================================
     // Pipeline layout
     //==========================================================
-    std::vector<VkDescriptorSetLayoutBinding> bindings( 6 ); // Need 6 bindings (0-5)
+    std::vector<VkDescriptorSetLayoutBinding> bindings( 7 ); // Need 6 bindings (0-5)
     for( const ShaderDesc& shaderDesc : psoDesc.shaders )
     {
         for( const ShaderResourceDescriptor& descriptor : shaderDesc.descriptors )

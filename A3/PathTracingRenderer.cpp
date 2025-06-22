@@ -24,7 +24,7 @@ void PathTracingRenderer::beginFrame( int32 screenWidth, int32 screenHeight ) co
     backend->beginFrame( screenWidth, screenHeight );
 }
 
-void PathTracingRenderer::render( const Scene& scene )
+void PathTracingRenderer::render( Scene& scene )
 {
     if( scene.isSceneDirty() )
     {
@@ -37,6 +37,8 @@ void PathTracingRenderer::render( const Scene& scene )
         
         // Reset frame count when scene changes
         frameCount = 0;
+
+        scene.cleanSceneDirty();
     }
 
     // Increment frame count
@@ -74,12 +76,14 @@ void PathTracingRenderer::buildSamplePSO()
         rayGeneration.descriptors.emplace_back( SRD_UniformBuffer, 2 );
         rayGeneration.descriptors.emplace_back( SRD_StorageBuffer, 4 ); // Light buffer
         rayGeneration.descriptors.emplace_back( SRD_StorageImage, 5 ); // Accumulation image
+        rayGeneration.descriptors.emplace_back( SRD_UniformBuffer, 7 ); // Imgui parameters
         ShaderDesc& environmentMiss = psoDesc.shaders[1];
         environmentMiss.descriptors.emplace_back( SRD_ImageSampler, 6 );
         ShaderDesc& closestHit = psoDesc.shaders[ 2 ];
         closestHit.descriptors.emplace_back( SRD_AccelerationStructure, 0 );
         closestHit.descriptors.emplace_back( SRD_StorageBuffer, 3 );
         closestHit.descriptors.emplace_back( SRD_StorageBuffer, 4 ); // Light buffer
+        closestHit.descriptors.emplace_back( SRD_UniformBuffer, 7 ); // Imgui parameters
     }
 
     samplePSO->shaders.resize( psoDesc.shaders.size() );

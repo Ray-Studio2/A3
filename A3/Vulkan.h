@@ -166,11 +166,14 @@ private:
     VkDeviceMemory accumulationImageMem;
     VkImageView accumulationImageView;
 
-    VkBuffer uniformBuffer;
-    VkDeviceMemory uniformBufferMem;
+    VkBuffer cameraBuffer;
+    VkDeviceMemory cameraBufferMem;
     
     VkBuffer lightBuffer;
     VkDeviceMemory lightBufferMem;
+
+    VkBuffer imguiBuffer;
+    VkDeviceMemory imguiBufferMem;
 
     VkDescriptorPool descriptorPool;
     VkBuffer objectBuffer;

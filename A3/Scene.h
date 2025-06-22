@@ -4,6 +4,7 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include "EngineTypes.h"
 
 namespace A3
 {
@@ -12,6 +13,13 @@ class MeshObject;
 class CameraObject;
 struct MeshResource;
 
+struct imguiParam
+{
+	uint32 maxDepth = 3;
+	uint32 numSamples = 64;
+	uint32 padding0 = 0;
+	uint32 isProgressive = 1;
+};
 
 class Scene
 {
@@ -28,8 +36,10 @@ public:
 
 	std::vector<MeshObject*> collectMeshObjects() const;
 	CameraObject* getCamera() const { return camera.get(); }
+	imguiParam* getImguiParam() const { return imgui_param.get(); }
 
 	void markSceneDirty() { bSceneDirty = true; }
+	void cleanSceneDirty() { bSceneDirty = false; }
 	bool isSceneDirty() const { return bSceneDirty; }
 
 private:
@@ -38,5 +48,6 @@ private:
     std::unordered_map<std::string, MeshResource*> resources;
     std::vector<std::unique_ptr<SceneObject>> objects;
 	std::unique_ptr<CameraObject> camera;
+	std::unique_ptr<imguiParam> imgui_param;
 };
 }

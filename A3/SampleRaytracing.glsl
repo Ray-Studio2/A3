@@ -371,7 +371,7 @@ void main()
 //   ENVIRONMENT MISS SHADER
 //=========================
 layout(location = 0) rayPayloadInEXT RayPayload gPayload;
-layout(set = 0, binding = 4) uniform sampler2D environmentMap;
+layout(set = 0, binding = 6) uniform sampler2D environmentMap;
 
 void main()
 {

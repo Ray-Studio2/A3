@@ -28,7 +28,7 @@ public:
 	~PathTracingRenderer();
 
 	void beginFrame( int32 screenWidth, int32 screenHeight ) const;
-	void render( const Scene& scene );
+	void render( Scene& scene );
 	void endFrame() const;
 
 private:

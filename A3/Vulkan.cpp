@@ -1581,28 +1581,49 @@ void VulkanRenderBackend::createAccumulationImage()
 #include "Scene.h"
 void VulkanRenderBackend::createUniformBuffer()
 {
-    struct Data
     {
-        float cameraPos[ 3 ];
-        float yFov_degree;
-        uint32 frameCount;
-        float padding[3]; // Padding for 16-byte alignment
-    } dataSrc;
+        struct Data
+        {
+            float cameraPos[3];
+            float yFov_degree;
+            uint32 frameCount;
+            float padding[3]; // Padding for 16-byte alignment
+        } dataSrc;
 
-    std::tie( uniformBuffer, uniformBufferMem ) = createBuffer(
-        sizeof( dataSrc ),
-        VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT );
+        std::tie(cameraBuffer, cameraBufferMem) = createBuffer(
+            sizeof(dataSrc),
+            VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 
-    CameraObject* co = tempScenePointer->getCamera();
-    const Vec3& pos = co->getPosition();
-    float cameraPos[3] = { pos.x, pos.y, pos.z };
-    float fov = co->getFov();
+        CameraObject* co = tempScenePointer->getCamera();
+        const Vec3& pos = co->getPosition();
+        float cameraPos[3] = { pos.x, pos.y, pos.z };
+        float fov = co->getFov();
 
-    void* dst;
-    vkMapMemory( device, uniformBufferMem, 0, sizeof( dataSrc ), 0, &dst );
-    *( Data* )dst = { cameraPos[0], cameraPos[1], cameraPos[2], fov, 0, {0, 0, 0}};
-    vkUnmapMemory( device, uniformBufferMem );
+        void* dst;
+        vkMapMemory(device, cameraBufferMem, 0, sizeof(dataSrc), 0, &dst);
+        *(Data*)dst = { cameraPos[0], cameraPos[1], cameraPos[2], fov, 0, {0, 0, 0} };
+        vkUnmapMemory(device, cameraBufferMem);
+    }
+
+    {
+        imguiParam dataSrc;
+
+        std::tie(imguiBuffer, imguiBufferMem) = createBuffer(
+            sizeof(dataSrc),
+            VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+        imguiParam* ip = tempScenePointer->getImguiParam();
+        uint32 maxDepth = ip->maxDepth;
+        uint32 numSamples = ip->numSamples;
+        uint32 isProgressive = ip->isProgressive;
+
+        void* dst;
+        vkMapMemory(device, imguiBufferMem, 0, sizeof(dataSrc), 0, &dst);
+        *(imguiParam*)dst = { maxDepth, numSamples, 0, isProgressive };
+        vkUnmapMemory(device, imguiBufferMem);
+    }
 }
 
 void VulkanRenderBackend::createLightBuffer()
@@ -1670,23 +1691,39 @@ void VulkanRenderBackend::updateLightBuffer( const std::vector<LightData>& light
 
 void VulkanRenderBackend::updateUniformBuffer()
 {
-    struct Data
     {
-        float cameraPos[ 3 ];
-        float yFov_degree;
-        uint32 frameCount;
-        float padding[3];
-    } dataSrc;
+        struct Data
+        {
+            float cameraPos[3];
+            float yFov_degree;
+            uint32 frameCount;
+            float padding[3];
+        } dataSrc;
 
-    CameraObject* co = tempScenePointer->getCamera();
-    const Vec3& pos = co->getPosition();
-    float cameraPos[3] = { pos.x, pos.y, pos.z };
-    float fov = co->getFov();
+        CameraObject* co = tempScenePointer->getCamera();
+        const Vec3& pos = co->getPosition();
+        float cameraPos[3] = { pos.x, pos.y, pos.z };
+        float fov = co->getFov();
 
-    void* dst;
-    vkMapMemory( device, uniformBufferMem, 0, sizeof( dataSrc ), 0, &dst );
-    *( Data* )dst = { cameraPos[0], cameraPos[1], cameraPos[2], fov, currentFrameCount, {0, 0, 0}};
-    vkUnmapMemory( device, uniformBufferMem );
+        void* dst;
+        vkMapMemory(device, cameraBufferMem, 0, sizeof(dataSrc), 0, &dst);
+        *(Data*)dst = { cameraPos[0], cameraPos[1], cameraPos[2], fov, currentFrameCount, {0, 0, 0} };
+        vkUnmapMemory(device, cameraBufferMem);
+    }
+
+    {
+        imguiParam dataSrc;
+
+        imguiParam* ip = tempScenePointer->getImguiParam();
+        uint32 maxDepth = ip->maxDepth;
+        uint32 numSamples = ip->numSamples;
+        uint32 isProgressive = ip->isProgressive;
+
+        void* dst;
+        vkMapMemory(device, imguiBufferMem, 0, sizeof(dataSrc), 0, &dst);
+        *(imguiParam*)dst = { maxDepth, numSamples, 0, isProgressive };
+        vkUnmapMemory(device, imguiBufferMem);
+    }
 }
 
 VkShaderStageFlagBits getVulkanShaderStage( EShaderStage stage )
@@ -1745,7 +1782,7 @@ IRenderPipelineRef VulkanRenderBackend::createRayTracingPipeline( const Raytraci
     //==========================================================
     // Pipeline layout
     //==========================================================
-    std::vector<VkDescriptorSetLayoutBinding> bindings( 7 ); // Need 6 bindings (0-5)
+    std::vector<VkDescriptorSetLayoutBinding> bindings( 8 ); // Need 6 bindings (0-7)
     for( const ShaderDesc& shaderDesc : psoDesc.shaders )
     {
         for( const ShaderResourceDescriptor& descriptor : shaderDesc.descriptors )
@@ -1850,9 +1887,8 @@ IRenderPipelineRef VulkanRenderBackend::createRayTracingPipeline( const Raytraci
         std::vector<VkBuffer> storageBuffers = 
         { 
             nullptr, nullptr,
-            uniformBuffer, objectBuffer,
-            lightBuffer,
-            /*vertexPositionBuffer, vertexAttributeBuffer, indexBuffer*/ 
+            cameraBuffer, objectBuffer,
+            lightBuffer, nullptr, nullptr, imguiBuffer
         };
 
         std::vector<VkWriteDescriptorSet> validDescriptors;

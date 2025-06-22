@@ -7,8 +7,6 @@
 #extension GL_EXT_scalar_block_layout : require
 #extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
 
-#define MAX_DEPTH 3
-
 #define PI 3.1415926535897932384626433832795
 
 vec3 toneMapACES(vec3 x) {
@@ -61,6 +59,13 @@ layout( binding = 2 ) uniform CameraProperties
     float yFov_degree;
     uint frameCount;
 } g;
+
+layout( binding = 7 ) uniform imguiParam {
+	uint maxDepth;
+	uint numSamples;
+    uint padding0;
+    uint isProgressive;
+} ip;
 
 // Improved random number generator
 uint pcg_hash(uint seed) {
@@ -173,24 +178,21 @@ void main()
     
     vec3 currentSample = gPayload.radiance;
     
-    // Progressive accumulation
-    vec3 previousAccumulation = vec3(0.0);
-    if (g.frameCount > 1) {
-        previousAccumulation = imageLoad(accumulationImage, ivec2(gl_LaunchIDEXT.xy)).rgb;
+    vec3 finalColor = currentSample;
+    if ( ip.isProgressive != 0u ) {
+        // Progressive accumulation
+        vec3 previousAccumulation = vec3(0.0);
+        if (g.frameCount > 1) {
+            previousAccumulation = imageLoad(accumulationImage, ivec2(gl_LaunchIDEXT.xy)).rgb;
+        }
+        
+        // Proper incremental average
+        vec3 accumulated = (previousAccumulation * float(g.frameCount - 1) + currentSample) / float(g.frameCount);
+        
+        // Store in accumulation buffer
+        imageStore(accumulationImage, ivec2(gl_LaunchIDEXT.xy), vec4(accumulated, 1.0));
+        finalColor = accumulated;
     }
-    
-    // Proper incremental average
-    vec3 accumulated = (previousAccumulation * float(g.frameCount - 1) + currentSample) / float(g.frameCount);
-    
-    // Store in accumulation buffer
-    imageStore(accumulationImage, ivec2(gl_LaunchIDEXT.xy), vec4(accumulated, 1.0));
-    
-    // Tone mapping and gamma correction
-    vec3 finalColor = accumulated;
-    float exposure = 1.0;
-    finalColor *= exposure;
-    finalColor = toneMapACES(finalColor);
-    finalColor = pow(finalColor, vec3(1.0 / 2.2));
 
    imageStore( image, ivec2( gl_LaunchIDEXT.xy ), vec4( finalColor, 1.0 ) );
 }
@@ -272,7 +274,7 @@ void main()
     }
     
     // Russian roulette for path termination
-    if (gPayload.depth >= MAX_DEPTH) {
+    if (gPayload.depth >= ip.maxDepth) {
         return;
     }
     

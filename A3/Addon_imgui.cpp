@@ -256,7 +256,7 @@ void Addon_imgui::renderFrame( GLFWwindow* window, VulkanRenderBackend* vulkan, 
                 scene->markSceneDirty(); ImGui::SameLine();
             ImGui::Text("at Frame"); ImGui::SameLine();
 
-            static int frameCount = 1000;
+            static int frameCount = 100;
             ImGui::BeginDisabled(!autoSave);
             {
                 ImGui::SetNextItemWidth(150.0f);

@@ -264,96 +264,41 @@ void main()
 
     vec3 worldPos = (gl_ObjectToWorldEXT * vec4(position, 1.0)).xyz;
     vec3 worldNormal = normalize(transpose(inverse(mat3(gl_ObjectToWorldEXT))) * normal);
-    
-    // Light emission check
-    if (gl_InstanceCustomIndexEXT == LIGHT_INSTANCE_INDEX) 
-    {
-        vec3 lightEmission = vec3(5.0);
-        float distance = gl_HitTEXT;
-        float attenuation = 1.0 / (1.0 + 0.1 * distance + 0.01 * distance * distance);
-        
-        gPayload.radiance = gPayload.throughput * lightEmission * attenuation;
-        return;
-    }
-    
-    // Russian roulette for path termination
-    if (gPayload.depth >= ip.maxDepth) {
-        return;
-    }
-    
-    vec3 directLighting = vec3(0.0);
-    
-    // Only do direct lighting if we have lights
-    if (lightBuffer.lightCount > 0) {
-        // Sample a random light for NEE
-        uint lightIndex;
-        LightData light = sampleRandomLight(gPayload.rngState, lightIndex);
-        
-        float r1 = random(gPayload.rngState);
-        float r2 = random(gPayload.rngState);
-        float lightPdf;
-        vec3 lightSample = sampleSphereLight(light, worldPos, vec2(r1, r2), lightPdf);
-    
-    if (lightPdf > 0.0) {
-        vec3 toLight = lightSample - worldPos;
-        float lightDist = length(toLight);
-        vec3 lightDir = toLight / lightDist;
-        
-        float cosTheta = max(0.0, dot(worldNormal, lightDir));
-        
-        if (cosTheta > 0.0) {
-            // Cast shadow ray
-            gShadowPayload.inShadow = false;
-            traceRayEXT(
-                topLevelAS,
-                gl_RayFlagsTerminateOnFirstHitEXT | gl_RayFlagsOpaqueEXT | gl_RayFlagsSkipClosestHitShaderEXT,
-                0xFF,
-                0, 1, 1,  // Use miss shader index 1 for shadows
-                worldPos, 0.001, lightDir, lightDist - 0.001,
-                1  // Use shadow payload
-            );
-            
-            if (!gShadowPayload.inShadow) {
-                // Calculate direct lighting contribution
-                vec3 brdf = color / PI;  // Lambertian BRDF
-                float geometryTerm = cosTheta / (lightDist * lightDist);
-                directLighting = gPayload.throughput * brdf * light.emission * geometryTerm / lightPdf;
-            }
+
+    const vec3 lightEmittance = vec3(5.0);
+
+    vec3 lightColor = vec3(0.0);
+    vec3 temp = vec3(0.0);
+
+    uint tempDepth = gPayload.depth;
+
+    if (gl_InstanceCustomIndexEXT == LIGHT_INSTANCE_INDEX)
+        lightColor = lightEmittance;
+
+    uint numSampleByDepth = (gPayload.depth == 0 ? ip.numSamples : 1);
+
+    if (gPayload.depth < ip.maxDepth) {
+        for (uint i=0; i < numSampleByDepth; ++i) {
+                float r3 = random(gPayload.rngState);
+                float r4 = random(gPayload.rngState);
+                vec2 seed = vec2(r3, r4);
+                vec3 rayDir = RandomCosineHemisphere(worldNormal, seed);
+
+                gPayload.depth++;
+                traceRayEXT(
+                    topLevelAS,                         // topLevel
+                    gl_RayFlagsOpaqueEXT, 0xff,         // rayFlags, cullMask
+                    0, 1, 1,                            // sbtRecordOffset, sbtRecordStride, missIndex
+                    worldPos, 0.0001, rayDir, 100.0,  	// origin, tmin, direction, tmax
+                    0);                                 // payload 
+                gPayload.depth = tempDepth;
+
+            temp += max(dot(worldNormal, rayDir), 0.0) * gPayload.radiance;
         }
+        temp *= 1.0 / float(numSampleByDepth);
     }
-    } // End of light count check
-    
-    gPayload.throughput *= color;
-    
-    // Russian roulette
-    if (gPayload.depth > 0) {
-        float maxComponent = max(gPayload.throughput.r, max(gPayload.throughput.g, gPayload.throughput.b));
-        float rr_prob = min(maxComponent, 0.95);
-        if (random(gPayload.rngState) > rr_prob) {
-            gPayload.radiance += directLighting;
-            return;
-        }
-        gPayload.throughput /= rr_prob;
-    }
-    
-    // Sample indirect direction
-    float r3 = random(gPayload.rngState);
-    float r4 = random(gPayload.rngState);
-    vec2 seed = vec2(r3, r4);
-    vec3 indirectDir = RandomCosineHemisphere(worldNormal, seed);
-    
-    // Continue path for indirect lighting
-    gPayload.depth += 1;
-    traceRayEXT(
-        topLevelAS,
-        gl_RayFlagsOpaqueEXT, 0xFF,
-        0, 1, 0,
-        worldPos, 0.001, indirectDir, 100.0,
-        0
-    );
-    
-    // Add direct lighting to final result
-    gPayload.radiance += directLighting;
+
+    gPayload.radiance = lightColor + 2.0 * color * temp;
 }
 
 #endif
@@ -363,10 +308,12 @@ void main()
 //   SHADOW MISS SHADER
 //=========================
 
+layout(location = 0) rayPayloadInEXT RayPayload gPayload;
 layout(location = 1) rayPayloadInEXT ShadowPayload gShadowPayload;
 void main()
 {
-    gShadowPayload.inShadow = false;
+    // gShadowPayload.inShadow = false;
+    gPayload.radiance = vec3(0.0);
 }
 
 #endif
@@ -381,15 +328,16 @@ layout(set = 0, binding = 6) uniform sampler2D environmentMap;
 void main()
 {
     // Only contribute environment lighting on primary rays
-    if(gPayload.depth == 0)
-    {
-        vec3 dir = normalize(gPayload.rayDirection);
-        vec2 uv = vec2(
-            atan(dir.z, dir.x) / (2.0 * PI) + 0.5,
-            acos(clamp(dir.y, -1.0, 1.0)) / PI
-        );
-        vec3 color = texture(environmentMap, uv).rgb;
-        gPayload.radiance = gPayload.throughput * color * 0.5;
-    }
+    // if(gPayload.depth == 0)
+    // {
+    //     vec3 dir = normalize(gPayload.rayDirection);
+    //     vec2 uv = vec2(
+    //         atan(dir.z, dir.x) / (2.0 * PI) + 0.5,
+    //         acos(clamp(dir.y, -1.0, 1.0)) / PI
+    //     );
+    //     vec3 color = texture(environmentMap, uv).rgb;
+    //     gPayload.radiance = gPayload.throughput * color * 0.5;
+    // }
+    gPayload.radiance = vec3(0.0);
 }
 #endif

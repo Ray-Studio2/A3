@@ -8,9 +8,9 @@
 #define PI 3.1415926535897932384626433832795
 #define LIGHT_INSTANCE_INDEX 6
 
-#include "SharedStructs.glsl"
-#include "Bindings.glsl"
-#include "Sampler.glsl"
+#include "shaders/SharedStructs.glsl"
+#include "shaders/Bindings.glsl"
+#include "shaders/Sampler.glsl"
 
 #if RAY_GENERATION_SHADER
 //=========================

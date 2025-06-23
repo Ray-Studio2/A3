@@ -151,7 +151,10 @@ void main()
     
     // Better random seed generation
     uint pixelIndex = gl_LaunchIDEXT.y * gl_LaunchSizeEXT.x + gl_LaunchIDEXT.x;
-    uint rngState = pcg_hash(pixelIndex + g.frameCount * 1664525u);
+    uint seed = pixelIndex;
+    if (ip.isProgressive != 0u)
+        seed = pixelIndex + g.frameCount * 1664525u;
+    uint rngState = pcg_hash(seed);
     
     // Anti-aliasing jitter
     float r1 = random(rngState);

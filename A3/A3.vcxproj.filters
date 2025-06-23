@@ -196,13 +196,7 @@
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <None Include="SampleRaytracing.glsl">
-      <Filter>Resource Files</Filter>
-    </None>
     <None Include="..\.gitignore" />
-    <None Include="Sampler.glsl">
-      <Filter>Resource Files</Filter>
-    </None>
     <None Include="..\Assets\nee-test-scene.json">
       <Filter>Scene Configs</Filter>
     </None>
@@ -214,6 +208,18 @@
     </None>
     <None Include="..\Assets\unidirectional_path_tracer_scene_scale1.json">
       <Filter>Scene Configs</Filter>
+    </None>
+    <None Include="shaders\Bindings.glsl">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="shaders\Sampler.glsl">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="shaders\SampleRaytracing.glsl">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="shaders\SharedStructs.glsl">
+      <Filter>Resource Files</Filter>
     </None>
   </ItemGroup>
 </Project>

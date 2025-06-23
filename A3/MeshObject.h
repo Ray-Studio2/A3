@@ -24,11 +24,7 @@ public:
 	}
 
 	BLASBatch* getBLASBatch() { return &blasBatch; }
-
 	MeshResource* getResource() { return resource; }
-	
-	Vec3 getWorldPosition() const { return Vec3( localToWorld.m03, localToWorld.m13, localToWorld.m23 ); }
-
 	virtual bool canRender() override { return true; }
 
 private:

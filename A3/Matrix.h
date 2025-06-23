@@ -7,6 +7,8 @@ struct Mat3x3
 	float m00, m01, m02;
 	float m10, m11, m12;
 	float m20, m21, m22;
+
+	static Mat3x3 identity;
 };
 
 struct Mat4x4
@@ -15,6 +17,8 @@ struct Mat4x4
 	float m10, m11, m12, m13;
 	float m20, m21, m22, m23;
 	float m30, m31, m32, m33;
+
+	static Mat4x4 identity;
 };
 
 struct Mat3x4
@@ -32,4 +36,15 @@ struct Mat3x4
 
 	static Mat3x4 identity;
 };
+
+inline Mat3x4 toMat3x4(const Mat4x4& m)
+{
+	Mat3x4 t{};
+
+	t.m00 = m.m00;  t.m01 = m.m01;  t.m02 = m.m02;  t.m03 = m.m03;
+	t.m10 = m.m10;  t.m11 = m.m11;  t.m12 = m.m12;  t.m13 = m.m13;
+	t.m20 = m.m20;  t.m21 = m.m21;  t.m22 = m.m22;  t.m23 = m.m23;
+
+	return t;
+}
 }

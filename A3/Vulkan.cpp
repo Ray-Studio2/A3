@@ -1376,9 +1376,10 @@ void VulkanRenderBackend::createTLAS( const std::vector<BLASBatch*>& batches )
 
         for( int32 instanceIndex = 0; instanceIndex < batch->transforms.size(); ++instanceIndex, ++objectIndex)
         {
+            const Mat3x4& world = toMat3x4(batch->transforms[instanceIndex]);
+            memcpy( &instance, &batch->transforms[ instanceIndex ], sizeof( Mat3x4 )); // VkAccelerationStructureInstanceKHR::transform
             instance.instanceCustomIndex = objectIndex;
             instance.instanceShaderBindingTableRecordOffset = instanceData.size();
-            memcpy( &instance, &batch->transforms[ instanceIndex ], sizeof( Mat3x4 ) );
 
             instanceData.push_back( instance );
             ObjectDesc objectDesc
@@ -1597,7 +1598,7 @@ void VulkanRenderBackend::createUniformBuffer()
             VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 
         CameraObject* co = tempScenePointer->getCamera();
-        const Vec3& pos = co->getPosition();
+        const Vec3& pos = co->getWorldPosition();
         float cameraPos[3] = { pos.x, pos.y, pos.z };
         float fov = co->getFov();
 
@@ -1702,7 +1703,7 @@ void VulkanRenderBackend::updateUniformBuffer()
         } dataSrc;
 
         CameraObject* co = tempScenePointer->getCamera();
-        const Vec3& pos = co->getPosition();
+        const Vec3& pos = co->getWorldPosition();
         float cameraPos[3] = { pos.x, pos.y, pos.z };
         float fov = co->getFov();
 

@@ -13,6 +13,7 @@
 #include "PipelineStateObject.h"
 #include "PathTracingRenderer.h" // For LightData
 #include <random>
+#include <filesystem>
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
@@ -2219,11 +2220,17 @@ void VulkanRenderBackend::saveCurrentImage(const std::string& filename)
     }
     
     // Save as PNG
-    int result = stbi_write_png(filename.c_str(), width, height, 4, rgbaData.data(), width * 4);
+    std::string folder = "output_images";
+    std::string path = folder + "/" + filename;
+
+    if (!std::filesystem::exists(folder))
+        std::filesystem::create_directories(folder);
+
+    int result = stbi_write_png(path.c_str(), width, height, 4, rgbaData.data(), width * 4);
     if (result) {
-        printf("Image saved as: %s\n", filename.c_str());
+        printf("Image saved as: %s\n", path.c_str());
     } else {
-        printf("Failed to save image: %s\n", filename.c_str());
+        printf("Failed to save image: %s\n", path.c_str());
     }
     
     vkUnmapMemory(device, stagingBufferMem);

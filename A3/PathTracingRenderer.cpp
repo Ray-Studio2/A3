@@ -47,12 +47,6 @@ void PathTracingRenderer::render( Scene& scene )
     // Pass frame count to backend
     backend->currentFrameCount = frameCount;
     
-    // Auto-save at specific frame count
-    if (autoSaveEnabled && frameCount == autoSaveFrameCount) {
-        backend->saveCurrentImage("frame_" + std::to_string(frameCount) + ".png");
-        printf("Saved image at frame %d\n", frameCount);
-    }
-    
     backend->beginRaytracingPipeline( samplePSO->pipeline.get() );
 }
 

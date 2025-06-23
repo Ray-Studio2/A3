@@ -58,12 +58,38 @@ void PathTracingRenderer::endFrame() const
 // @NOTE: This is a function to create a sample PSO.
 void PathTracingRenderer::buildSamplePSO()
 {
+    std::string shaderName = "SampleRaytracing.glsl";
+
     RaytracingPSODesc psoDesc;
     {
-        psoDesc.shaders.emplace_back( SS_RayGeneration, "SampleRaytracing.glsl" );
-        psoDesc.shaders.emplace_back( SS_Miss, "SampleRaytracing.glsl", "ENVIRONMENT" );
-        psoDesc.shaders.emplace_back( SS_ClosestHit, "SampleRaytracing.glsl" );
-        psoDesc.shaders.emplace_back( SS_Miss, "SampleRaytracing.glsl", "SHADOW" );
+        std::string samplingMode;
+        switch (backend->tempScenePointer->getImguiParam()->lightSamplingMode)
+        {
+        case imguiParam::BruteForce:
+            samplingMode = "BRUTE_FORCE";
+            break;
+        case imguiParam::NEE:
+            samplingMode = "NEE";
+            break;
+        }
+
+        std::string lightSelection;
+        switch (backend->tempScenePointer->getImguiParam()->lightSelection)
+        {
+        case imguiParam::LightOnly:
+            lightSelection = "LIGHT_ONLY_";
+            break;
+        case imguiParam::EnvMap:
+            lightSelection = "ENV_MAP_";
+            break;
+        case imguiParam::Both:
+            lightSelection = "ENV_MAP_";
+        }
+
+        psoDesc.shaders.emplace_back( SS_RayGeneration, shaderName );
+        psoDesc.shaders.emplace_back( SS_Miss, shaderName, lightSelection + "ENVIRONMENT" );
+        psoDesc.shaders.emplace_back( SS_ClosestHit, shaderName, samplingMode);
+        psoDesc.shaders.emplace_back( SS_Miss, shaderName, "SHADOW" );
         ShaderDesc& rayGeneration = psoDesc.shaders[ 0 ];
         rayGeneration.descriptors.emplace_back( SRD_AccelerationStructure, 0 );
         rayGeneration.descriptors.emplace_back( SRD_StorageImage, 1 );

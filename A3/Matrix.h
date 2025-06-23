@@ -47,4 +47,34 @@ inline Mat3x4 toMat3x4(const Mat4x4& m)
 
 	return t;
 }
+
+inline Mat3x3 mul(const Mat3x3& A, const Mat3x3& B)
+{
+	Mat3x3 R;
+
+	R.m00 = A.m00 * B.m00 + A.m01 * B.m10 + A.m02 * B.m20;
+	R.m01 = A.m00 * B.m01 + A.m01 * B.m11 + A.m02 * B.m21;
+	R.m02 = A.m00 * B.m02 + A.m01 * B.m12 + A.m02 * B.m22;
+
+	R.m10 = A.m10 * B.m00 + A.m11 * B.m10 + A.m12 * B.m20;
+	R.m11 = A.m10 * B.m01 + A.m11 * B.m11 + A.m12 * B.m21;
+	R.m12 = A.m10 * B.m02 + A.m11 * B.m12 + A.m12 * B.m22;
+
+	R.m20 = A.m20 * B.m00 + A.m21 * B.m10 + A.m22 * B.m20;
+	R.m21 = A.m20 * B.m01 + A.m21 * B.m11 + A.m22 * B.m21;
+	R.m22 = A.m20 * B.m02 + A.m21 * B.m12 + A.m22 * B.m22;
+
+	return R;
+}
+
+inline Mat3x3 operator*(const Mat3x3& lhs, const Mat3x3& rhs)
+{
+	return mul(lhs, rhs);
+}
+
+inline Mat3x3& operator*=(Mat3x3& lhs, const Mat3x3& rhs)
+{
+	lhs = lhs * rhs;
+	return lhs;
+}
 }

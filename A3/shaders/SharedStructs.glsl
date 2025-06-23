@@ -14,10 +14,9 @@ struct ShadowPayload
 
 struct LightData
 {
-    vec3 position;
-    float radius;
-    vec3 emission;
-    float pad0;  // Alignment for std430
+    vec3 emittance;
+    uint triangleCount;
+    mat4 transform;
 };
 
 struct VertexAttributes
@@ -31,4 +30,5 @@ struct ObjectDesc
    uint64_t vertexPositionDeviceAddress;
    uint64_t vertexAttributeDeviceAddress;
    uint64_t indexDeviceAddress;
+   uint64_t cumulativeTriangleAreaAddress;
 };

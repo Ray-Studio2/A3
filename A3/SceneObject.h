@@ -9,10 +9,12 @@ class SceneObject
 {
 public:
 	SceneObject()
-		: position({0.0f, 0.0f, 0.0f}),
-		  scale({1.0f, 1.0f, 1.0f}),
+		: position(0.0f),
+		  scale(1.0f),
 		  rotation(Mat3x3::identity),
-		  localToWorld( Mat4x4::identity )
+		  localToWorld( Mat4x4::identity ),
+		  baseColor(0.0f),
+		  emittance(0.0f)
 	{
 		updateLocalToWorld();
 	}
@@ -21,6 +23,8 @@ public:
 
 	const Mat4x4& getLocalToWorld() { return localToWorld; }
 	const Vec3& getWorldPosition() { return Vec3( localToWorld.m03, localToWorld.m13, localToWorld.m23 ); }
+	const Vec3& getEmittance() { return emittance; }
+	const Vec3& getBaseColor() { return baseColor; }
 
 	void setPosition( const Vec3& position )
 	{
@@ -40,10 +44,43 @@ public:
 		updateLocalToWorld();
 	}
 
-	void setRotation(const Vec3& axis, float angleRad)
+	void setRotation(const Vec3& angleRad)
 	{
-		this->rotation = rotationFromAxisAngle(axis, angleRad);
+		float cx = std::cos(angleRad.x); float sx = std::sin(angleRad.x); // pitch
+		float cy = std::cos(angleRad.y); float sy = std::sin(angleRad.y); // yaw
+		float cz = std::cos(angleRad.z); float sz = std::sin(angleRad.z); // roll
+
+		Mat3x3 rotX{
+			1,  0,  0,
+			0, cx, -sx,
+			0, sx,  cx
+		};
+
+		Mat3x3 rotY{
+			 cy, 0, sy,
+			  0, 1, 0,
+			-sy, 0, cy
+		};
+
+		Mat3x3 rotZ{
+			cz, -sz, 0,
+			sz,  cz, 0,
+			 0,   0, 1
+		};
+
+		Mat3x3 rot = rotZ * rotY * rotX;
+		rotation = rot;
 		updateLocalToWorld();
+	}
+
+	void setBaseColor(const Vec3& baseColor) 
+	{
+		this->baseColor = baseColor;
+	}
+
+	void setEmittance(const Vec3& emittance)
+	{
+		this->emittance = emittance;
 	}
 
 protected:
@@ -71,26 +108,14 @@ protected:
 		localToWorld.m33 = 1.0f;
 	}
 
-	static Mat3x3 rotationFromAxisAngle(const Vec3& axis, float angleRad)
-	{
-		Vec3 n = normalize(axis);
-		float c = std::cos(angleRad);
-		float s = std::sin(angleRad);
-		float t = 1.0f - c;
-
-		float x = n.x, y = n.y, z = n.z;
-
-		Mat3x3 r{};
-		r.m00 = t * x * x + c;       r.m01 = t * x * y - s * z;   r.m02 = t * x * z + s * y;
-		r.m10 = t * x * y + s * z;   r.m11 = t * y * y + c;       r.m12 = t * y * z - s * x;
-		r.m20 = t * x * z - s * y;   r.m21 = t * y * z + s * x;   r.m22 = t * z * z + c;
-		return r;
-	}
-
 	Vec3 position;
 	Vec3 scale;
 	Mat3x3 rotation;
 
 	Mat4x4 localToWorld;
+
+	Vec3 baseColor;
+	// for light objects
+	Vec3 emittance; 
 };
 }

@@ -530,6 +530,7 @@ std::vector<const char*> deviceExtensions = {
     VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME, // not used
     VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME, // not used
     VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
+    VK_KHR_RAY_QUERY_EXTENSION_NAME,
 
     VK_KHR_SPIRV_1_4_EXTENSION_NAME, // not used
     VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME,
@@ -580,8 +581,8 @@ void VulkanRenderBackend::createVkQueueFamily()
         if( queueFamilyIndex >= queueFamilyCount )
             throw std::runtime_error( "failed to find a graphics & present queue!" );
     }
-    float queuePriority = 1.0f;
 
+    float queuePriority = 1.0f;
     VkDeviceQueueCreateInfo queueCreateInfo{
         .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
         .queueFamilyIndex = queueFamilyIndex,
@@ -589,42 +590,67 @@ void VulkanRenderBackend::createVkQueueFamily()
         .pQueuePriorities = &queuePriority,
     };
 
-    VkDeviceCreateInfo createInfo{
-        .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
-        .queueCreateInfoCount = 1,
-        .pQueueCreateInfos = &queueCreateInfo,
-        .enabledExtensionCount = ( uint32 )deviceExtensions.size(),
-        .ppEnabledExtensionNames = deviceExtensions.data(),
-    };
-
-    VkPhysicalDeviceBufferDeviceAddressFeatures f1{
+    VkPhysicalDeviceBufferDeviceAddressFeatures bdaFeat{
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES,
         .bufferDeviceAddress = VK_TRUE,
     };
 
-    VkPhysicalDeviceAccelerationStructureFeaturesKHR f2{
+    VkPhysicalDeviceRayQueryFeaturesKHR rqFeat{
+    .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_QUERY_FEATURES_KHR,
+    .rayQuery = VK_TRUE
+    };
+
+    VkPhysicalDeviceAccelerationStructureFeaturesKHR asFeat{
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR,
         .accelerationStructure = VK_TRUE,
     };
 
-    VkPhysicalDeviceRayTracingPipelineFeaturesKHR f3{
+    VkPhysicalDeviceRayTracingPipelineFeaturesKHR rtpFeat{
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR,
         .rayTracingPipeline = VK_TRUE,
     };
 
-    createInfo.pNext = &f1;
-    f1.pNext = &f2;
-    f2.pNext = &f3;
+    VkPhysicalDeviceFeatures2 feats2{
+    .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2
+    };
 
-    if( vkCreateDevice( physicalDevice, &createInfo, nullptr, &device ) != VK_SUCCESS )
+    feats2.pNext = &bdaFeat;
+    bdaFeat.pNext = &rqFeat;
+    rqFeat.pNext = &asFeat;
+    asFeat.pNext = &rtpFeat;
+    rtpFeat.pNext = nullptr;
+
+    vkGetPhysicalDeviceFeatures2(physicalDevice, &feats2);
+
+    if (!rqFeat.rayQuery)
+        throw std::runtime_error("Device doesn't support VK_KHR_ray_query");
+
+    feats2.features.shaderInt64 = VK_TRUE;
+    bdaFeat.bufferDeviceAddress = VK_TRUE;
+    rqFeat.rayQuery = VK_TRUE;
+    asFeat.accelerationStructure = VK_TRUE;
+    rtpFeat.rayTracingPipeline = VK_TRUE;
+
+
+    VkDeviceCreateInfo createInfo{
+        .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+        .pNext = &feats2,
+        .queueCreateInfoCount = 1,
+        .pQueueCreateInfos = &queueCreateInfo,
+        .enabledExtensionCount = (uint32)deviceExtensions.size(),
+        .ppEnabledExtensionNames = deviceExtensions.data(),
+        .pEnabledFeatures = nullptr,
+    };
+
+    if (vkCreateDevice(physicalDevice, &createInfo, nullptr, &device) != VK_SUCCESS)
     {
-        throw std::runtime_error( "failed to create logical device!" );
+        throw std::runtime_error("failed to create logical device!");
     }
 
-    vkGetDeviceQueue( device, queueFamilyIndex, 0, &graphicsQueue );
+    vkGetDeviceQueue(device, queueFamilyIndex, 0, &graphicsQueue);
 
     // @TODO: Isolate function
-    loadDeviceExtensionFunctions( device );
+    loadDeviceExtensionFunctions(device);
 }
 
 void VulkanRenderBackend::createVkDescriptorPools()
@@ -1179,16 +1205,19 @@ inline VkDeviceAddress VulkanRenderBackend::getDeviceAddressOf( VkAccelerationSt
 }
 
 // @TODO: Support more than 1 geometry
-IAccelerationStructureRef VulkanRenderBackend::createBLAS(
-    const std::vector<VertexPosition>& positionData, 
-    const std::vector<VertexAttributes>& attributeData, 
-    const std::vector<uint32>& indexData, 
-    const Mat3x4& transformData )
+IAccelerationStructureRef VulkanRenderBackend::createBLAS( const BLASBuildParams params )
 {
     VulkanAccelerationStructure* outBlas = new VulkanAccelerationStructure();
     VkDeviceMemory vertexPositionBufferMem;
     VkDeviceMemory vertexAttributeBufferMem;
     VkDeviceMemory indexBufferMem;
+    VkDeviceMemory cumulativeTriangleAreaMem;
+
+    auto& positionData = params.positionData;
+    auto& attributeData = params.attributeData;
+    auto& indexData = params.indexData;
+    auto& cumulativeTriangleAreaData = params.cumulativeTriangleAreaData;
+    auto& transformData = params.transformData;
 
     std::tie(outBlas->vertexPositionBuffer, vertexPositionBufferMem ) = createBuffer(
         positionData.size() * sizeof( VertexPosition ),
@@ -1214,6 +1243,14 @@ IAccelerationStructureRef VulkanRenderBackend::createBLAS(
         VK_BUFFER_USAGE_TRANSFER_DST_BIT,
         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT );
 
+    std::tie(outBlas->cumulativeTriangleAreaBuffer, cumulativeTriangleAreaMem) = createBuffer(
+        cumulativeTriangleAreaData.size() * sizeof(float),
+        VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
+        VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR |
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+        VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
     auto [geoTransformBuffer, geoTransformBufferMem] = createBuffer(
         sizeof( Mat3x4 ),
         VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR,
@@ -1232,6 +1269,10 @@ IAccelerationStructureRef VulkanRenderBackend::createBLAS(
     vkMapMemory( device, indexBufferMem, 0, indexData.size() * sizeof( uint32 ), 0, &dst );
     memcpy( dst, indexData.data(), indexData.size() * sizeof( uint32 ) );
     vkUnmapMemory( device, indexBufferMem );
+
+    vkMapMemory(device, cumulativeTriangleAreaMem, 0, cumulativeTriangleAreaData.size() * sizeof(float), 0, &dst);
+    memcpy(dst, cumulativeTriangleAreaData.data(), cumulativeTriangleAreaData.size() * sizeof(float));
+    vkUnmapMemory(device, cumulativeTriangleAreaMem);
 
     vkMapMemory( device, geoTransformBufferMem, 0, sizeof( Mat3x4 ), 0, &dst );
     memcpy( dst, &transformData, sizeof( Mat3x4 ) );
@@ -1339,6 +1380,7 @@ struct ObjectDesc
 	uint64 vertexPositionDeviceAddress = 0;
 	uint64 vertexAttributeDeviceAddress = 0;
 	uint64 indexDeviceAddress = 0;
+    uint64 cumulativeTriangleAreaAddress = 0;
 };
 
 // @TODO: Support more than 1 instance
@@ -1387,6 +1429,7 @@ void VulkanRenderBackend::createTLAS( const std::vector<BLASBatch*>& batches )
 				.vertexPositionDeviceAddress = getDeviceAddressOf(blas->vertexPositionBuffer),
 				.vertexAttributeDeviceAddress = getDeviceAddressOf(blas->vertexAttributeBuffer),
 				.indexDeviceAddress = getDeviceAddressOf(blas->indexBuffer),
+                .cumulativeTriangleAreaAddress = getDeviceAddressOf(blas->cumulativeTriangleAreaBuffer),
             };
             memcpy((ObjectDesc*)dst + objectIndex, &objectDesc, sizeof(ObjectDesc));
         }
@@ -1623,7 +1666,7 @@ void VulkanRenderBackend::createUniformBuffer()
 
         void* dst;
         vkMapMemory(device, imguiBufferMem, 0, sizeof(dataSrc), 0, &dst);
-        *(imguiParam*)dst = { maxDepth, numSamples, 0, isProgressive };
+        *(imguiParam*)dst = { maxDepth, numSamples, isProgressive };
         vkUnmapMemory(device, imguiBufferMem);
     }
 }
@@ -1659,8 +1702,8 @@ void VulkanRenderBackend::updateLightBuffer( const std::vector<LightData>& light
     };
     
     const size_t headerSize = sizeof(LightBufferData);
-    const size_t lightDataSize = sizeof(float) * 8;
-    const size_t bufferSize = headerSize + lightDataSize * lights.size();
+    const size_t lightSize = sizeof(LightData) * lights.size();
+    const size_t bufferSize = headerSize + lightSize;
     
     void* dst;
     vkMapMemory( device, lightBufferMem, 0, bufferSize, 0, &dst );
@@ -1673,20 +1716,9 @@ void VulkanRenderBackend::updateLightBuffer( const std::vector<LightData>& light
     header->pad3 = 0;
     
     // Write light data
-    float* lightData = (float*)((uint8*)dst + headerSize);
-    for( size_t i = 0; i < lights.size(); ++i )
-    {
-        const LightData& light = lights[i];
-        size_t offset = i * 8;
-        lightData[offset + 0] = light.position.x;
-        lightData[offset + 1] = light.position.y;
-        lightData[offset + 2] = light.position.z;
-        lightData[offset + 3] = light.radius;
-        lightData[offset + 4] = light.emission.x;
-        lightData[offset + 5] = light.emission.y;
-        lightData[offset + 6] = light.emission.z;
-        lightData[offset + 7] = light.pad0;
-    }
+    LightData* dstLights = (LightData*)(static_cast<uint8_t*>(dst) + headerSize);
+
+    std::memcpy(dstLights, lights.data(), lightSize);
     
     vkUnmapMemory( device, lightBufferMem );
 }
@@ -1723,7 +1755,7 @@ void VulkanRenderBackend::updateUniformBuffer()
 
         void* dst;
         vkMapMemory(device, imguiBufferMem, 0, sizeof(dataSrc), 0, &dst);
-        *(imguiParam*)dst = { maxDepth, numSamples, 0, isProgressive };
+        *(imguiParam*)dst = { maxDepth, numSamples, isProgressive };
         vkUnmapMemory(device, imguiBufferMem);
     }
 }

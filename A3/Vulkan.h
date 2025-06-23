@@ -41,11 +41,7 @@ public:
     //@TODO: Move to renderer
     const class Scene* tempScenePointer = nullptr;
     uint32 currentFrameCount = 0;
-    virtual IAccelerationStructureRef createBLAS(
-        const std::vector<VertexPosition>& positionData,
-        const std::vector<VertexAttributes>& attributeData,
-        const std::vector<uint32>& indexData,
-        const Mat3x4& transformData ) override;
+    virtual IAccelerationStructureRef createBLAS(const BLASBuildParams params) override;
     virtual void createTLAS( const std::vector<BLASBatch*>& batches ) override;
     virtual IShaderModuleRef createShaderModule( const ShaderDesc& desc ) override;
     virtual IRenderPipelineRef createRayTracingPipeline( const RaytracingPSODesc& psoDesc, RaytracingPSO* pso ) override;

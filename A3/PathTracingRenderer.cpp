@@ -152,10 +152,9 @@ void PathTracingRenderer::updateLightBuffer( const Scene& scene )
         if( i == 6 ) // LIGHT_INSTANCE_INDEX
         {
             LightData light;
-            light.position = meshObj->getWorldPosition();
-            light.radius = 1.0f; // Default sphere radius
-            light.emission = Vec3( 5.0f, 5.0f, 5.0f ); // Default emission
-            light.pad0 = 0.0f;
+            light.emission = meshObj->getEmittance();
+            light.triangleCount = meshObj->getResource()->triangleCount;
+            light.transform = meshObj->getLocalToWorld();
             
             lights.push_back( light );
         }

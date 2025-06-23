@@ -58,7 +58,7 @@ vec3 RandomCosineHemisphere(vec3 worldNormal, vec2 xi) {
     return normalize(tbn * local);                 // 회전 후 정규화
 }
 
-////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////
 
 // Improved random number generator
 uint pcg_hash(uint seed) {
@@ -72,59 +72,7 @@ float random(inout uint rngState) {
     return float(rngState) / float(0xffffffffu);
 }
 
-// Sample a random light from the scene
-LightData sampleRandomLight(inout uint rngState, out uint lightIndex) {
-    if (lightBuffer.lightCount == 0) {
-        lightIndex = 0;
-        LightData emptyLight;
-        emptyLight.position = vec3(0.0);
-        emptyLight.radius = 0.0;
-        emptyLight.emission = vec3(0.0);
-        emptyLight.pad0 = 0.0;
-        return emptyLight;
-    }
-    
-    lightIndex = uint(random(rngState) * float(lightBuffer.lightCount));
-    lightIndex = min(lightIndex, lightBuffer.lightCount - 1);
-    return lightBuffer.lights[lightIndex];
-}
-
-// Sample a point on a spherical light
-vec3 sampleSphereLight(LightData light, vec3 hitPoint, vec2 u, out float pdf) {
-    vec3 toLight = light.position - hitPoint;
-    float distToLight = length(toLight);
-    
-    if (distToLight < light.radius) {
-        pdf = 0.0;
-        return vec3(0.0);
-    }
-    
-    vec3 lightDir = normalize(toLight);
-    
-    // Sample sphere uniformly
-    float cosTheta = 1.0 - 2.0 * u.x;
-    float sinTheta = sqrt(max(0.0, 1.0 - cosTheta * cosTheta));
-    float phi = 2.0 * PI * u.y;
-    
-    vec3 localDir = vec3(sinTheta * cos(phi), sinTheta * sin(phi), cosTheta);
-    
-    // Transform to world space
-    vec3 up = abs(lightDir.y) < 0.999 ? vec3(0, 1, 0) : vec3(1, 0, 0);
-    vec3 tangent = normalize(cross(up, lightDir));
-    vec3 bitangent = cross(lightDir, tangent);
-    
-    vec3 sampleDir = tangent * localDir.x + bitangent * localDir.y + lightDir * localDir.z;
-    vec3 lightSample = light.position + light.radius * sampleDir;
-    
-    // PDF for sampling the light uniformly
-    pdf = 1.0 / (4.0 * PI * light.radius * light.radius);
-    
-    // Account for multiple lights
-    pdf /= float(lightBuffer.lightCount);
-    
-    return lightSample;
-}
-////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////
 
 vec3 toneMapACES(vec3 x) {
     const float a = 2.51;

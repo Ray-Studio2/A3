@@ -3,6 +3,7 @@
 #include "EngineTypes.h"
 #include "Shader.h"
 #include "Vector.h"
+#include "Matrix.h"
 #include <memory>
 #include <vector>
 
@@ -15,10 +16,9 @@ struct RaytracingPSO;
 
 struct LightData
 {
-	Vec3 position = Vec3(0, 0, 0);
-	float radius = 1.0f;
-	Vec3 emission = Vec3(0, 0, 0);
-	float pad0 = 0.0f;
+	Vec3 emission = Vec3(5.0f, 5.0f, 5.0f);
+	uint32 triangleCount = 0;
+	Mat4x4 transform = Mat4x4::identity;
 };
 
 class PathTracingRenderer

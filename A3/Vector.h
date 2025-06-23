@@ -19,6 +19,14 @@ struct Vec2
 		};
 	};
 
+	Vec2()
+		: Vec2(0.0f, 0.0f)
+	{}
+
+	Vec2( float num )
+		: Vec2(num, num)
+	{}
+
 	Vec2( float inX, float inY )
 		: x( inX ), y( inY )
 	{}
@@ -31,6 +39,14 @@ struct Vec3 : public Vec2
 		float z;
 		float b;
 	};
+
+	Vec3()
+		: Vec2{}, z{0.0f}
+	{}
+
+	Vec3( float num )
+		: Vec2{num}, z{ num }
+	{}
 
 	Vec3( float inX, float inY, float inZ )
 		: Vec2( inX, inY ), z( inZ )

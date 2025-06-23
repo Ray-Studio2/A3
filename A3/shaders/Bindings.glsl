@@ -12,6 +12,11 @@ layout( binding = 3, scalar) buffer ObjectDescBuffer
    ObjectDesc desc[];
 } gObjectDescs;
 
+layout(buffer_reference, scalar) buffer PositionBuffer { vec4 p[]; };
+layout(buffer_reference, scalar) buffer AttributeBuffer { VertexAttributes a[]; };
+layout(buffer_reference, scalar) buffer IndexBuffer { uint i[]; };
+layout(buffer_reference, scalar) buffer cumulativeTriangleAreaBuffer { float t[]; };
+
 layout(binding = 4, std430) readonly buffer LightBuffer
 {
     uint lightCount;
@@ -19,13 +24,12 @@ layout(binding = 4, std430) readonly buffer LightBuffer
     uint pad2;
     uint pad3;
     LightData lights[];
-} lightBuffer;
+} gLightBuffer;
 
 layout( binding = 5, rgba32f ) uniform image2D accumulationImage;
 layout( binding = 6 ) uniform sampler2D environmentMap;
 layout( binding = 7 ) uniform imguiParam {
 	uint maxDepth;
 	uint numSamples;
-    uint padding0;
     uint isProgressive;
-} ip;
+} gImguiParam;

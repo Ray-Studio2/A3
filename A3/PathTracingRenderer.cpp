@@ -58,7 +58,7 @@ void PathTracingRenderer::endFrame() const
 // @NOTE: This is a function to create a sample PSO.
 void PathTracingRenderer::buildSamplePSO()
 {
-    std::string shaderName = "SampleRaytracing.glsl";
+    std::string shaderName = "shaders/SampleRaytracing.glsl";
 
     RaytracingPSODesc psoDesc;
     {

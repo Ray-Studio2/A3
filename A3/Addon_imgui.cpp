@@ -202,39 +202,75 @@ void Addon_imgui::renderFrame( GLFWwindow* window, VulkanRenderBackend* vulkan, 
     ImGui::NewFrame();
 
     {
-        static float f[3] = { 0.0f, 0.0f, 0.0f };
-
         ImGui::Begin("A3 Pathtracer");
 
+        ImGui::SeparatorText("Light Sampling");
+        {
+            static int e1 = 0;
+            ImGui::RadioButton("Brute Force", &e1, 0); ImGui::SameLine();
+            ImGui::RadioButton("NEE", &e1, 1);
+
+            static int e2 = 0;
+            ImGui::RadioButton("Light Only", &e2, 0); ImGui::SameLine();
+            ImGui::RadioButton("Env Map", &e2, 1); ImGui::SameLine();
+            ImGui::RadioButton("Both", &e2, 2);
+        }
+
         ImGui::SeparatorText("Sample Quality");
-        int depth = static_cast<int>(scene->getImguiParam()->maxDepth);
-        if (ImGui::InputInt("Max depth", &depth)) {
-            if (depth < 0) depth = 0;
-            if (depth > 5) depth = 5;
-            scene->getImguiParam()->maxDepth = static_cast<uint32>(depth);
-            scene->markSceneDirty();
-        }
+        {
+            int depth = static_cast<int>(scene->getImguiParam()->maxDepth);
+            if (ImGui::InputInt("Max depth", &depth)) {
+                if (depth < 0) depth = 0;
+                if (depth > 5) depth = 5;
+                scene->getImguiParam()->maxDepth = static_cast<uint32>(depth);
+                scene->markSceneDirty();
+            }
 
-        int numSamples = static_cast<int>(scene->getImguiParam()->numSamples);
-        if (ImGui::SliderInt("Number of samples", &numSamples, 1, 256)) {
-            scene->getImguiParam()->numSamples = static_cast<uint32>(numSamples);
-            scene->markSceneDirty();
-        }
+            int numSamples = static_cast<int>(scene->getImguiParam()->numSamples);
+            if (ImGui::SliderInt("Number of samples", &numSamples, 1, 256)) {
+                scene->getImguiParam()->numSamples = static_cast<uint32>(numSamples);
+                scene->markSceneDirty();
+            }
 
-        bool p = scene->getImguiParam()->isProgressive;
-        if (ImGui::Checkbox("Progressive", &p)) {
-            scene->getImguiParam()->isProgressive = static_cast<uint32>(p);
-            scene->markSceneDirty();
+            bool p = scene->getImguiParam()->isProgressive;
+            if (ImGui::Checkbox("Progressive", &p)) {
+                scene->getImguiParam()->isProgressive = static_cast<uint32>(p);
+                scene->markSceneDirty();
+            }
         }
 
         ImGui::SeparatorText("Light");
-        ImGui::DragFloat3("Light position", f, 0.005f, -3.0f, 3.0f);
+        {
+            static float f[3] = { 0.0f, 0.0f, 0.0f };
+            ImGui::DragFloat3("Light position", f, 0.005f, -3.0f, 3.0f);
+        }
 
         ImGui::SeparatorText("Image Capture");
-        ImGui::Button("Save Current Frame");
+        {
+            if (ImGui::Button("Save Current Frame")) {
+                vulkan->saveCurrentImage("frame_" + std::to_string(vulkan->currentFrameCount) + ".png");
+            };
+
+            static bool autoSave = true;
+            if (ImGui::Checkbox("Autosave", &autoSave)) 
+                scene->markSceneDirty(); ImGui::SameLine();
+            ImGui::Text("at Frame"); ImGui::SameLine();
+
+            static int frameCount = 1000;
+            ImGui::BeginDisabled(!autoSave);
+            {
+                ImGui::SetNextItemWidth(150.0f);
+                if (ImGui::InputInt("##Frame", &frameCount)) 
+                    scene->markSceneDirty();
+                if (autoSave && vulkan->currentFrameCount == frameCount)
+                    vulkan->saveCurrentImage("frame_" + std::to_string(frameCount) + ".png");
+            }
+            ImGui::EndDisabled();
+        }
 
         ImGui::SeparatorText("Performance");
-        ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / io.Framerate, io.Framerate);
+        ImGui::Text("Application average: %.3f ms/frame (%.1f FPS)", 1000.0f / io.Framerate, io.Framerate);
+        ImGui::Text("Current frame: %u", vulkan->currentFrameCount);
         ImGui::End();
     }
 

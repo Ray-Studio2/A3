@@ -48,8 +48,8 @@ private:
 	mutable uint32 frameCount = 0;
 	
 	// Auto-save settings
-	uint32 autoSaveFrameCount = 1000; // Save image at this frame count
-	bool autoSaveEnabled = true;
+	//uint32 autoSaveFrameCount = 1000; // Save image at this frame count
+	//bool autoSaveEnabled = true;
 	
 	// Light data
 	std::vector<LightData> lights;

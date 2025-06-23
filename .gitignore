@@ -32,3 +32,6 @@ _ReSharper*/
 packages/
 ThirdParty/
 asset/
+output_images/
+
+imgui.ini

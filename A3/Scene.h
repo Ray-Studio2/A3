@@ -17,8 +17,21 @@ struct imguiParam
 {
 	uint32 maxDepth = 3;
 	uint32 numSamples = 64;
-	uint32 padding0 = 0;
 	uint32 isProgressive = 1;
+
+	enum LightSamplingMode : uint32 {
+		BruteForce = 0,
+		NEE
+	};
+
+	enum LightSelection : uint32 {
+		LightOnly = 0,
+		EnvMap,
+		Both
+	};
+
+	uint32 lightSamplingMode = BruteForce;
+	uint32 lightSelection = LightOnly;
 };
 
 class Scene

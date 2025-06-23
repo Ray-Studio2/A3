@@ -4,6 +4,7 @@
 #include "ThirdParty/imgui/imgui_impl_vulkan.h"
 #include <GLFW/glfw3.h>
 #include "Vulkan.h"
+#include "Scene.h"
 
 using namespace A3;
 
@@ -175,7 +176,6 @@ Addon_imgui::Addon_imgui( GLFWwindow* window, VulkanRenderBackend* vulkan, int32
     ImGui_ImplVulkan_Init( &init_info );
 }
 
-#include "Scene.h" // FIXME: here for now to avoid incomplete type; needs to be improved
 void Addon_imgui::renderFrame( GLFWwindow* window, VulkanRenderBackend* vulkan, Scene* scene )
 {
     // Our state
@@ -206,14 +206,24 @@ void Addon_imgui::renderFrame( GLFWwindow* window, VulkanRenderBackend* vulkan, 
 
         ImGui::SeparatorText("Light Sampling");
         {
-            static int e1 = 0;
-            ImGui::RadioButton("Brute Force", &e1, 0); ImGui::SameLine();
-            ImGui::RadioButton("NEE", &e1, 1);
+            int mode = static_cast<int>(scene->getImguiParam()->lightSamplingMode);
+            int oldMode = mode;
+            ImGui::RadioButton("Brute Force", &mode, 0); ImGui::SameLine();
+            ImGui::RadioButton("NEE", &mode, 1);
+            if (mode != oldMode) {
+                scene->getImguiParam()->lightSamplingMode = static_cast<uint32>(mode);
+                scene->markSceneDirty();
+            }
 
-            static int e2 = 0;
-            ImGui::RadioButton("Light Only", &e2, 0); ImGui::SameLine();
-            ImGui::RadioButton("Env Map", &e2, 1); ImGui::SameLine();
-            ImGui::RadioButton("Both", &e2, 2);
+            int lightSel = static_cast<int>(scene->getImguiParam()->lightSelection);
+            int oldSel = lightSel;
+            ImGui::RadioButton("Light Only", &lightSel, 0); ImGui::SameLine();
+            ImGui::RadioButton("Env Map", &lightSel, 1); ImGui::SameLine();
+            ImGui::RadioButton("Both", &lightSel, 2);
+            if (lightSel != oldSel) {
+                scene->getImguiParam()->lightSelection = static_cast<uint32>(lightSel);
+                scene->markSceneDirty();
+            }
         }
 
         ImGui::SeparatorText("Sample Quality");

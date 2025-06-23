@@ -5,6 +5,7 @@
 #include <GLFW/glfw3.h>
 #include "Vulkan.h"
 #include "Scene.h"
+#include "MeshObject.h"
 
 using namespace A3;
 
@@ -251,8 +252,28 @@ void Addon_imgui::renderFrame( GLFWwindow* window, VulkanRenderBackend* vulkan, 
 
         ImGui::SeparatorText("Light");
         {
-            static float f[3] = { 0.0f, 0.0f, 0.0f };
-            ImGui::DragFloat3("Light position", f, 0.005f, -3.0f, 3.0f);
+            const uint32 lightIndex = 6;
+
+            static MeshObject* light = nullptr;
+            if (!light) {
+                auto objects = scene->collectMeshObjects();
+                if (objects.size() > lightIndex)
+                    light = objects[lightIndex];
+            }
+
+            std::vector<MeshObject*> objects = scene->collectMeshObjects();
+            Vec3 emit = light->getEmittance();
+            float rgb[3] = { emit.x, emit.y, emit.z };
+            if (ImGui::DragFloat3("Emittance(RGB)", rgb, 0.05f, 0.0f, 50.0f)) {
+                objects[6]->setEmittance(Vec3(rgb[0], rgb[1], rgb[2]));
+                scene->markSceneDirty();
+            }
+
+            static float total = emit.x;
+            if (ImGui::DragFloat("Emittance", &total, 0.05f, 0.0f, 50.0f)) {
+                light->setEmittance(Vec3(total, total, total));
+                scene->markSceneDirty();
+            }
         }
 
         ImGui::SeparatorText("Image Capture");

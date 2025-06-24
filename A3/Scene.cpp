@@ -79,7 +79,7 @@ void Scene::load(const std::string &path) {
 			//if (material == "light") {
 			//	auto& emittance = material["emittance"];
 			//	mo->setEmittance(Vec3(emittance[0], emittance[1], emittance[2]));
-				mo->setEmittance(Vec3(5.0f));
+				mo->setEmittance(Vec3(100.0f));
 			//}
 
 			this->objects.emplace_back(mo);

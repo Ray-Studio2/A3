@@ -3,14 +3,15 @@ struct RayPayload
     vec3 rayDirection;
     vec3 radiance;
     vec3 throughput;
+    vec3 desiredPosition;
     uint depth;
     uint rngState;
 };
 
-struct ShadowPayload
-{
-    bool inShadow;
-};
+// struct ShadowPayload
+// {
+//     vec3 desiredPosition;
+// };
 
 struct LightData
 {

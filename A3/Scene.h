@@ -15,8 +15,8 @@ struct MeshResource;
 
 struct imguiParam
 {
-	uint32 maxDepth = 3;
-	uint32 numSamples = 64;
+	uint32 maxDepth = 2;
+	uint32 numSamples = 128;
 	uint32 isProgressive = 1;
 
 	enum LightSamplingMode : uint32 {

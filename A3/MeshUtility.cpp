@@ -78,11 +78,12 @@ void Utility::loadMeshFile( MeshResource& outMesh, const std::string& filePath )
                 const int idx = outMesh.indices.size() - 1;
                 VertexPosition AB = outMesh.positions[idx - 0] - outMesh.positions[idx - 2];
                 VertexPosition AC = outMesh.positions[idx - 1] - outMesh.positions[idx - 2];
-                VertexPosition prod = AB.cross(AC);
+                VertexPosition prod = 0.5f * AB.cross(AC);
                 outMesh.cumulativeTriangleArea[sumIdx] = outMesh.cumulativeTriangleArea[sumIdx - 1] + prod.length();
                 ++sumIdx;
             }
         }
+        //std::cout << " " << "\n";
 
         /*if (attrib.normals.empty()) {
             for (size_t f = 0; f < shape.mesh.indices.size() / 3; f++) {

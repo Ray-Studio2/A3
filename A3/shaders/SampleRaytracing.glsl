@@ -13,12 +13,23 @@
 #include "shaders/Bindings.glsl"
 #include "shaders/Sampler.glsl"
 
+/////////////////////////////////////////////////////////////////////////////////////////////
+
+float getLightArea() 
+{
+	ObjectDesc lightObjDesc = gObjectDescs.desc[LIGHT_INSTANCE_INDEX];
+	cumulativeTriangleAreaBuffer sum = cumulativeTriangleAreaBuffer(lightObjDesc.cumulativeTriangleAreaAddress);
+
+	return sum.t[gLightBuffer.lights[0].triangleCount];
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////
+
 #if RAY_GENERATION_SHADER
 //=========================
 //   RAY GENERATION SHADER
 //=========================
 layout(location = 0) rayPayloadEXT RayPayload gPayload;
-layout(location = 1) rayPayloadEXT ShadowPayload gShadowPayload;
 void main()
 {
     const vec3 cameraX = vec3( 1, 0, 0 );
@@ -44,8 +55,8 @@ void main()
     
     // Initialize payload for path tracing
     gPayload.radiance = vec3( 0.0 );
-    gPayload.throughput = vec3( 1.0 );
     gPayload.depth = 0;
+    gPayload.desiredPosition = vec3( 0.0 );
     gPayload.rngState = rngState;
     gPayload.rayDirection = rayDir;
     
@@ -90,7 +101,6 @@ layout( shaderRecordEXT ) buffer CustomData
 };
 
 layout(location = 0) rayPayloadInEXT RayPayload gPayload;
-layout(location = 1) rayPayloadEXT ShadowPayload gShadowPayload;
 hitAttributeEXT vec2 attribs;
 
 void main()
@@ -125,17 +135,19 @@ void main()
     LightData light = gLightBuffer.lights[0];
 
     const vec3 lightEmittance = light.emittance;
+    const float lightArea = getLightArea();
+    const vec3 emissivePerPoint = lightEmittance / (lightArea * PI);
+    // const float spherePDF = 1 / (2 * PI); // uniform
+    const vec3 brdf_p = color / PI;
 
-    vec3 lightColor = vec3(0.0);
+    vec3 emit = vec3(0.0);
     vec3 temp = vec3(0.0);
 
-    uint tempDepth = gPayload.depth;
-
     if (gl_InstanceCustomIndexEXT == LIGHT_INSTANCE_INDEX)
-        lightColor = lightEmittance;
+        emit = emissivePerPoint;
 
+    uint tempDepth = gPayload.depth;
     uint numSampleByDepth = (gPayload.depth == 0 ? gImguiParam.numSamples : 1);
-
     if (gPayload.depth < gImguiParam.maxDepth) {
         for (uint i=0; i < numSampleByDepth; ++i) {
                 float r3 = random(gPayload.rngState);
@@ -152,12 +164,14 @@ void main()
                     0);                                 // payload 
                 gPayload.depth = tempDepth;
 
-            temp += max(dot(worldNormal, rayDir), 0.0) * gPayload.radiance;
+            // const float cos_p = max(dot(worldNormal, rayDir), 1e-6);
+            // const float pdf_p = cos_p / PI; // 샘플별 pdf
+            temp += color * gPayload.radiance;
         }
         temp *= 1.0 / float(numSampleByDepth);
     }
 
-    gPayload.radiance = lightColor + 2.0 * color * temp;
+    gPayload.radiance = emit + temp;
 }
 
 #endif
@@ -173,18 +187,9 @@ layout( shaderRecordEXT ) buffer CustomData
 };
 
 layout(location = 0) rayPayloadInEXT RayPayload gPayload;
-layout(location = 1) rayPayloadEXT ShadowPayload gShadowPayload;
 hitAttributeEXT vec2 attribs;
 
 /////////////////////////////////////////////////////////////////////////////////////////////
-
-float getLightArea() 
-{
-	ObjectDesc lightObjDesc = gObjectDescs.desc[LIGHT_INSTANCE_INDEX];
-	cumulativeTriangleAreaBuffer sum = cumulativeTriangleAreaBuffer(lightObjDesc.cumulativeTriangleAreaAddress);
-
-	return sum.t[gLightBuffer.lights[0].triangleCount];
-}
 
 uint binarySearchTriangleIdx(const float lightArea) 
 {
@@ -239,7 +244,7 @@ void uniformSamplePointOnTriangle(uint triangleIdx,
 	pointOnTriangle = (w * p0 + u * p1 + v * p2).xyz;
 	normalOnTriangle = normalize(w * n0 + u * n1 + v * n2).xyz;
 
-    mat4 localToWorld = gLightBuffer.lights[0].transform;
+    mat4 localToWorld = transpose(gLightBuffer.lights[0].transform);
     pointOnTriangleWorld = (localToWorld * vec4(pointOnTriangle, 1.0f)).xyz;
 	normalOnTriangleWorld = normalize(localToWorld * vec4(normalOnTriangle, 0.0f)).xyz;
 }    
@@ -279,22 +284,28 @@ void main()
     LightData light = gLightBuffer.lights[0];
 
 	const float eps = 1e-4;
-	const vec3 lightEmittance = light.emittance;
+    const vec3 lightEmittance = light.emittance;
+    const float lightArea = getLightArea();
+    const vec3 emissivePerPoint = lightEmittance / (lightArea * PI);
+    const vec3 brdf_p = color / PI;
+    // const float spherePDF = 1 / (2 * PI);
 
-	if (gPayload.depth == 0 && gl_InstanceCustomIndexEXT == LIGHT_INSTANCE_INDEX)
-	{
-		gPayload.radiance = lightEmittance;
-		return;
-	}
+    if (gl_InstanceCustomIndexEXT == LIGHT_INSTANCE_INDEX) {
+        if (gPayload.depth == 0)
+            gPayload.radiance = emissivePerPoint;
+        else
+            gPayload.radiance = vec3(0.0, 0.0, 0.0);
+        return;
+    }
 
 	if (gPayload.depth >= gImguiParam.maxDepth) 
 		return;
 
 	//////////////////////////////////////////////////////////////// Direct Light
 	vec3 tempRadianceD = vec3(0.0);
-	const float lightArea = getLightArea();
-	const uint directLightSampleCount = (gPayload.depth == 0 ? gImguiParam.numSamples : 1);
-	for (int i=0; i < directLightSampleCount; ++i) {
+	uint numSampleByDepth = (gPayload.depth == 0 ? gImguiParam.numSamples : 1);
+
+	for (int i=0; i < numSampleByDepth; ++i) {
 		uint triangleIdx = binarySearchTriangleIdx(lightArea);
 
 		vec3 pointOnTriangle, normalOnTriangle, pointOnTriangleWorld, normalOnTriangleWorld;
@@ -307,36 +318,32 @@ void main()
 		float distToLight = length(pointOnTriangleWorld - worldPos);
 		vec3 shadowRayDir = normalize(pointOnTriangleWorld - worldPos);
 
-		float tMax = max(distToLight - eps, 0.0); // 목표 직전까지
+        gPayload.desiredPosition = vec3(0.0);
+        traceRayEXT(
+            topLevelAS,                          // topLevel
+            gl_RayFlagsNoOpaqueEXT | gl_RayFlagsSkipClosestHitShaderEXT, // rayFlags
+            0xff,                                // cullMask
+            0, 1, 1,                             // sbtRecordOffset, sbtRecordStride, missIndex
+            worldPos, 0.001f, shadowRayDir, 100.0,  // origin, tmin, direction, tmax
+            0);                                  // payload
 
-		rayQueryEXT rq;
-		rayQueryInitializeEXT(
-			rq, topLevelAS,
-			gl_RayFlagsTerminateOnFirstHitEXT | gl_RayFlagsSkipClosestHitShaderEXT,
-			0xFF,
-			worldPos,
-			eps,
-			shadowRayDir,
-			tMax
-		);
-		
-		while (rayQueryProceedEXT(rq)) {}
+        float visibility = 0.0;    
+        if (length(gPayload.desiredPosition - pointOnTriangleWorld) < 0.0001)
+            visibility = 1.0;
 
-		bool visible = rayQueryGetIntersectionTypeEXT(rq, true) == gl_RayQueryCommittedIntersectionNoneEXT;
+		const vec3 r = pointOnTriangleWorld - worldPos;
+		const float cos_q = max(dot(normalOnTriangleWorld, -shadowRayDir), 0.0);
+        const float cos_p = max(dot(worldNormal, shadowRayDir), 0.0);
+		const float P = cos_q / dot(r, r);
 
-		float visibility = visible ? 1.0 : 0.0;
-		vec3 r = pointOnTriangleWorld - worldPos;
-		float cosL = max(dot(normalOnTriangleWorld, -shadowRayDir), 0.0);
-		float P = cosL / dot(r, r);
-		tempRadianceD += (color / PI) * max(dot(worldNormal, shadowRayDir), 0.0) * lightEmittance * visibility * P * lightArea;
+		tempRadianceD += brdf_p * cos_p * emissivePerPoint * visibility * P * lightArea;
 	}
-	tempRadianceD *= (1 / float(directLightSampleCount)); // average
-	gPayload.radiance = tempRadianceD;
+	tempRadianceD *= (1 / float(numSampleByDepth)); // average
 
 	//////////////////////////////////////////////////////////////// Indirect Light
+
 	uint tempDepth = gPayload.depth;
 	vec3 tempRadianceI = vec3(0.0);
-	uint numSampleByDepth = (gPayload.depth == 0 ? gImguiParam.numSamples : 1);
 
 	for (uint i=0; i < numSampleByDepth; ++i)
 	{
@@ -354,12 +361,28 @@ void main()
 			0);                                 // gPayload 
 		gPayload.depth = tempDepth;
 
-		tempRadianceI += 2.0 * color * max(dot(worldNormal, rayDir), 0.0) * gPayload.radiance;
+        // const float cos_p = max(dot(worldNormal, rayDir), 1e-6);
+        // const float pdf_p = cos_p / PI; // consine 샘플별 pdf
+        tempRadianceI += color * gPayload.radiance;
 	}
-	tempRadianceI *= 1.0 / float(numSampleByDepth);
+	tempRadianceI *= (1.0 / float(numSampleByDepth));
+    
 	gPayload.radiance = tempRadianceD + tempRadianceI;
 }
 
+#endif
+
+#if ANY_HIT_SHADER
+//=========================
+//   SHADOW MISS SHADER
+//=========================
+layout(location = 0) rayPayloadInEXT RayPayload gPayload;
+
+void main()
+{
+    vec3 worldPos = gl_WorldRayOriginEXT + gl_WorldRayDirectionEXT * gl_HitTEXT;
+    gPayload.desiredPosition = worldPos;
+}
 #endif
 
 #if SHADOW_MISS_SHADER

@@ -24,6 +24,16 @@ struct VertexPosition
     float length() const {
         return sqrt(x * x + y * y + z * z);
     }
+
+    /// 벡터 * 스칼라
+    VertexPosition operator*(float s) const {
+        return { x * s, y * s, z * s, w * s };
+    }
+
+    /// 스칼라 * 벡터  (비멤버·friend 로 정의)
+    friend VertexPosition operator*(float s, const VertexPosition& v) {
+        return v * s;          // 위 멤버 함수를 재사용
+    }
 };
 
 struct VertexAttributes

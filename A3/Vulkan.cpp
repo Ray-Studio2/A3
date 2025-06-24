@@ -1816,7 +1816,7 @@ IRenderPipelineRef VulkanRenderBackend::createRayTracingPipeline( const Raytraci
     //==========================================================
     // Pipeline layout
     //==========================================================
-    std::vector<VkDescriptorSetLayoutBinding> bindings( 8 ); // Need 6 bindings (0-7)
+    std::vector<VkDescriptorSetLayoutBinding> bindings( 8 );
     for( const ShaderDesc& shaderDesc : psoDesc.shaders )
     {
         for( const ShaderResourceDescriptor& descriptor : shaderDesc.descriptors )
@@ -1849,8 +1849,11 @@ IRenderPipelineRef VulkanRenderBackend::createRayTracingPipeline( const Raytraci
     // Pipeline 
     //==========================================================
     std::vector<VkPipelineShaderStageCreateInfo> stages( psoDesc.shaders.size() );
-    std::vector<VkRayTracingShaderGroupCreateInfoKHR> groups( psoDesc.shaders.size() );
-    for( int32 index = 0; index < stages.size(); ++index )
+    std::vector<VkRayTracingShaderGroupCreateInfoKHR> groups;
+
+    int closestHitStage = -1, anyHitStage = -1;
+
+    for( uint32 index = 0; index < stages.size(); ++index )
     {
         VulkanShaderModule* vkModule = static_cast< VulkanShaderModule* >( pso->shaders[ index ] );
         const ShaderDesc& desc = psoDesc.shaders[ index ];
@@ -1863,15 +1866,28 @@ IRenderPipelineRef VulkanRenderBackend::createRayTracingPipeline( const Raytraci
             .pName = "main",
         };
 
-        groups[ index ] = VkRayTracingShaderGroupCreateInfoKHR
-        {
+        if (desc.type == SS_ClosestHit) { closestHitStage = index; continue; }
+        if (desc.type == SS_AnyHit) { anyHitStage = index; continue; }
+
+        VkRayTracingShaderGroupCreateInfoKHR hitGroup{
             .sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR,
-            .type = getVulkanShaderGroup( desc.type ),
-            .generalShader = isVulkanGeneralShader( desc.type ) ? index : VK_SHADER_UNUSED_KHR,
-            .closestHitShader = isVulkanClosestHitShader( desc.type ) ? index : VK_SHADER_UNUSED_KHR,
-            .anyHitShader = isVulkanAnyHitShader( desc.type ) ? index : VK_SHADER_UNUSED_KHR,
-            .intersectionShader = isVulkanIntersectionShader( desc.type ) ? index : VK_SHADER_UNUSED_KHR,
+            .type = getVulkanShaderGroup(desc.type), // VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR
+            .generalShader = index,
+            .closestHitShader = VK_SHADER_UNUSED_KHR,
+            .anyHitShader = VK_SHADER_UNUSED_KHR,
+            .intersectionShader = VK_SHADER_UNUSED_KHR,
         };
+        groups.push_back(hitGroup);
+    }
+    {
+        VkRayTracingShaderGroupCreateInfoKHR hitGroup{};
+        hitGroup.sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
+        hitGroup.type = VK_RAY_TRACING_SHADER_GROUP_TYPE_TRIANGLES_HIT_GROUP_KHR;
+        hitGroup.generalShader = VK_SHADER_UNUSED_KHR;
+        hitGroup.closestHitShader = closestHitStage;
+        hitGroup.anyHitShader = anyHitStage;
+        hitGroup.intersectionShader = VK_SHADER_UNUSED_KHR;
+        groups.push_back(hitGroup);
     }
 
     VkRayTracingPipelineCreateInfoKHR pipelineCreateInfo
@@ -2025,13 +2041,16 @@ IRenderPipelineRef VulkanRenderBackend::createRayTracingPipeline( const Raytraci
             return ( value + ( decltype( value ) )alignment - 1 ) & ~( ( decltype( value ) )alignment - 1 );
         };
     const uint32 handleSize = RenderSettings::shaderGroupHandleSize;
-    const uint32 groupCount = 4; // 1 raygen, 2 miss, 1 hit group
+    const uint32 groupCount = static_cast<uint32>( groups.size() ); // 1 raygen, 2 miss, 1 hit group
     std::vector<ShaderGroupHandle> handles( groupCount );
-    vkGetRayTracingShaderGroupHandlesKHR( device, outPipeline->pipeline, 0, groupCount, handleSize* groupCount, handles.data() );
+    vkGetRayTracingShaderGroupHandlesKHR( device, outPipeline->pipeline, 
+                                          0, groupCount, 
+                                          handleSize*groupCount, 
+                                          handles.data() );
     ShaderGroupHandle rgenHandle = handles[ 0 ];
     ShaderGroupHandle missHandle = handles[ 1 ];
-    ShaderGroupHandle hitgHandle = handles[ 2 ];
-    ShaderGroupHandle shadowMissHandle = handles[ 3 ];
+    ShaderGroupHandle shadowMissHandle = handles[ 2 ];
+    ShaderGroupHandle hitgHandle = handles[ 3 ];
 
     const uint32 rgenStride = alignTo( handleSize, rtProperties.shaderGroupHandleAlignment );
     rgenSbt = { 0, rgenStride, rgenStride };
@@ -2071,7 +2090,7 @@ IRenderPipelineRef VulkanRenderBackend::createRayTracingPipeline( const Raytraci
 
         const std::vector<HitgCustomData> sampleColorTable =
         {
-            { 1.0f, 1.0f, 1.0f },
+            { 1.0f, 1.0f, 1.0f },   // @FIXME: parse from material
             { 1.0f, 1.0f, 1.0f },
             { 1.0f, 0.0f, 0.0f },
             { 0.0f, 1.0f, 0.0f },

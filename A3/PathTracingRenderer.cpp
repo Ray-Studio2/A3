@@ -89,6 +89,7 @@ void PathTracingRenderer::buildSamplePSO()
         psoDesc.shaders.emplace_back( SS_RayGeneration, shaderName );
         psoDesc.shaders.emplace_back( SS_Miss, shaderName, lightSelection + "ENVIRONMENT" );
         psoDesc.shaders.emplace_back( SS_ClosestHit, shaderName, samplingMode);
+        psoDesc.shaders.emplace_back( SS_AnyHit, shaderName );
         psoDesc.shaders.emplace_back( SS_Miss, shaderName, "SHADOW" );
         ShaderDesc& rayGeneration = psoDesc.shaders[ 0 ];
         rayGeneration.descriptors.emplace_back( SRD_AccelerationStructure, 0 );

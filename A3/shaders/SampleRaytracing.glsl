@@ -294,12 +294,14 @@ void main()
         if (gPayload.depth == 0)
             gPayload.radiance = emissivePerPoint;
         else
-            gPayload.radiance = vec3(0.0, 0.0, 0.0);
+            gPayload.radiance = vec3(0.0);
         return;
     }
 
-	if (gPayload.depth >= gImguiParam.maxDepth) 
+	if (gPayload.depth >= gImguiParam.maxDepth) {
+        gPayload.radiance = vec3(0.0);
 		return;
+    }
 
 	//////////////////////////////////////////////////////////////// Direct Light
 	vec3 tempRadianceD = vec3(0.0);

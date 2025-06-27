@@ -6,6 +6,7 @@ struct RayPayload
     vec3 desiredPosition;
     uint depth;
     uint rngState;
+    bool bEnvMap;
 };
 
 // struct ShadowPayload
@@ -32,4 +33,11 @@ struct ObjectDesc
    uint64_t vertexAttributeDeviceAddress;
    uint64_t indexDeviceAddress;
    uint64_t cumulativeTriangleAreaAddress;
+};
+
+struct EnvImportanceSampleData {
+    float conditional_cdf;   // .r
+    float conditional_pdf;   // .g
+    float marginal_pdf;      // .b
+    float marginal_cdf;      // .a
 };

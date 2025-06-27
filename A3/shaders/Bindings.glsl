@@ -35,3 +35,7 @@ layout( binding = 7 ) uniform imguiParam {
     uint isProgressive;
     float envmapRotDeg;
 } gImguiParam;
+
+layout(binding = 8, scalar) buffer EnvImportanceSamplingBuffer {
+    EnvImportanceSampleData data[];
+};

@@ -64,6 +64,7 @@ private:
     void createImguiRenderPass( int32 screenWidth, int32 screenHeight );
     void createCommandCenter();
     std::tuple<VkImage, VkDeviceMemory, VkImageView, VkSampler> createEnvironmentMap(std::string_view hdrTexturePath);
+    void createEnvironmentMapImportanceSampling(float* pixels, int width, int height);
 
     void loadDeviceExtensionFunctions( VkDevice device );
 
@@ -174,6 +175,9 @@ private:
     VkDescriptorPool descriptorPool;
     VkBuffer objectBuffer;
 
+    VkBuffer envISBuffer;
+    VkDeviceMemory envISBufferMem;
+    
     VkBuffer sbtBuffer;
     VkDeviceMemory sbtBufferMem;
     VkStridedDeviceAddressRegionKHR rgenSbt{};

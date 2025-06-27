@@ -23,8 +23,8 @@ public:
 
 	const Mat4x4& getLocalToWorld() { return localToWorld; }
 	const Vec3& getWorldPosition() { return Vec3( localToWorld.m03, localToWorld.m13, localToWorld.m23 ); }
-	const Vec3& getEmittance() { return emittance; }
 	const Vec3& getBaseColor() { return baseColor; }
+	const float getEmittance() const { return emittance; }
 
 	void setPosition( const Vec3& position )
 	{
@@ -78,7 +78,7 @@ public:
 		this->baseColor = baseColor;
 	}
 
-	void setEmittance(const Vec3& emittance)
+	void setEmittance(float emittance)
 	{
 		this->emittance = emittance;
 	}
@@ -123,6 +123,6 @@ protected:
 
 	Vec3 baseColor;
 	// for light objects
-	Vec3 emittance; 
+	float emittance; 
 };
 }

@@ -86,7 +86,7 @@ void Scene::load(const std::string& path) {
 			if (materialName == "light") {
 				lightIndex.push_back(index);
 				auto& emittance = material["emittance"];
-				mo->setEmittance(Vec3(emittance, emittance, emittance)); // TODO: divide into light color and emittance
+				mo->setEmittance(emittance);
 			}
 
 			this->objects.emplace_back(mo);

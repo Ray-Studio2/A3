@@ -106,6 +106,8 @@ void PathTracingRenderer::buildSamplePSO()
         closestHit.descriptors.emplace_back( SRD_StorageBuffer, 3 );
         closestHit.descriptors.emplace_back( SRD_StorageBuffer, 4 ); // Light buffer
         closestHit.descriptors.emplace_back( SRD_UniformBuffer, 7 ); // Imgui parameters
+        closestHit.descriptors.emplace_back( SRD_ImageSampler, 6 );
+        closestHit.descriptors.emplace_back( SRD_StorageBuffer, 8 ); // environmentMap Sampling
     }
 
     samplePSO->shaders.resize( psoDesc.shaders.size() );

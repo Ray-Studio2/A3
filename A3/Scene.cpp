@@ -6,6 +6,7 @@
 #include "MeshObject.h"
 #include "MeshResource.h"
 #include "CameraObject.h"
+#include "RenderSettings.h"
 
 #include "Json.hpp"
 
@@ -37,11 +38,11 @@ void Scene::load(const std::string& path) {
 		auto& position = camera["position"];
 		auto& rotation = camera["rotation"];
 		auto& fov = camera["yFovDeg"];
-		auto& resolution = camera["resolution"]; // TODO
+		auto& resolution = camera["resolution"]; // TODO: RenderSeetings.h -> runtime
 		auto& sampling = camera["sampling"];
 		auto& maxDepth = camera["maxDepth"];
 		auto& spp = camera["spp"];
-		auto& exposure = camera["exposure"]; // TODO
+		auto& exposure = camera["exposure"]; // TODO: add logic
 
 		this->camera = std::make_unique<CameraObject>();
 		this->camera->setPosition(Vec3(position[0], position[1], position[2]));
@@ -53,7 +54,15 @@ void Scene::load(const std::string& path) {
 		this->imgui_param->lightSamplingMode = (sampling == "bruteforce" ? imguiParam::BruteForce : imguiParam::NEE);
 	}
 
-	//auto& envMap = data["envmap"];
+	auto& envMap = data["envmap"];
+	if (envMap.is_object()) {
+		auto& envMapPath = envMap["image"];
+		auto& envmapRotation = envMap["rotation"];			// TODO: add logic
+		auto& envmapEmittance = envMap["emittanceScale"];	// TODO: add logic
+
+		RenderSettings::envMapPath = "../Assets/" + static_cast<std::string>(envMapPath);
+		this->imgui_param->envmapRotDeg = envmapRotation;
+	}
 
 	auto& materials = data["materials"];
 

@@ -12,18 +12,6 @@
 #include "shaders/Bindings.glsl"
 #include "shaders/Sampler.glsl"
 
-/////////////////////////////////////////////////////////////////////////////////////////////
-
-float getLightArea() 
-{
-	ObjectDesc lightObjDesc = gObjectDescs.desc[gLightBuffer.lightIndex[0]];
-	cumulativeTriangleAreaBuffer sum = cumulativeTriangleAreaBuffer(lightObjDesc.cumulativeTriangleAreaAddress);
-
-	return sum.t[gLightBuffer.lights[0].triangleCount];
-}
-
-/////////////////////////////////////////////////////////////////////////////////////////////
-
 #if RAY_GENERATION_SHADER
 //=========================
 //   RAY GENERATION SHADER
@@ -41,7 +29,7 @@ void main()
     uint pixelIndex = gl_LaunchIDEXT.y * gl_LaunchSizeEXT.x + gl_LaunchIDEXT.x;
     uint seed = pixelIndex;
     if (gImguiParam.isProgressive != 0u)
-        seed = pixelIndex + g.frameCount * 1664525u;
+        seed = pixelIndex + g.currentFrame * 1664525u;
     uint rngState = pcg_hash(seed);
     
     // Anti-aliasing jitter
@@ -73,12 +61,12 @@ void main()
     if ( gImguiParam.isProgressive != 0u ) {
         // Progressive accumulation
         vec3 previousAccumulation = vec3(0.0);
-        if (g.frameCount > 1) {
+        if (g.currentFrame > 1) {
             previousAccumulation = imageLoad(accumulationImage, ivec2(gl_LaunchIDEXT.xy)).rgb;
         }
         
         // Proper incremental average
-        vec3 accumulated = (previousAccumulation * float(g.frameCount - 1) + currentSample) / float(g.frameCount);
+        vec3 accumulated = (previousAccumulation * float(g.currentFrame - 1) + currentSample) / float(g.currentFrame);
         
         // Store in accumulation buffer
         imageStore(accumulationImage, ivec2(gl_LaunchIDEXT.xy), vec4(accumulated, 1.0));
@@ -88,6 +76,18 @@ void main()
    imageStore( image, ivec2( gl_LaunchIDEXT.xy ), vec4( finalColor, 1.0 ) );
 }
 #endif
+
+/////////////////////////////////////////////////////////////////////////////////////////////
+
+float getLightArea() 
+{
+	ObjectDesc lightObjDesc = gObjectDescs.desc[gLightBuffer.lightIndex[0]];
+	cumulativeTriangleAreaBuffer sum = cumulativeTriangleAreaBuffer(lightObjDesc.cumulativeTriangleAreaAddress);
+
+	return sum.t[gLightBuffer.lights[0].triangleCount];
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////
 
 #if BRUTE_FORCE_CLOSEST_HIT_SHADER
 //=========================
@@ -416,9 +416,21 @@ void main()
 //=========================
 layout(location = 0) rayPayloadInEXT RayPayload gPayload;
 
+mat3 rotateY(float angle) {
+    float c = cos(angle);
+    float s = sin(angle);
+    return mat3(
+        c, 0.0, -s,
+        0.0, 1.0, 0.0,
+        s, 0.0, c
+    );
+}
+
 void main()
 {
     vec3 dir = normalize(gPayload.rayDirection);
+    float rot = gImguiParam.envmapRotDeg * (PI / 180.0);
+    dir = rotateY(rot) * dir; // envmap을 회전하는 것과 같음 (역방향 회전)
     vec2 uv = vec2(
         atan(dir.z, dir.x) / (2.0 * PI) + 0.5,
         acos(clamp(dir.y, -1.0, 1.0)) / PI

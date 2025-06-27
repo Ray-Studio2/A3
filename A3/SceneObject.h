@@ -83,6 +83,13 @@ public:
 		this->emittance = emittance;
 	}
 
+	bool isLight()
+	{
+		if (emittance != Vec3(0.0))
+			return true;
+		return false;
+	}
+
 protected:
 	void updateLocalToWorld()
 	{

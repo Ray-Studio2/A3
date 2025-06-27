@@ -3,6 +3,11 @@
 
 namespace A3
 {
+
+static bool floatEqual(float a, float b, float eps = 1e-6f) {
+	return std::fabs(a - b) < eps;
+}
+
 struct Vec2
 {
 	union
@@ -30,6 +35,10 @@ struct Vec2
 	Vec2( float inX, float inY )
 		: x( inX ), y( inY )
 	{}
+
+	bool operator==(const Vec2& other) const {
+		return floatEqual(x, other.x) && floatEqual(y, other.y);
+	}
 };
 
 struct Vec3 : public Vec2
@@ -51,6 +60,10 @@ struct Vec3 : public Vec2
 	Vec3( float inX, float inY, float inZ )
 		: Vec2( inX, inY ), z( inZ )
 	{}
+
+	bool operator==(const Vec3& other) const {
+		return Vec2::operator==(other) && floatEqual(z, other.z);
+	}
 };
 
 struct Vec4 : public Vec3

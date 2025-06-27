@@ -16,9 +16,11 @@ struct RaytracingPSO;
 
 struct LightData // TODO: scene or renderer?
 {
-	Vec3 emission = Vec3(5.0f);
-	uint32 triangleCount = 0;
 	Mat4x4 transform = Mat4x4::identity;
+	float emission = 0.0f;
+	uint32 triangleCount = 0;
+	uint32 padding1 = 0;
+	uint32 padding2 = 0;
 };
 
 class PathTracingRenderer

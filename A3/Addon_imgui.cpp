@@ -254,7 +254,7 @@ void Addon_imgui::renderFrame( GLFWwindow* window, VulkanRenderBackend* vulkan, 
 
         ImGui::SeparatorText("Light");
         {
-            auto& lightIndex = scene->getLightIndex()[0]; // TODO: assuming 1 light
+            auto& lightIndex = scene->getLightIndex()[0]; // Assuming 1 light
 
             static MeshObject* light = nullptr;
             if (!light) {
@@ -263,16 +263,11 @@ void Addon_imgui::renderFrame( GLFWwindow* window, VulkanRenderBackend* vulkan, 
                     light = objects[lightIndex];
             }
 
-            Vec3 emit = light->getEmittance();
-            float rgb[3] = { emit.x, emit.y, emit.z }; // FIXME: change to light color
-            if (ImGui::DragFloat3("Emittance(RGB)", rgb, 0.05f, 0.0f, 200.0f)) {
-                light->setEmittance(Vec3(rgb[0], rgb[1], rgb[2]));
-                scene->markSceneDirty();
-            }
-
-            static float total = emit.x; // FIXME: change to lumen or 가중치
-            if (ImGui::DragFloat("Emittance", &total, 0.05f, 0.0f, 500.0f)) {
-                light->setEmittance(Vec3(total, total, total));
+            float emit = light->getEmittance();
+            if (ImGui::InputFloat("Emittance per point", &emit, 1.0f, 10.0f)) {
+                if (emit < 0.0f) emit = 0.0f;
+                if (emit > 500.0f) emit = 500.0f;
+                light->setEmittance(emit);
                 scene->markSceneDirty();
             }
         }

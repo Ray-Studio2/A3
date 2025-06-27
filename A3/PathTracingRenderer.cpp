@@ -152,9 +152,9 @@ void PathTracingRenderer::updateLightBuffer( const Scene& scene )
         if( meshObj->isLight() ) // TODO: Only 1 light for now
         {
             LightData light;
+            light.transform = meshObj->getLocalToWorld();
             light.emission = meshObj->getEmittance();
             light.triangleCount = meshObj->getResource()->triangleCount;
-            light.transform = meshObj->getLocalToWorld();
             
             lights.push_back( light );
         }

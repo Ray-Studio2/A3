@@ -4,7 +4,7 @@ layout( binding = 2 ) uniform CameraProperties
 {
     vec3 cameraPos;
     float yFov_degree;
-    uint frameCount;
+    uint currentFrame;
 } g;
 
 layout( binding = 3, scalar) buffer ObjectDescBuffer
@@ -33,4 +33,5 @@ layout( binding = 7 ) uniform imguiParam {
 	uint maxDepth;
 	uint numSamples;
     uint isProgressive;
+    float envmapRotDeg;
 } gImguiParam;

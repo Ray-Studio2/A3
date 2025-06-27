@@ -66,10 +66,10 @@ void PathTracingRenderer::buildSamplePSO()
         switch (backend->tempScenePointer->getImguiParam()->lightSamplingMode)
         {
         case imguiParam::BruteForce:
-            samplingMode = "BRUTE_FORCE";
+            samplingMode = "BRUTE_FORCE_";
             break;
         case imguiParam::NEE:
-            samplingMode = "NEE";
+            samplingMode = "NEE_";
             break;
         }
 
@@ -87,10 +87,10 @@ void PathTracingRenderer::buildSamplePSO()
         }
 
         psoDesc.shaders.emplace_back( SS_RayGeneration, shaderName );
-        psoDesc.shaders.emplace_back( SS_Miss, shaderName, lightSelection + "ENVIRONMENT" );
-        psoDesc.shaders.emplace_back( SS_ClosestHit, shaderName, samplingMode);
+        psoDesc.shaders.emplace_back( SS_Miss, shaderName, lightSelection + "ENVIRONMENT_" );
+        psoDesc.shaders.emplace_back( SS_ClosestHit, shaderName, samplingMode + lightSelection);
         psoDesc.shaders.emplace_back( SS_AnyHit, shaderName );
-        psoDesc.shaders.emplace_back( SS_Miss, shaderName, "SHADOW" );
+        psoDesc.shaders.emplace_back( SS_Miss, shaderName, "SHADOW_" );
         ShaderDesc& rayGeneration = psoDesc.shaders[ 0 ];
         rayGeneration.descriptors.emplace_back( SRD_AccelerationStructure, 0 );
         rayGeneration.descriptors.emplace_back( SRD_StorageImage, 1 );

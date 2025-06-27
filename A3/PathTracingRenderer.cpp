@@ -1,4 +1,4 @@
-#include <unordered_map>
+#include <cassert>
 #include "PathTracingRenderer.h"
 #include "RenderSettings.h"
 #include "Vulkan.h"
@@ -148,9 +148,8 @@ void PathTracingRenderer::updateLightBuffer( const Scene& scene )
     for( size_t i = 0; i < meshObjects.size(); ++i )
     {
         MeshObject* meshObj = meshObjects[i];
-        
-        // Check if this is a light (hardcoded for now - later can check material)
-        if( i == 6 ) // LIGHT_INSTANCE_INDEX
+
+        if( meshObj->isLight() ) // TODO: Only 1 light for now
         {
             LightData light;
             light.emission = meshObj->getEmittance();
@@ -160,6 +159,8 @@ void PathTracingRenderer::updateLightBuffer( const Scene& scene )
             lights.push_back( light );
         }
     }
+
+    assert(lights.size() == 1 && "Expected exactly one light");
     
     // Update light buffer in backend
     backend->updateLightBuffer( lights );

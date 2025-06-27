@@ -16,7 +16,7 @@ struct MeshResource;
 struct imguiParam
 {
 	uint32 maxDepth = 2;
-	uint32 numSamples = 128;
+	uint32 numSamples = 16;
 	uint32 isProgressive = 1;
 
 	enum LightSamplingMode : uint32 {
@@ -50,6 +50,7 @@ public:
 	std::vector<MeshObject*> collectMeshObjects() const;
 	CameraObject* getCamera() const { return camera.get(); }
 	imguiParam* getImguiParam() const { return imgui_param.get(); }
+	const std::vector<uint32>& getLightIndex() const { return lightIndex; }
 
 	void markSceneDirty() { bSceneDirty = true; }
 	void cleanSceneDirty() { bSceneDirty = false; }
@@ -62,5 +63,7 @@ private:
     std::vector<std::unique_ptr<SceneObject>> objects;
 	std::unique_ptr<CameraObject> camera;
 	std::unique_ptr<imguiParam> imgui_param;
+
+	std::vector<uint32> lightIndex;
 };
 }

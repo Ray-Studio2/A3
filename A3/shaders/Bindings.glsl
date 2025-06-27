@@ -19,6 +19,7 @@ layout(buffer_reference, scalar) buffer cumulativeTriangleAreaBuffer { float t[]
 
 layout(binding = 4, std430) readonly buffer LightBuffer
 {
+    uint lightIndex[16];
     uint lightCount;
     uint pad1;
     uint pad2;

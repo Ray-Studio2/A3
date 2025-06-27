@@ -14,9 +14,9 @@ class Scene;
 class MeshObject;
 struct RaytracingPSO;
 
-struct LightData
+struct LightData // TODO: scene or renderer?
 {
-	Vec3 emission = Vec3(5.0f, 5.0f, 5.0f);
+	Vec3 emission = Vec3(5.0f);
 	uint32 triangleCount = 0;
 	Mat4x4 transform = Mat4x4::identity;
 };

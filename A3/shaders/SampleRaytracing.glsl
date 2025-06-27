@@ -476,10 +476,31 @@ layout(location = 0) rayPayloadInEXT RayPayload gPayload;
 hitAttributeEXT vec2 attribs;
 
 
-vec3 sampleEnvDirection(out float pdf)
+uint wang_hash(uint seed)
 {
-    float marginalY = random(gPayload.rngState);
-    float conditionalX = random(gPayload.rngState);
+    seed = uint(seed ^ uint(61)) ^ uint(seed >> uint(16));
+    seed *= uint(9);
+    seed = seed ^ (seed >> 4);
+    seed *= uint(0x27d4eb2d);
+    seed = seed ^ (seed >> 15);
+    return seed;
+}
+
+uint generateSeed(uvec2 pixel, uint sampleIndex, uint depth, uint axis)
+{
+    uint base = pixel.x * 1973 + pixel.y * 9277 + sampleIndex * 26699 + depth * 59359 + axis * 19937;
+    return wang_hash(base);
+}
+
+float random(uvec2 pixel, uint sampleIndex, uint depth, uint axis)
+{
+    return float(generateSeed(pixel, sampleIndex, depth, axis)) / 4294967296.0;
+}
+
+vec3 sampleEnvDirection(uvec2 pixel, uint sampleIndex, uint depth, out float pdf)
+{
+    float marginalY = random(pixel, sampleIndex, depth, 0);
+    float conditionalX = random(pixel, sampleIndex, depth, 1);
 
     ivec2 texSize = textureSize(environmentMap, 0);
     int width = texSize.x;
@@ -580,9 +601,9 @@ void main()
 	for (uint i=0; i < numSampleByDepth; ++i)
 	{
         float pdf_env;
-        vec3 rayDir = sampleEnvDirection(pdf_env);
+        vec3 rayDir = sampleEnvDirection(gl_LaunchIDEXT.xy, i + gPayload.rngState, tempDepth, pdf_env);
         float cosTheta = max(0.0, dot(worldNormal, rayDir));
-
+        
 		gPayload.rayDirection = rayDir;
 		gPayload.bEnvMap = true;
 		gPayload.depth = tempDepth + 1;
@@ -596,8 +617,9 @@ void main()
 		gPayload.depth = tempDepth;
         tempRadianceD += color * gPayload.radiance * cosTheta / (PI * pdf_env);
 	}
+	
 	tempRadianceD *= (1.0 / float(numSampleByDepth)); 
-
+	
 	//////////////////////////////////////////////////////////////// Indirect Light
 
 	vec3 tempRadianceI = vec3(0.0);
@@ -609,7 +631,9 @@ void main()
         vec2 seed = vec2(r3, r4);
         vec3 rayDir = RandomCosineHemisphere(worldNormal, seed);
 
-		gPayload.depth += 1;
+		gPayload.rayDirection = rayDir;
+		gPayload.bEnvMap = false;
+		gPayload.depth = tempDepth + 1;
 		traceRayEXT(
 			topLevelAS,                         // topLevel
 			gl_RayFlagsOpaqueEXT, 0xff,         // rayFlags, cullMask
@@ -622,7 +646,7 @@ void main()
         // const float pdf_p = cos_p / PI; // consine 샘플별 pdf
         tempRadianceI += color * gPayload.radiance;
 	}
-	tempRadianceI *= (1.0 / float(numSampleByDepth));
+	tempRadianceI *= (1.0 / float(numSampleByDepth)); 
     
 	gPayload.radiance = tempRadianceD + tempRadianceI;
 }
@@ -686,6 +710,11 @@ mat3 rotateY(float angle) {
 
 void main()
 {
+	if (gPayload.depth >= gImguiParam.maxDepth) {
+        gPayload.radiance = vec3(0.0);
+		return;
+    }
+    
     vec3 dir = normalize(gPayload.rayDirection);
     float rot = gImguiParam.envmapRotDeg * (PI / 180.0);
     dir = rotateY(rot) * dir; // envmap을 회전하는 것과 같음 (역방향 회전)

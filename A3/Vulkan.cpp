@@ -7,6 +7,7 @@
 #include "ThirdParty/imgui/imgui_impl_glfw.h"
 #include "ThirdParty/imgui/imgui_impl_vulkan.h"
 #include "MeshResource.h"
+#include "MeshObject.h"
 #include "VulkanResource.h"
 #include "AccelerationStructure.h"
 #include "Shader.h"
@@ -1663,10 +1664,11 @@ void VulkanRenderBackend::createUniformBuffer()
         uint32 maxDepth = ip->maxDepth;
         uint32 numSamples = ip->numSamples;
         uint32 isProgressive = ip->isProgressive;
+        uint32 frameCount = ip->frameCount;
 
         void* dst;
         vkMapMemory(device, imguiBufferMem, 0, sizeof(dataSrc), 0, &dst);
-        *(imguiParam*)dst = { maxDepth, numSamples, isProgressive };
+        *(imguiParam*)dst = { maxDepth, numSamples, isProgressive, frameCount };
         vkUnmapMemory(device, imguiBufferMem);
     }
 }
@@ -1767,10 +1769,11 @@ void VulkanRenderBackend::updateUniformBuffer()
         uint32 maxDepth = ip->maxDepth;
         uint32 numSamples = ip->numSamples;
         uint32 isProgressive = ip->isProgressive;
+        uint32 frameCount = ip->frameCount;
 
         void* dst;
         vkMapMemory(device, imguiBufferMem, 0, sizeof(dataSrc), 0, &dst);
-        *(imguiParam*)dst = { maxDepth, numSamples, isProgressive };
+        *(imguiParam*)dst = { maxDepth, numSamples, isProgressive, frameCount };
         vkUnmapMemory(device, imguiBufferMem);
     }
 }
@@ -2103,47 +2106,11 @@ IRenderPipelineRef VulkanRenderBackend::createRayTracingPipeline( const Raytraci
         *( ShaderGroupHandle* )( dst + missOffset + 0 * missStride ) = missHandle;
         *( ShaderGroupHandle* )( dst + missOffset + 1 * missStride ) = shadowMissHandle;
 
-        const std::vector<HitgCustomData> sampleColorTable =
-        {
-            { 1.0f, 1.0f, 1.0f },   // @FIXME: parse from material
-            { 1.0f, 1.0f, 1.0f },
-            { 1.0f, 0.0f, 0.0f },
-            { 0.0f, 1.0f, 0.0f },
-            { 1.0f, 1.0f, 1.0f },
-            { 1.0f, 1.0f, 1.0f },
-            { 0.0f, 0.0f, 0.0f },
-
-            { 0.6f, 0.1f, 0.2f },   // Deep Red Wine
-            { 0.1f, 0.8f, 0.4f },   // Emerald Green
-            { 0.9f, 0.7f, 0.1f },   // Golden Yellow
-            { 0.3f, 0.6f, 0.9f },   // Dawn Sky Blue
-            { 0.8f, 0.2f, 0.6f },   // Rose Violet
-            { 0.2f, 0.5f, 0.9f },   // Azure Blue
-            { 1.0f, 1.0f, 1.0f },   //  -> current light index
-            { 0.2f, 0.9f, 0.8f },   // Mint Cyan
-            { 0.7f, 0.8f, 0.2f },   // Olive Lime
-            { 0.5f, 0.5f, 0.5f }    // Neutral Gray
-        };
-
-        std::random_device rd;
-        std::mt19937 gen(rd());
-        std::uniform_real_distribution<float> dist(0.0f, 1.0f);
-
         for (size_t i = 0; i < geometryCount; ++i)
         {
             HitgCustomData color;
-            /*if (i < sampleColorTable.size())
-            {
-                color = sampleColorTable[i];
-            }
-            else
-            {
-                color.color[0] = dist(gen);
-                color.color[1] = dist(gen);
-				color.color[2] = dist(gen);
-            }*/
-            size_t index = i % sampleColorTable.size();
-            color = sampleColorTable[index];
+            const auto& objectColor = objects[i]->getBaseColor();
+            color = { objectColor.x, objectColor.y, objectColor.z, };
             *(ShaderGroupHandle*)(dst + hitgOffset + i * hitgStride) = hitgHandle;
             *(HitgCustomData*)(dst + hitgOffset + i * hitgStride + handleSize) = color;
         }

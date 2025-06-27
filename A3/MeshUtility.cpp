@@ -74,14 +74,14 @@ void Utility::loadMeshFile( MeshResource& outMesh, const std::string& filePath )
             outMesh.attributes.push_back( attributes );
             outMesh.indices.push_back( static_cast< uint32 >( outMesh.indices.size() ) ); // TODO: repeated vertex
 
-            if (outMesh.indices.size() % 3 == 0) {
-                const int idx = outMesh.indices.size() - 1;
-                VertexPosition AB = outMesh.positions[idx - 0] - outMesh.positions[idx - 2];
-                VertexPosition AC = outMesh.positions[idx - 1] - outMesh.positions[idx - 2];
-                VertexPosition prod = 0.5f * AB.cross(AC);
-                outMesh.cumulativeTriangleArea[sumIdx] = outMesh.cumulativeTriangleArea[sumIdx - 1] + prod.length();
-                ++sumIdx;
-            }
+            //if (outMesh.indices.size() % 3 == 0) {
+            //    const int idx = outMesh.indices.size() - 1;
+            //    VertexPosition AB = outMesh.positions[idx - 0] - outMesh.positions[idx - 2];
+            //    VertexPosition AC = outMesh.positions[idx - 1] - outMesh.positions[idx - 2];
+            //    VertexPosition prod = 0.5f * AB.cross(AC);
+            //    outMesh.cumulativeTriangleArea[sumIdx] = outMesh.cumulativeTriangleArea[sumIdx - 1] + prod.length();
+            //    ++sumIdx;
+            //}
         }
         //std::cout << " " << "\n";
 

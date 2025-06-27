@@ -34,6 +34,26 @@ public:
 	MeshResource* getResource() { return resource; }
 	virtual bool canRender() override { return true; }
 
+	void calculateTriangleArea()
+	{
+		updateLocalToWorld();
+		
+		uint32 sumIdx = 1;
+		for (uint32 triIndex = 0; triIndex < resource->triangleCount; ++triIndex)
+		{
+			const auto p1 = localToWorld * resource->positions[resource->indices[triIndex * 3 + 0]];
+			const auto p2 = localToWorld * resource->positions[resource->indices[triIndex * 3 + 1]];
+			const auto p3 = localToWorld * resource->positions[resource->indices[triIndex * 3 + 2]];
+
+			const auto v2_1 = p2 - p1;
+			const auto v3_1 = p3 - p1;
+			const auto normal = cross(v2_1, v3_1);
+			const float magnitude = 0.5f * std::sqrt(dot(normal, normal));
+
+			resource->cumulativeTriangleArea[sumIdx++] = resource->cumulativeTriangleArea[sumIdx - 1] + magnitude;
+		}
+	}
+
 private:
 	MeshResource* resource;
 

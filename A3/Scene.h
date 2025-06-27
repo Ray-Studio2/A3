@@ -13,11 +13,12 @@ class MeshObject;
 class CameraObject;
 struct MeshResource;
 
-struct imguiParam
+struct imguiParam // TODO: right for being part of scene?
 {
-	uint32 maxDepth = 2;
+	uint32 maxDepth = 5;
 	uint32 numSamples = 16;
 	uint32 isProgressive = 1;
+	uint32 frameCount = 128;
 
 	enum LightSamplingMode : uint32 {
 		BruteForce = 0,

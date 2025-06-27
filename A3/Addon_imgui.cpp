@@ -263,16 +263,15 @@ void Addon_imgui::renderFrame( GLFWwindow* window, VulkanRenderBackend* vulkan, 
                     light = objects[lightIndex];
             }
 
-            std::vector<MeshObject*> objects = scene->collectMeshObjects();
             Vec3 emit = light->getEmittance();
             float rgb[3] = { emit.x, emit.y, emit.z }; // FIXME: change to light color
             if (ImGui::DragFloat3("Emittance(RGB)", rgb, 0.05f, 0.0f, 200.0f)) {
-                objects[6]->setEmittance(Vec3(rgb[0], rgb[1], rgb[2]));
+                light->setEmittance(Vec3(rgb[0], rgb[1], rgb[2]));
                 scene->markSceneDirty();
             }
 
             static float total = emit.x; // FIXME: change to lumen or 가중치
-            if (ImGui::DragFloat("Emittance", &total, 0.05f, 0.0f, 200.0f)) {
+            if (ImGui::DragFloat("Emittance", &total, 0.05f, 0.0f, 500.0f)) {
                 light->setEmittance(Vec3(total, total, total));
                 scene->markSceneDirty();
             }
@@ -289,12 +288,14 @@ void Addon_imgui::renderFrame( GLFWwindow* window, VulkanRenderBackend* vulkan, 
                 scene->markSceneDirty(); ImGui::SameLine();
             ImGui::Text("at Frame"); ImGui::SameLine();
 
-            static int frameCount = 2048;
+            int frameCount = static_cast<int>(scene->getImguiParam()->frameCount);
             ImGui::BeginDisabled(!autoSave);
             {
                 ImGui::SetNextItemWidth(150.0f);
-                if (ImGui::InputInt("##Frame", &frameCount)) 
+                if (ImGui::InputInt("##Frame", &frameCount)) {
+                    scene->getImguiParam()->frameCount = static_cast<uint32>(frameCount);
                     scene->markSceneDirty();
+                }
                 if (autoSave && vulkan->currentFrameCount == frameCount)
                     vulkan->saveCurrentImage("frame_" + std::to_string(frameCount) + ".png");
             }

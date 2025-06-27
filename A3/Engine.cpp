@@ -48,7 +48,7 @@ void Engine::Run()
         VulkanRenderBackend gfxBackend( window, extensions, screenWidth, screenHeight );
 
         Scene scene;
-        scene.load("../Assets/unidirectional_path_tracer_scene_scale1.json");
+        scene.load(RenderSettings::sceneFile);
 
         PathTracingRenderer renderer( &gfxBackend );
 

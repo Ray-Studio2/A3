@@ -200,10 +200,10 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="..\.gitignore" />
-    <None Include="..\Assets\nee-test-scene.json" />
-    <None Include="..\Assets\unidirectional_path_tracer_scene.json" />
-    <None Include="..\Assets\unidirectional_path_tracer_scene_quad.json" />
-    <None Include="..\Assets\unidirectional_path_tracer_scene_scale1.json" />
+    <None Include="..\Assets\bruteforce-env.json" />
+    <None Include="..\Assets\bruteforce-local.json" />
+    <None Include="..\Assets\nee-env.json" />
+    <None Include="..\Assets\nee-local.json" />
     <None Include="shaders\Bindings.glsl" />
     <None Include="shaders\Sampler.glsl" />
     <None Include="shaders\SampleRaytracing.glsl" />

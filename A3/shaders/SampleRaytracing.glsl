@@ -135,7 +135,7 @@ void main()
 
     const vec3 lightEmittance = light.emittance;
     const float lightArea = getLightArea();
-    const vec3 emissivePerPoint = lightEmittance / (lightArea * PI);
+    // const vec3 emissivePerPoint = lightEmittance / (lightArea * PI);
     // const float spherePDF = 1 / (2 * PI); // uniform
     const vec3 brdf_p = color / PI;
 
@@ -143,7 +143,7 @@ void main()
     vec3 temp = vec3(0.0);
 
     if (gl_InstanceCustomIndexEXT == gLightBuffer.lightIndex[0])
-        emit = emissivePerPoint;
+        emit = lightEmittance;
 
     uint tempDepth = gPayload.depth;
     uint numSampleByDepth = (gPayload.depth == 0 ? gImguiParam.numSamples : 1);
@@ -285,13 +285,13 @@ void main()
 	const float eps = 1e-4;
     const vec3 lightEmittance = light.emittance;
     const float lightArea = getLightArea();
-    const vec3 emissivePerPoint = lightEmittance / (lightArea * PI);
+    // const vec3 emissivePerPoint = lightEmittance / (lightArea * PI);
     const vec3 brdf_p = color / PI;
     // const float spherePDF = 1 / (2 * PI);
 
     if (gl_InstanceCustomIndexEXT == gLightBuffer.lightIndex[0]) {
         if (gPayload.depth == 0)
-            gPayload.radiance = emissivePerPoint;
+            gPayload.radiance = lightEmittance;
         else
             gPayload.radiance = vec3(0.0);
         return;
@@ -337,7 +337,7 @@ void main()
         const float cos_p = max(dot(worldNormal, shadowRayDir), 0.0);
 		const float P = cos_q / dot(r, r);
 
-		tempRadianceD += brdf_p * cos_p * emissivePerPoint * visibility * P * lightArea;
+		tempRadianceD += brdf_p * cos_p * lightEmittance * visibility * P * lightArea;
 	}
 	tempRadianceD *= (1 / float(numSampleByDepth)); // average
 

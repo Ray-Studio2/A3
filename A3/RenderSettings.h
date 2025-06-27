@@ -1,5 +1,6 @@
 #pragma once
 #include "EngineTypes.h"
+#include <string>
 
 namespace A3
 {
@@ -10,5 +11,8 @@ struct RenderSettings
 	static constexpr uint32 shaderGroupHandleSize = 32;
 
 	static constexpr uint32 maxLightCounts = 16;
+
+	//static constexpr const char* sceneFile = "../Assets/bruteforce-local.json";
+	static constexpr const char* sceneFile = "../Assets/nee-local.json";
 };
 }

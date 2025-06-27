@@ -89,9 +89,9 @@ float getLightArea()
 
 /////////////////////////////////////////////////////////////////////////////////////////////
 
-#if BRUTE_FORCE_CLOSEST_HIT_SHADER
+#if BRUTE_FORCE_LIGHT_ONLY_CLOSEST_HIT_SHADER
 //=========================
-//   BRUTE FORCE CLOSEST HIT SHADER
+//   BRUTE FORCE LIGHT ONLY CLOSEST HIT SHADER
 //=========================
 
 layout( shaderRecordEXT ) buffer CustomData
@@ -175,9 +175,9 @@ void main()
 
 #endif
 
-#if NEE_CLOSEST_HIT_SHADER
+#if NEE_LIGHT_ONLY_CLOSEST_HIT_SHADER
 //=========================
-//   NEE CLOSEST HIT SHADER
+//   NEE LIGHT ONLY CLOSEST HIT SHADER
 //=========================
 
 layout( shaderRecordEXT ) buffer CustomData

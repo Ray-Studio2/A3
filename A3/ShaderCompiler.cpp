@@ -98,7 +98,7 @@ std::string translateShaderType( const ShaderDesc& desc )
     std::string outType;
     if( !desc.prefix.empty() )
     {
-        outType = std::format( "{0}_", desc.prefix );
+        outType = std::format( "{0}", desc.prefix );
     }
 
     switch( desc.type )

@@ -15,9 +15,9 @@ struct RayPayload
 
 struct LightData
 {
-    vec3 emittance;
-    uint triangleCount;
     mat4 transform;
+    float emittance;
+    uint triangleCount;
 };
 
 struct VertexAttributes

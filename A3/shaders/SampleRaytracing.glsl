@@ -133,7 +133,7 @@ void main()
 
     LightData light = gLightBuffer.lights[0];
 
-    const vec3 lightEmittance = light.emittance;
+    const vec3 lightEmittance = vec3(light.emittance); // emittance per point
     const float lightArea = getLightArea();
     // const vec3 emissivePerPoint = lightEmittance / (lightArea * PI);
     // const float spherePDF = 1 / (2 * PI); // uniform
@@ -283,7 +283,7 @@ void main()
     LightData light = gLightBuffer.lights[0];
 
 	const float eps = 1e-4;
-    const vec3 lightEmittance = light.emittance;
+    const vec3 lightEmittance = vec3(light.emittance);
     const float lightArea = getLightArea();
     // const vec3 emissivePerPoint = lightEmittance / (lightArea * PI);
     const vec3 brdf_p = color / PI;

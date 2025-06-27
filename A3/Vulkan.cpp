@@ -1673,10 +1673,20 @@ void VulkanRenderBackend::createUniformBuffer()
 
 void VulkanRenderBackend::createLightBuffer()
 {
+    struct LightHeaderData
+    {
+        uint32 lightIdx[RenderSettings::maxLightCounts]; // 16 lights max
+        uint32 lightCount;
+        uint32 pad1;
+        uint32 pad2;
+        uint32 pad3;
+        // LightData array follows
+    };
+
     // Create an initial light buffer with space for up to 16 lights
-    const size_t maxLights = 16;
-    const size_t lightDataSize = sizeof(float) * 8; // Vec3 + float + Vec3 + float padding
-    const size_t bufferSize = sizeof(uint32) * 4 + lightDataSize * maxLights; // header + lights
+    const size_t maxLights = RenderSettings::maxLightCounts;
+    const size_t lightDataSize = sizeof(LightData);
+    const size_t bufferSize = sizeof(LightHeaderData) + lightDataSize * maxLights; // header + lights
     
     std::tie( lightBuffer, lightBufferMem ) = createBuffer(
         bufferSize,
@@ -1692,8 +1702,11 @@ void VulkanRenderBackend::createLightBuffer()
 
 void VulkanRenderBackend::updateLightBuffer( const std::vector<LightData>& lights )
 {
-    struct LightBufferData
+    auto& lightIndex = tempScenePointer->getLightIndex();
+
+    struct LightHeaderData
     {
+        uint32 lightIdx[RenderSettings::maxLightCounts]; // 16 lights max
         uint32 lightCount;
         uint32 pad1;
         uint32 pad2;
@@ -1701,7 +1714,7 @@ void VulkanRenderBackend::updateLightBuffer( const std::vector<LightData>& light
         // LightData array follows
     };
     
-    const size_t headerSize = sizeof(LightBufferData);
+    const size_t headerSize = sizeof(LightHeaderData);
     const size_t lightSize = sizeof(LightData) * lights.size();
     const size_t bufferSize = headerSize + lightSize;
     
@@ -1709,7 +1722,9 @@ void VulkanRenderBackend::updateLightBuffer( const std::vector<LightData>& light
     vkMapMemory( device, lightBufferMem, 0, bufferSize, 0, &dst );
     
     // Write header
-    LightBufferData* header = (LightBufferData*)dst;
+    LightHeaderData* header = (LightHeaderData*)dst;
+    for (int i = 0; i < lights.size(); ++i)
+        header->lightIdx[i] = lightIndex[i];
     header->lightCount = static_cast<uint32>(lights.size());
     header->pad1 = 0;
     header->pad2 = 0;

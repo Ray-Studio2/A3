@@ -238,7 +238,9 @@ void Addon_imgui::renderFrame( GLFWwindow* window, VulkanRenderBackend* vulkan, 
             }
 
             int numSamples = static_cast<int>(scene->getImguiParam()->numSamples);
-            if (ImGui::SliderInt("Number of samples", &numSamples, 1, 256)) {
+            if (ImGui::InputInt("Number of samples", &numSamples)) {
+                if (numSamples < 0) numSamples = 0;
+                if (numSamples > 64) numSamples = 64;
                 scene->getImguiParam()->numSamples = static_cast<uint32>(numSamples);
                 scene->markSceneDirty();
             }
@@ -252,7 +254,7 @@ void Addon_imgui::renderFrame( GLFWwindow* window, VulkanRenderBackend* vulkan, 
 
         ImGui::SeparatorText("Light");
         {
-            const uint32 lightIndex = 6;
+            auto& lightIndex = scene->getLightIndex()[0]; // TODO: assuming 1 light
 
             static MeshObject* light = nullptr;
             if (!light) {
@@ -263,13 +265,13 @@ void Addon_imgui::renderFrame( GLFWwindow* window, VulkanRenderBackend* vulkan, 
 
             std::vector<MeshObject*> objects = scene->collectMeshObjects();
             Vec3 emit = light->getEmittance();
-            float rgb[3] = { emit.x, emit.y, emit.z }; // @FIXME: change to light color
+            float rgb[3] = { emit.x, emit.y, emit.z }; // FIXME: change to light color
             if (ImGui::DragFloat3("Emittance(RGB)", rgb, 0.05f, 0.0f, 200.0f)) {
                 objects[6]->setEmittance(Vec3(rgb[0], rgb[1], rgb[2]));
                 scene->markSceneDirty();
             }
 
-            static float total = emit.x; // @FIXME: change to lumen or 가중치
+            static float total = emit.x; // FIXME: change to lumen or 가중치
             if (ImGui::DragFloat("Emittance", &total, 0.05f, 0.0f, 200.0f)) {
                 light->setEmittance(Vec3(total, total, total));
                 scene->markSceneDirty();
@@ -287,7 +289,7 @@ void Addon_imgui::renderFrame( GLFWwindow* window, VulkanRenderBackend* vulkan, 
                 scene->markSceneDirty(); ImGui::SameLine();
             ImGui::Text("at Frame"); ImGui::SameLine();
 
-            static int frameCount = 75;
+            static int frameCount = 2048;
             ImGui::BeginDisabled(!autoSave);
             {
                 ImGui::SetNextItemWidth(150.0f);

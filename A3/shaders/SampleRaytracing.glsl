@@ -7,7 +7,6 @@
 #extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
 
 #define PI 3.1415926535897932384626433832795
-#define LIGHT_INSTANCE_INDEX 6
 
 #include "shaders/SharedStructs.glsl"
 #include "shaders/Bindings.glsl"
@@ -17,7 +16,7 @@
 
 float getLightArea() 
 {
-	ObjectDesc lightObjDesc = gObjectDescs.desc[LIGHT_INSTANCE_INDEX];
+	ObjectDesc lightObjDesc = gObjectDescs.desc[gLightBuffer.lightIndex[0]];
 	cumulativeTriangleAreaBuffer sum = cumulativeTriangleAreaBuffer(lightObjDesc.cumulativeTriangleAreaAddress);
 
 	return sum.t[gLightBuffer.lights[0].triangleCount];
@@ -143,7 +142,7 @@ void main()
     vec3 emit = vec3(0.0);
     vec3 temp = vec3(0.0);
 
-    if (gl_InstanceCustomIndexEXT == LIGHT_INSTANCE_INDEX)
+    if (gl_InstanceCustomIndexEXT == gLightBuffer.lightIndex[0])
         emit = emissivePerPoint;
 
     uint tempDepth = gPayload.depth;
@@ -193,7 +192,7 @@ hitAttributeEXT vec2 attribs;
 
 uint binarySearchTriangleIdx(const float lightArea) 
 {
-	ObjectDesc lightObjDesc = gObjectDescs.desc[LIGHT_INSTANCE_INDEX];
+	ObjectDesc lightObjDesc = gObjectDescs.desc[gLightBuffer.lightIndex[0]];
 	cumulativeTriangleAreaBuffer sum = cumulativeTriangleAreaBuffer(lightObjDesc.cumulativeTriangleAreaAddress);
 	float target = random(gPayload.rngState) * lightArea;
 
@@ -214,7 +213,7 @@ void uniformSamplePointOnTriangle(uint triangleIdx,
 								  out vec3 pointOnTriangleWorld, 
 								  out vec3 normalOnTriangleWorld) 
 {
-	ObjectDesc lightObjDesc = gObjectDescs.desc[LIGHT_INSTANCE_INDEX];
+	ObjectDesc lightObjDesc = gObjectDescs.desc[gLightBuffer.lightIndex[0]];
 
 	IndexBuffer lightIndexBuffer = IndexBuffer(lightObjDesc.indexDeviceAddress);
 	uint base = triangleIdx * 3u;
@@ -290,7 +289,7 @@ void main()
     const vec3 brdf_p = color / PI;
     // const float spherePDF = 1 / (2 * PI);
 
-    if (gl_InstanceCustomIndexEXT == LIGHT_INSTANCE_INDEX) {
+    if (gl_InstanceCustomIndexEXT == gLightBuffer.lightIndex[0]) {
         if (gPayload.depth == 0)
             gPayload.radiance = emissivePerPoint;
         else

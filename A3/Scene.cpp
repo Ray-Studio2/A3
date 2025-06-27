@@ -54,7 +54,9 @@ void Scene::load(const std::string &path) {
 
 	auto &objects = data["scene"];
 	if (objects.is_array()) {
-		for (auto &object : objects) {
+		for (int i = 0; i < objects.size(); ++i)
+		{
+			auto &object = objects[i];
 			auto &position = object["position"];
 			auto &rotation = object["rotation"];
 			auto &scale = object["scale"];
@@ -76,11 +78,12 @@ void Scene::load(const std::string &path) {
 
 			//mo->setBaseColor(Vec3(baseColor[0], baseColor[1], baseColor[2]));
 
-			//if (material == "light") {
+			if (material == "light") {
 			//	auto& emittance = material["emittance"];
 			//	mo->setEmittance(Vec3(emittance[0], emittance[1], emittance[2]));
+				lightIndex.push_back(i);
 				mo->setEmittance(Vec3(100.0f));
-			//}
+			}
 
 			this->objects.emplace_back(mo);
 		}

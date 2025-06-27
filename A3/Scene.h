@@ -5,6 +5,7 @@
 #include <string>
 #include <unordered_map>
 #include "EngineTypes.h"
+#include "Vector.h"
 
 namespace A3
 {
@@ -18,13 +19,16 @@ struct imguiParam // TODO: right for being part of scene?
 	uint32 maxDepth = 5;
 	uint32 numSamples = 16;
 	uint32 isProgressive = 1;
-	uint32 frameCount = 128;
+	float envmapRotDeg = 30.0f; // 여기까지만 GPU에 넘겨줌
+	// TODO: separate CPU side and GPU side
 
+	Vec3 lightPos = Vec3(0.0f);
+	uint32 frameCount = 128;
+	
 	enum LightSamplingMode : uint32 {
 		BruteForce = 0,
 		NEE
 	};
-
 	enum LightSelection : uint32 {
 		LightOnly = 0,
 		EnvMap,

@@ -100,6 +100,7 @@ void PathTracingRenderer::buildSamplePSO()
         rayGeneration.descriptors.emplace_back( SRD_UniformBuffer, 7 ); // Imgui parameters
         ShaderDesc& environmentMiss = psoDesc.shaders[1];
         environmentMiss.descriptors.emplace_back( SRD_ImageSampler, 6 );
+        environmentMiss.descriptors.emplace_back( SRD_UniformBuffer, 7 ); // Imgui parameters
         ShaderDesc& closestHit = psoDesc.shaders[ 2 ];
         closestHit.descriptors.emplace_back( SRD_AccelerationStructure, 0 );
         closestHit.descriptors.emplace_back( SRD_StorageBuffer, 3 );
@@ -160,6 +161,7 @@ void PathTracingRenderer::updateLightBuffer( const Scene& scene )
         }
     }
 
+    // TODO: env map json does not have a light mesh -> 아니 어케 처리함
     assert(lights.size() == 1 && "Expected exactly one light");
     
     // Update light buffer in backend

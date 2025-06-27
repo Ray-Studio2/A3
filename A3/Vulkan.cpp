@@ -61,7 +61,7 @@ VulkanRenderBackend::VulkanRenderBackend( GLFWwindow* window, std::vector<const 
     createImguiRenderPass( screenWidth, screenHeight );
     createCommandCenter();
 
-    std::tie(envImage, envImageMem, envImageView, envSampler) = createEnvironmentMap("../Assets/rogland_sunset_4k.hdr");
+    std::tie(envImage, envImageMem, envImageView, envSampler) = createEnvironmentMap(RenderSettings::envMapPath);
 }
 
 VulkanRenderBackend::~VulkanRenderBackend()
@@ -929,6 +929,8 @@ std::tuple<VkImage, VkDeviceMemory, VkImageView, VkSampler>
 A3::VulkanRenderBackend::createEnvironmentMap(std::string_view hdrTexturePath)
 {
     int width, height, channels;
+    if (hdrTexturePath.empty())
+        hdrTexturePath = RenderSettings::envMapDefault;
     float* pixels = stbi_loadf(hdrTexturePath.data(), &width, &height, &channels, 0);
     assert(pixels && channels == 3);
 
@@ -1653,22 +1655,16 @@ void VulkanRenderBackend::createUniformBuffer()
     }
 
     {
-        imguiParam dataSrc;
+        imguiParam dataSrc = *tempScenePointer->getImguiParam();
 
         std::tie(imguiBuffer, imguiBufferMem) = createBuffer(
             sizeof(dataSrc),
             VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
             VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 
-        imguiParam* ip = tempScenePointer->getImguiParam();
-        uint32 maxDepth = ip->maxDepth;
-        uint32 numSamples = ip->numSamples;
-        uint32 isProgressive = ip->isProgressive;
-        uint32 frameCount = ip->frameCount;
-
         void* dst;
         vkMapMemory(device, imguiBufferMem, 0, sizeof(dataSrc), 0, &dst);
-        *(imguiParam*)dst = { maxDepth, numSamples, isProgressive, frameCount };
+        memcpy(dst, &dataSrc, sizeof(imguiParam));
         vkUnmapMemory(device, imguiBufferMem);
     }
 }
@@ -1763,17 +1759,11 @@ void VulkanRenderBackend::updateUniformBuffer()
     }
 
     {
-        imguiParam dataSrc;
-
-        imguiParam* ip = tempScenePointer->getImguiParam();
-        uint32 maxDepth = ip->maxDepth;
-        uint32 numSamples = ip->numSamples;
-        uint32 isProgressive = ip->isProgressive;
-        uint32 frameCount = ip->frameCount;
+        imguiParam dataSrc = *tempScenePointer->getImguiParam();
 
         void* dst;
         vkMapMemory(device, imguiBufferMem, 0, sizeof(dataSrc), 0, &dst);
-        *(imguiParam*)dst = { maxDepth, numSamples, isProgressive, frameCount };
+        memcpy(dst, &dataSrc, sizeof(imguiParam));
         vkUnmapMemory(device, imguiBufferMem);
     }
 }

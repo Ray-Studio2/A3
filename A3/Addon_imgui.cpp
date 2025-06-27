@@ -263,6 +263,14 @@ void Addon_imgui::renderFrame( GLFWwindow* window, VulkanRenderBackend* vulkan, 
                     light = objects[lightIndex];
             }
 
+            // light position
+            auto& lightPos = light->getLocalPosition();
+            float p[3] = { lightPos.x, lightPos.y, lightPos.z };
+            if (ImGui::SliderFloat3("Position", p, -3.0, 3.0)) {
+                light->setPosition(Vec3(p[0], p[1], p[2]));
+                scene->markSceneDirty();
+            }
+
             float emit = light->getEmittance();
             if (ImGui::InputFloat("Emittance per point", &emit, 1.0f, 10.0f)) {
                 if (emit < 0.0f) emit = 0.0f;
@@ -270,6 +278,12 @@ void Addon_imgui::renderFrame( GLFWwindow* window, VulkanRenderBackend* vulkan, 
                 light->setEmittance(emit);
                 scene->markSceneDirty();
             }
+        }
+
+        ImGui::SeparatorText("Env Map");
+        {
+            if (ImGui::SliderFloat("Rotation", &scene->getImguiParam()->envmapRotDeg, 0.0f, 360.f))
+                scene->markSceneDirty();
         }
 
         ImGui::SeparatorText("Image Capture");

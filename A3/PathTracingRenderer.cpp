@@ -162,9 +162,6 @@ void PathTracingRenderer::updateLightBuffer( const Scene& scene )
             lights.push_back( light );
         }
     }
-
-    // TODO: env map json does not have a light mesh -> 아니 어케 처리함
-    assert(lights.size() == 1 && "Expected exactly one light");
     
     // Update light buffer in backend
     backend->updateLightBuffer( lights );

@@ -40,6 +40,7 @@ void Scene::load(const std::string& path) {
 		auto& fov = camera["yFovDeg"];
 		auto& resolution = camera["resolution"]; // TODO: RenderSeetings.h -> runtime
 		auto& sampling = camera["sampling"];
+		auto& lightSampling = camera["lightSampling"];
 		auto& maxDepth = camera["maxDepth"];
 		auto& spp = camera["spp"];
 		auto& exposure = camera["exposure"]; // TODO: add logic
@@ -52,6 +53,7 @@ void Scene::load(const std::string& path) {
 		this->imgui_param->frameCount = spp; // one sampling per frame
 		this->imgui_param->maxDepth = maxDepth;
 		this->imgui_param->lightSamplingMode = (sampling == "bruteforce" ? imguiParam::BruteForce : imguiParam::NEE);
+		this->imgui_param->lightSelection = (lightSampling == "light_only" ? imguiParam::LightOnly : imguiParam::EnvMap);
 	}
 
 	auto& envMap = data["envmap"];

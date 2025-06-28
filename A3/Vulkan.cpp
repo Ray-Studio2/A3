@@ -657,6 +657,7 @@ void VulkanRenderBackend::createVkQueueFamily()
 void VulkanRenderBackend::createVkDescriptorPools()
 {
     VkDescriptorPoolSize poolSizes[] = {
+        { VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 1000 },
         { VK_DESCRIPTOR_TYPE_SAMPLER, 1000 },
         { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1000 },
         { VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1000 },

@@ -17,9 +17,9 @@ struct MeshResource;
 struct imguiParam // TODO: right for being part of scene?
 {
 	uint32 maxDepth = 5;
-	uint32 numSamples = 16;
+	uint32 numSamples = 1;
 	uint32 isProgressive = 1;
-	float envmapRotDeg = 30.0f; // 여기까지만 GPU에 넘겨줌
+	float envmapRotDeg = 0.0f; // 여기까지만 GPU에 넘겨줌
 	// TODO: separate CPU side and GPU side
 
 	Vec3 lightPos = Vec3(0.0f);

@@ -87,3 +87,25 @@ vec3 toneMapReinhard(vec3 color) {
     return color / (1.0 + color);
 }
 
+/////////////////////////////////////////////////////////////////////////////////////////////
+
+uint wang_hash(uint seed)
+{
+    seed = uint(seed ^ uint(61)) ^ uint(seed >> uint(16));
+    seed *= uint(9);
+    seed = seed ^ (seed >> 4);
+    seed *= uint(0x27d4eb2d);
+    seed = seed ^ (seed >> 15);
+    return seed;
+}
+
+uint generateSeed(uvec2 pixel, uint sampleIndex, uint depth, uint axis)
+{
+    uint base = pixel.x * 1973 + pixel.y * 9277 + sampleIndex * 26699 + depth * 59359 + axis * 19937;
+    return wang_hash(base);
+}
+
+float random(uvec2 pixel, uint sampleIndex, uint depth, uint axis)
+{
+    return float(generateSeed(pixel, sampleIndex, depth, axis)) / 4294967296.0;
+}

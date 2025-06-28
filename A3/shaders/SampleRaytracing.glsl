@@ -7,6 +7,8 @@
 #extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
 
 #define PI 3.1415926535897932384626433832795
+#define ENV_MISS_IDX 0
+#define SHADOW_MISS_IDX 1
 
 #include "shaders/SharedStructs.glsl"
 #include "shaders/Bindings.glsl"
@@ -52,7 +54,7 @@ void main()
     traceRayEXT(
        topLevelAS,
        gl_RayFlagsOpaqueEXT, 0xff,
-       0, 1, 0,
+       0, 1, ENV_MISS_IDX,
        g.cameraPos, 0.0, rayDir, 100.0,
        0 );
     
@@ -73,7 +75,6 @@ void main()
         imageStore(accumulationImage, ivec2(gl_LaunchIDEXT.xy), vec4(accumulated, 1.0));
         finalColor = accumulated;
     }
-
 
     float exposure = 1.66f; // might be uniform
     vec3 finalfinalColor = pow(1.0 - exp(-exposure * finalColor), vec3(1/2.2, 1/2.2, 1/2.2)); // simple gamma correction
@@ -140,8 +141,6 @@ void main()
 
     const vec3 lightEmittance = vec3(light.emittance); // emittance per point
     const float lightArea = getLightArea();
-    // const vec3 emissivePerPoint = lightEmittance / (lightArea * PI);
-    // const float spherePDF = 1 / (2 * PI); // uniform
     const vec3 brdf_p = color / PI;
 
     vec3 emit = vec3(0.0);
@@ -163,7 +162,7 @@ void main()
                 traceRayEXT(
                     topLevelAS,                         // topLevel
                     gl_RayFlagsOpaqueEXT, 0xff,         // rayFlags, cullMask
-                    0, 1, 1,                            // sbtRecordOffset, sbtRecordStride, missIndex
+                    0, 1, SHADOW_MISS_IDX,              // sbtRecordOffset, sbtRecordStride, missIndex
                     worldPos, 0.0001, rayDir, 100.0,  	// origin, tmin, direction, tmax
                     0);                                 // payload 
                 gPayload.depth = tempDepth;
@@ -174,7 +173,6 @@ void main()
         }
         temp *= 1.0 / float(numSampleByDepth);
     }
-
     gPayload.radiance = emit + temp;
 }
 
@@ -290,9 +288,7 @@ void main()
 	const float eps = 1e-4;
     const vec3 lightEmittance = vec3(light.emittance);
     const float lightArea = getLightArea();
-    // const vec3 emissivePerPoint = lightEmittance / (lightArea * PI);
     const vec3 brdf_p = color / PI;
-    // const float spherePDF = 1 / (2 * PI);
 
     if (gl_InstanceCustomIndexEXT == gLightBuffer.lightIndex[0]) {
         if (gPayload.depth == 0)
@@ -329,7 +325,7 @@ void main()
             topLevelAS,                          // topLevel
             gl_RayFlagsNoOpaqueEXT | gl_RayFlagsSkipClosestHitShaderEXT, // rayFlags
             0xff,                                // cullMask
-            0, 1, 1,                             // sbtRecordOffset, sbtRecordStride, missIndex
+            0, 1, SHADOW_MISS_IDX,               // sbtRecordOffset, sbtRecordStride, missIndex
             worldPos, 0.001f, shadowRayDir, 100.0,  // origin, tmin, direction, tmax
             0);                                  // payload
 
@@ -362,7 +358,7 @@ void main()
 		traceRayEXT(
 			topLevelAS,                         // topLevel
 			gl_RayFlagsOpaqueEXT, 0xff,         // rayFlags, cullMask
-			0, 1, 1,                            // sbtRecordOffset, sbtRecordStride, missIndex
+			0, 1, SHADOW_MISS_IDX,              // sbtRecordOffset, sbtRecordStride, missIndex
 			worldPos, eps, rayDir, 100.0,  		// origin, tmin, direction, tmax
 			0);                                 // gPayload 
 		gPayload.depth = tempDepth;
@@ -380,7 +376,7 @@ void main()
 
 #if BRUTE_FORCE_ENV_MAP_CLOSEST_HIT_SHADER
 //=========================
-//   BRUTE FORCE LIGHT ONLY CLOSEST HIT SHADER
+//   BRUTE FORCE ENVIRONMENT MAP CLOSEST HIT SHADER
 //=========================
 
 layout( shaderRecordEXT ) buffer CustomData
@@ -420,12 +416,6 @@ void main()
     vec3 worldPos = (gl_ObjectToWorldEXT * vec4(position, 1.0)).xyz;
     vec3 worldNormal = normalize(transpose(inverse(mat3(gl_ObjectToWorldEXT))) * normal);
 
-    //LightData light = gLightBuffer.lights[0];
-
-    //const vec3 lightEmittance = vec3(light.emittance); // emittance per point
-    // const float lightArea = getLightArea();
-    // const vec3 emissivePerPoint = lightEmittance / (lightArea * PI);
-    // const float spherePDF = 1 / (2 * PI); // uniform
     const vec3 brdf_p = color / PI;
 
     vec3 emit = vec3(0.0);
@@ -445,13 +435,11 @@ void main()
                 traceRayEXT(
                     topLevelAS,                         // topLevel
                     gl_RayFlagsOpaqueEXT, 0xff,         // rayFlags, cullMask
-                    0, 1, 0,                            // sbtRecordOffset, sbtRecordStride, missIndex
+                    0, 1, ENV_MISS_IDX,                 // sbtRecordOffset, sbtRecordStride, missIndex
                     worldPos, 0.0001, rayDir, 100.0,  	// origin, tmin, direction, tmax
                     0);                                 // payload 
                 gPayload.depth = tempDepth;
 
-            // const float cos_p = max(dot(worldNormal, rayDir), 1e-6);
-            // const float pdf_p = cos_p / PI; // 샘플별 pdf
             temp += color * gPayload.radiance;
         }
         temp *= 1.0 / float(numSampleByDepth);
@@ -474,28 +462,6 @@ layout( shaderRecordEXT ) buffer CustomData
 
 layout(location = 0) rayPayloadInEXT RayPayload gPayload;
 hitAttributeEXT vec2 attribs;
-
-
-uint wang_hash(uint seed)
-{
-    seed = uint(seed ^ uint(61)) ^ uint(seed >> uint(16));
-    seed *= uint(9);
-    seed = seed ^ (seed >> 4);
-    seed *= uint(0x27d4eb2d);
-    seed = seed ^ (seed >> 15);
-    return seed;
-}
-
-uint generateSeed(uvec2 pixel, uint sampleIndex, uint depth, uint axis)
-{
-    uint base = pixel.x * 1973 + pixel.y * 9277 + sampleIndex * 26699 + depth * 59359 + axis * 19937;
-    return wang_hash(base);
-}
-
-float random(uvec2 pixel, uint sampleIndex, uint depth, uint axis)
-{
-    return float(generateSeed(pixel, sampleIndex, depth, axis)) / 4294967296.0;
-}
 
 vec3 sampleEnvDirection(uvec2 pixel, uint sampleIndex, uint depth, out float pdf)
 {
@@ -610,7 +576,7 @@ void main()
 		traceRayEXT(
 			topLevelAS,                         // topLevel
 			gl_RayFlagsOpaqueEXT, 0xff,         // rayFlags, cullMask
-			0, 1, 0,                            // sbtRecordOffset, sbtRecordStride, missIndex
+			0, 1, ENV_MISS_IDX,                 // sbtRecordOffset, sbtRecordStride, missIndex
 			worldPos, eps, rayDir, 100.0,  		// origin, tmin, direction, tmax
 			0);                                 // gPayload 
 			
@@ -637,7 +603,7 @@ void main()
 		traceRayEXT(
 			topLevelAS,                         // topLevel
 			gl_RayFlagsOpaqueEXT, 0xff,         // rayFlags, cullMask
-			0, 1, 1,                            // sbtRecordOffset, sbtRecordStride, missIndex
+			0, 1, SHADOW_MISS_IDX,              // sbtRecordOffset, sbtRecordStride, missIndex
 			worldPos, eps, rayDir, 100.0,  		// origin, tmin, direction, tmax
 			0);                                 // gPayload 
 		gPayload.depth = tempDepth;
@@ -652,8 +618,6 @@ void main()
 }
 
 #endif
-
-
 
 #if ANY_HIT_SHADER
 //=========================

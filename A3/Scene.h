@@ -39,6 +39,13 @@ struct imguiParam // TODO: right for being part of scene?
 	uint32 lightSelection = LightOnly;
 };
 
+enum class SceneDirty : uint8 {
+	None		= 0,
+	Geometry	= 1 << 0,	// mesh 추가, 삭제
+	Transform	= 1 << 1,	// 위치, 회전, 스케일 변경
+	GpuBuffer	= 1 << 2,
+};
+
 class Scene
 {
 public:
@@ -57,12 +64,22 @@ public:
 	imguiParam* getImguiParam() const { return imgui_param.get(); }
 	const std::vector<uint32>& getLightIndex() const { return lightIndex; }
 
-	void markSceneDirty() { bSceneDirty = true; }
+	void markSceneDirty() { bSceneDirty = true; bPosUpdated = true; bBufferUpdated = true; }
 	void cleanSceneDirty() { bSceneDirty = false; }
 	bool isSceneDirty() const { return bSceneDirty; }
 
+	void markBufferUpdated() { bBufferUpdated = true; }
+	void cleanBufferUpdated() { bBufferUpdated = false; }
+	bool isBufferUpdated() const { return bBufferUpdated; }
+
+	void markPosUpdated() { bPosUpdated = true; bBufferUpdated = true; }
+	void cleanPosUpdated() { bPosUpdated = false; }
+	bool isPosUpdated() const { return bPosUpdated; }
+
 private:
 	bool bSceneDirty;
+	bool bBufferUpdated;
+	bool bPosUpdated;
 
     std::unordered_map<std::string, MeshResource*> resources;
     std::vector<std::unique_ptr<SceneObject>> objects;

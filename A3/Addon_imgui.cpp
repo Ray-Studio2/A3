@@ -205,25 +205,25 @@ void Addon_imgui::renderFrame( GLFWwindow* window, VulkanRenderBackend* vulkan, 
     {
         ImGui::Begin("A3 Pathtracer");
 
-        ImGui::SeparatorText("Light Sampling");
+        ImGui::SeparatorText("Scene");
         {
-            int mode = static_cast<int>(scene->getImguiParam()->lightSamplingMode);
-            int oldMode = mode;
-            ImGui::RadioButton("Brute Force", &mode, 0); ImGui::SameLine();
-            ImGui::RadioButton("NEE", &mode, 1);
-            if (mode != oldMode) {
-                scene->getImguiParam()->lightSamplingMode = static_cast<uint32>(mode);
-                scene->markSceneDirty();
-            }
-
-            int lightSel = static_cast<int>(scene->getImguiParam()->lightSelection);
-            int oldSel = lightSel;
-            ImGui::RadioButton("Light Only", &lightSel, 0); ImGui::SameLine();
-            ImGui::RadioButton("Env Map", &lightSel, 1); ImGui::SameLine();
-            ImGui::RadioButton("Both", &lightSel, 2);
-            if (lightSel != oldSel) {
-                scene->getImguiParam()->lightSelection = static_cast<uint32>(lightSel);
-                scene->markSceneDirty();
+            auto& items = RenderSettings::sceneFiles;
+            static int item_selected_idx = 0;
+            if (ImGui::BeginCombo("Json files", items[item_selected_idx]))
+            {
+                for (int n = 0; n < IM_ARRAYSIZE(items); ++n)
+                {
+                    const bool is_selected = (item_selected_idx == n);
+                    if (ImGui::Selectable(items[n], is_selected))
+                    {
+                        item_selected_idx = n;
+                        scene->load(items[item_selected_idx]);
+                        scene->markSceneDirty();
+                    }
+                    if (is_selected)
+                        ImGui::SetItemDefaultFocus();
+                }
+                ImGui::EndCombo();
             }
         }
 
@@ -234,7 +234,7 @@ void Addon_imgui::renderFrame( GLFWwindow* window, VulkanRenderBackend* vulkan, 
                 if (depth < 0) depth = 0;
                 if (depth > 5) depth = 5;
                 scene->getImguiParam()->maxDepth = static_cast<uint32>(depth);
-                scene->markSceneDirty();
+                scene->markBufferUpdated();
             }
 
             int numSamples = static_cast<int>(scene->getImguiParam()->numSamples);
@@ -242,13 +242,13 @@ void Addon_imgui::renderFrame( GLFWwindow* window, VulkanRenderBackend* vulkan, 
                 if (numSamples < 0) numSamples = 0;
                 if (numSamples > 64) numSamples = 64;
                 scene->getImguiParam()->numSamples = static_cast<uint32>(numSamples);
-                scene->markSceneDirty();
+                scene->markBufferUpdated();
             }
 
             bool p = scene->getImguiParam()->isProgressive;
             if (ImGui::Checkbox("Progressive", &p)) {
                 scene->getImguiParam()->isProgressive = static_cast<uint32>(p);
-                scene->markSceneDirty();
+                scene->markBufferUpdated();
             }
         }
 
@@ -257,6 +257,7 @@ void Addon_imgui::renderFrame( GLFWwindow* window, VulkanRenderBackend* vulkan, 
         ImGui::SeparatorText("Light");
         {
             static MeshObject* light = nullptr;
+            if (scene->isSceneDirty()) light = nullptr;
             if (lightExists) {
                 auto& lightIndex = scene->getLightIndex()[0]; // Assuming 1 light
 
@@ -273,7 +274,7 @@ void Addon_imgui::renderFrame( GLFWwindow* window, VulkanRenderBackend* vulkan, 
             float p[3] = { lightPos.x, lightPos.y, lightPos.z };
             if (ImGui::SliderFloat3("Position", p, -3.0, 3.0)) {
                 light->setPosition(Vec3(p[0], p[1], p[2]));
-                scene->markSceneDirty();
+                scene->markPosUpdated();
             }
 
             float emit = 0.0;
@@ -282,7 +283,7 @@ void Addon_imgui::renderFrame( GLFWwindow* window, VulkanRenderBackend* vulkan, 
                 if (emit < 0.0f) emit = 0.0f;
                 if (emit > 500.0f) emit = 500.0f;
                 light->setEmittance(emit);
-                scene->markSceneDirty();
+                scene->markBufferUpdated();
             }
         }
         ImGui::EndDisabled();
@@ -290,7 +291,7 @@ void Addon_imgui::renderFrame( GLFWwindow* window, VulkanRenderBackend* vulkan, 
         ImGui::SeparatorText("Env Map");
         {
             if (ImGui::SliderFloat("Rotation", &scene->getImguiParam()->envmapRotDeg, 0.0f, 360.f))
-                scene->markSceneDirty();
+                scene->markBufferUpdated();
         }
 
         ImGui::SeparatorText("Image Capture");
@@ -301,7 +302,7 @@ void Addon_imgui::renderFrame( GLFWwindow* window, VulkanRenderBackend* vulkan, 
 
             static bool autoSave = true;
             if (ImGui::Checkbox("Autosave", &autoSave)) 
-                scene->markSceneDirty(); ImGui::SameLine();
+                scene->markBufferUpdated(); ImGui::SameLine();
             ImGui::Text("at Frame"); ImGui::SameLine();
 
             int frameCount = static_cast<int>(scene->getImguiParam()->frameCount);
@@ -310,7 +311,7 @@ void Addon_imgui::renderFrame( GLFWwindow* window, VulkanRenderBackend* vulkan, 
                 ImGui::SetNextItemWidth(150.0f);
                 if (ImGui::InputInt("##Frame", &frameCount)) {
                     scene->getImguiParam()->frameCount = static_cast<uint32>(frameCount);
-                    scene->markSceneDirty();
+                    scene->markBufferUpdated();
                 }
                 if (autoSave && vulkan->currentFrameCount == frameCount)
                     vulkan->saveCurrentImage("frame_" + std::to_string(frameCount) + ".png");

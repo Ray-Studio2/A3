@@ -50,7 +50,8 @@ public:
     void createAccumulationImage();
     void createUniformBuffer();
     void createLightBuffer();
-    void updateUniformBuffer();
+    void updateCameraBuffer();
+    void updateImguiBuffer();
     void saveCurrentImage(const std::string& filename);
     //////////////////////////
 
@@ -63,7 +64,7 @@ private:
     void createSwapChain();
     void createImguiRenderPass( int32 screenWidth, int32 screenHeight );
     void createCommandCenter();
-    std::tuple<VkImage, VkDeviceMemory, VkImageView, VkSampler> createEnvironmentMap(std::string_view hdrTexturePath);
+    void createEnvironmentMap(std::string_view hdrTexturePath);
     void createEnvironmentMapImportanceSampling(float* pixels, int width, int height);
 
     void loadDeviceExtensionFunctions( VkDevice device );

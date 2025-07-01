@@ -35,7 +35,7 @@ public:
 
 private:
 	void buildSamplePSO();
-	void buildAccelerationStructure( const Scene& scene ) const;
+	void buildAccelerationStructure( Scene& scene ) const;
 	void updateLightBuffer( const Scene& scene );
 
 private:

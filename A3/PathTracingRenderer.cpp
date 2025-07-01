@@ -26,19 +26,23 @@ void PathTracingRenderer::beginFrame( int32 screenWidth, int32 screenHeight ) co
 
 void PathTracingRenderer::render( Scene& scene )
 {
-    if( scene.isSceneDirty() )
+    if (scene.isBufferUpdated())
     {
-        // temp
-        backend->tempScenePointer = &scene;
-        buildAccelerationStructure( scene );
-        updateLightBuffer( scene );
-
-        buildSamplePSO();
-        
+        if( scene.isPosUpdated() )
+        {
+            // TODO: temp
+            backend->tempScenePointer = &scene;
+            buildAccelerationStructure( scene );    // scene 전체가 바뀌면 build 다시해야함
+            buildSamplePSO();                       // 얘도 scene 전체가 바뀌면 빌드 해줘야함
+            
+            scene.cleanPosUpdated();
+        }
         // Reset frame count when scene changes
         frameCount = 0;
+        backend->updateImguiBuffer();
+        updateLightBuffer( scene ); // TODO: move to backend?
 
-        scene.cleanSceneDirty();
+        scene.cleanBufferUpdated();
     }
 
     // Increment frame count
@@ -117,14 +121,10 @@ void PathTracingRenderer::buildSamplePSO()
         samplePSO->shaders[ index ] = shaderCache.addShaderModule( shaderDesc, backend->createShaderModule( shaderDesc ) );
     }
 
-    backend->createOutImage();
-    backend->createAccumulationImage();
-    backend->createUniformBuffer();
-
     samplePSO->pipeline = backend->createRayTracingPipeline( psoDesc, samplePSO.get() );
 }
 
-void PathTracingRenderer::buildAccelerationStructure( const Scene& scene ) const
+void PathTracingRenderer::buildAccelerationStructure( Scene& scene ) const
 {
     std::vector<MeshObject*> meshObjects = scene.collectMeshObjects();
     std::vector<BLASBatch*> batches;
@@ -138,7 +138,11 @@ void PathTracingRenderer::buildAccelerationStructure( const Scene& scene ) const
 
     backend->createTLAS( batches );
 
-    backend->rebuildAccelerationStructure();
+    if (scene.isSceneDirty())
+    {
+        backend->rebuildAccelerationStructure();
+        scene.cleanSceneDirty();
+    }
 }
 
 void PathTracingRenderer::updateLightBuffer( const Scene& scene )

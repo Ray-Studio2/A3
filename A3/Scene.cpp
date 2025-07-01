@@ -14,7 +14,7 @@ using namespace A3;
 using Json = nlohmann::json;
 
 Scene::Scene()
-	: bSceneDirty(true)
+	: bSceneDirty(true), bBufferUpdated(true), bPosUpdated(true)
 {
 	this->imgui_param = std::make_unique<imguiParam>();
 }
@@ -26,6 +26,10 @@ Scene::~Scene() {
 }
 
 void Scene::load(const std::string& path) {
+	this->resources.clear();
+	this->lightIndex.clear();
+	this->objects.clear();
+
 	std::ifstream file(path);
 	if (!file.is_open()) {
 		throw std::runtime_error("failed to open file!: " + path);

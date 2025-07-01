@@ -61,7 +61,8 @@ VulkanRenderBackend::VulkanRenderBackend( GLFWwindow* window, std::vector<const 
     createImguiRenderPass( screenWidth, screenHeight );
     createCommandCenter();
 
-    std::tie(envImage, envImageMem, envImageView, envSampler) = createEnvironmentMap(RenderSettings::envMapPath);
+    //// 옮겨야함
+    //createEnvironmentMap(RenderSettings::envMapPath);
 }
 
 VulkanRenderBackend::~VulkanRenderBackend()
@@ -181,7 +182,7 @@ void VulkanRenderBackend::beginRaytracingPipeline( IRenderPipeline* inPipeline )
     VulkanPipeline* pipeline = static_cast< VulkanPipeline* >( inPipeline );
     
     // Update uniform buffer (including frame count)
-    updateUniformBuffer();
+    updateCameraBuffer();
 
     VkCommandBufferBeginInfo info{
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
@@ -278,8 +279,10 @@ void VulkanRenderBackend::beginRaytracingPipeline( IRenderPipeline* inPipeline )
 void VulkanRenderBackend::rebuildAccelerationStructure()
 {
     createOutImage();
+    createAccumulationImage();
     createUniformBuffer();
     createLightBuffer();
+    createEnvironmentMap(RenderSettings::envMapPath);
 }
 
 void VulkanRenderBackend::loadDeviceExtensionFunctions( VkDevice device )
@@ -926,8 +929,7 @@ void VulkanRenderBackend::createCommandCenter()
     }
 }
 
-std::tuple<VkImage, VkDeviceMemory, VkImageView, VkSampler>
-A3::VulkanRenderBackend::createEnvironmentMap(std::string_view hdrTexturePath)
+void A3::VulkanRenderBackend::createEnvironmentMap(std::string_view hdrTexturePath)
 {
     int width, height, channels;
     if (hdrTexturePath.empty())
@@ -1036,7 +1038,11 @@ A3::VulkanRenderBackend::createEnvironmentMap(std::string_view hdrTexturePath)
 
     createEnvironmentMapImportanceSampling(pixels, width, height);
     stbi_image_free(pixels);
-    return { image, imageMemory, imageView, sampler };
+
+    envImage = image;
+    envImageMem = imageMemory;
+    envImageView = imageView;
+    envSampler = sampler;
 }
 
 void VulkanRenderBackend::createEnvironmentMapImportanceSampling(float* pixels, int width, int height)
@@ -1839,7 +1845,7 @@ void VulkanRenderBackend::updateLightBuffer( const std::vector<LightData>& light
     vkUnmapMemory( device, lightBufferMem );
 }
 
-void VulkanRenderBackend::updateUniformBuffer()
+void VulkanRenderBackend::updateCameraBuffer()
 {
     {
         struct Data
@@ -1860,7 +1866,10 @@ void VulkanRenderBackend::updateUniformBuffer()
         *(Data*)dst = { cameraPos[0], cameraPos[1], cameraPos[2], fov, currentFrameCount, {0, 0, 0} };
         vkUnmapMemory(device, cameraBufferMem);
     }
+}
 
+void A3::VulkanRenderBackend::updateImguiBuffer()
+{
     {
         imguiParam dataSrc = *tempScenePointer->getImguiParam();
 

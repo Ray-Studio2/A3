@@ -452,7 +452,7 @@ void main()
 
 #if NEE_ENV_MAP_CLOSEST_HIT_SHADER
 //=========================
-//   NEE LIGHT ONLY CLOSEST HIT SHADER
+//   NEE ENVIRONMENT MAP CLOSEST HIT SHADER
 //=========================
 
 layout( shaderRecordEXT ) buffer CustomData

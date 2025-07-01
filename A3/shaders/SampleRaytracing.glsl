@@ -76,8 +76,7 @@ void main()
         finalColor = accumulated;
     }
 
-    float exposure = 1.66f; // might be uniform
-    vec3 finalfinalColor = pow(1.0 - exp(-exposure * finalColor), vec3(1/2.2, 1/2.2, 1/2.2)); // simple gamma correction
+    vec3 finalfinalColor = pow(1.0 - exp(-g.exposure * finalColor), vec3(1/2.2, 1/2.2, 1/2.2)); // simple gamma correction
     
    imageStore( image, ivec2( gl_LaunchIDEXT.xy ), vec4( finalfinalColor, 1.0 ) );
 }

@@ -1743,8 +1743,9 @@ void VulkanRenderBackend::createUniformBuffer()
         {
             float cameraPos[3];
             float yFov_degree;
+            float exposure;
             uint32 frameCount;
-            float padding[3]; // Padding for 16-byte alignment
+            uint32 padding[2];
         } dataSrc;
 
         std::tie(cameraBuffer, cameraBufferMem) = createBuffer(
@@ -1756,10 +1757,11 @@ void VulkanRenderBackend::createUniformBuffer()
         const Vec3& pos = co->getWorldPosition();
         float cameraPos[3] = { pos.x, pos.y, pos.z };
         float fov = co->getFov();
+        float exposure = co->getExposure();
 
         void* dst;
         vkMapMemory(device, cameraBufferMem, 0, sizeof(dataSrc), 0, &dst);
-        *(Data*)dst = { cameraPos[0], cameraPos[1], cameraPos[2], fov, 0, {0, 0, 0} };
+        *(Data*)dst = { cameraPos[0], cameraPos[1], cameraPos[2], fov, exposure, currentFrameCount };
         vkUnmapMemory(device, cameraBufferMem);
     }
 
@@ -1852,18 +1854,20 @@ void VulkanRenderBackend::updateCameraBuffer()
         {
             float cameraPos[3];
             float yFov_degree;
+            float exposure;
             uint32 frameCount;
-            float padding[3];
+            uint32 padding[2];
         } dataSrc;
 
         CameraObject* co = tempScenePointer->getCamera();
         const Vec3& pos = co->getWorldPosition();
         float cameraPos[3] = { pos.x, pos.y, pos.z };
         float fov = co->getFov();
+        float exposure = co->getExposure();
 
         void* dst;
         vkMapMemory(device, cameraBufferMem, 0, sizeof(dataSrc), 0, &dst);
-        *(Data*)dst = { cameraPos[0], cameraPos[1], cameraPos[2], fov, currentFrameCount, {0, 0, 0} };
+        *(Data*)dst = { cameraPos[0], cameraPos[1], cameraPos[2], fov, exposure, currentFrameCount };
         vkUnmapMemory(device, cameraBufferMem);
     }
 }

@@ -53,6 +53,7 @@ void Scene::load(const std::string& path) {
 		this->camera->setPosition(Vec3(position[0], position[1], position[2]));
 		this->camera->setRotation(Vec3(rotation[0], rotation[1], rotation[2]));
 		this->camera->setFov(fov);
+		this->camera->setExposure(exposure);
 
 		this->imgui_param->frameCount = spp; // one sampling per frame
 		this->imgui_param->maxDepth = maxDepth;

@@ -4,6 +4,7 @@ layout( binding = 2 ) uniform CameraProperties
 {
     vec3 cameraPos;
     float yFov_degree;
+    float exposure;
     uint currentFrame;
 } g;
 

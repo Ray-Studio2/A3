@@ -156,6 +156,10 @@ private:
     VkImageView envImageView;
     VkSampler envSampler;
 
+    VkImage envImportanceImage;
+    VkDeviceMemory envImportanceMem;
+    VkImageView envImportanceView;
+
     VkImage outImage;
     VkDeviceMemory outImageMem;
     VkImageView outImageView;
@@ -176,9 +180,6 @@ private:
     VkDescriptorPool descriptorPool;
     VkBuffer objectBuffer;
 
-    VkBuffer envISBuffer;
-    VkDeviceMemory envISBufferMem;
-    
     VkBuffer sbtBuffer;
     VkDeviceMemory sbtBufferMem;
     VkStridedDeviceAddressRegionKHR rgenSbt{};

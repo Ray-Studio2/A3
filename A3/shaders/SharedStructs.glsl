@@ -36,8 +36,6 @@ struct ObjectDesc
 };
 
 struct EnvImportanceSampleData {
-    float conditional_cdf;   // .r
-    float conditional_pdf;   // .g
-    float marginal_pdf;      // .b
-    float marginal_cdf;      // .a
+    vec3 dir;
+    float pdf;
 };

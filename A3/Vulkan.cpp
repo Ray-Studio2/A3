@@ -948,9 +948,7 @@ void A3::VulkanRenderBackend::createEnvironmentMap(std::string_view hdrTexturePa
 
     vkQueueWaitIdle(graphicsQueue);
 
-    VkImage image;
-    VkDeviceMemory imageMemory;
-    std::tie(image, imageMemory) = createImage(
+    std::tie( envImage, envImageMem ) = createImage(
         { (uint32_t)width, (uint32_t)height },
         VK_FORMAT_R32G32B32A32_SFLOAT,
         VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
@@ -981,7 +979,7 @@ void A3::VulkanRenderBackend::createEnvironmentMap(std::string_view hdrTexturePa
         .layerCount = 1,
     };
 
-    setImageLayout(cmd, image, VK_IMAGE_LAYOUT_UNDEFINED,
+    setImageLayout(cmd, envImage, VK_IMAGE_LAYOUT_UNDEFINED,
         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, subresourceRange,
         VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
 
@@ -995,10 +993,10 @@ void A3::VulkanRenderBackend::createEnvironmentMap(std::string_view hdrTexturePa
     };
     region.imageExtent = { (uint32_t)width, (uint32_t)height, 1 };
 
-    vkCmdCopyBufferToImage(cmd, stagingBuffer, image,
+    vkCmdCopyBufferToImage(cmd, stagingBuffer, envImage,
         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
 
-    setImageLayout(cmd, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+    setImageLayout(cmd, envImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, subresourceRange,
         VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
 
@@ -1013,17 +1011,15 @@ void A3::VulkanRenderBackend::createEnvironmentMap(std::string_view hdrTexturePa
     vkDestroyBuffer(device, stagingBuffer, nullptr);
     vkFreeMemory(device, stagingMem, nullptr);
 
-    VkImageView imageView;
     VkImageViewCreateInfo viewInfo{
         .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-        .image = image,
+        .image = envImage,
         .viewType = VK_IMAGE_VIEW_TYPE_2D,
         .format = VK_FORMAT_R32G32B32A32_SFLOAT,
         .subresourceRange = subresourceRange,
     };
-    vkCreateImageView(device, &viewInfo, nullptr, &imageView);
+    vkCreateImageView(device, &viewInfo, nullptr, &envImageView );
 
-    VkSampler sampler;
     VkSamplerCreateInfo samplerInfo{
         .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
         .magFilter = VK_FILTER_LINEAR,
@@ -1034,28 +1030,31 @@ void A3::VulkanRenderBackend::createEnvironmentMap(std::string_view hdrTexturePa
         .addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,
         .maxLod = FLT_MAX,
     };
-    vkCreateSampler(device, &samplerInfo, nullptr, &sampler);
+    vkCreateSampler( device, &samplerInfo, nullptr, &envSampler );
 
     createEnvironmentMapImportanceSampling(pixels, width, height);
     stbi_image_free(pixels);
-
-    envImage = image;
-    envImageMem = imageMemory;
-    envImageView = imageView;
-    envSampler = sampler;
 }
 
 void VulkanRenderBackend::createEnvironmentMapImportanceSampling(float* pixels, int width, int height)
 {
     if (pixels == nullptr) return;
 
-    const int texelCount = width * height;
-    std::vector<float> rgbaPixels(texelCount * 4); // RGBA = (conditional_cdf, conditional_pdf, marginal_pdf, marginal_cdf)
+    struct EnvImportanceSampleData
+    {
+        Vec3 dir;
+        float pdf;
+    };
+
+    const uint32 texelCount = width * height;
+    std::vector<EnvImportanceSampleData> EnvData(texelCount);
 
     std::vector<float> luminances(texelCount);
     std::vector<float> sinTheta(height);
     std::vector<float> marginalPdf(height);
     std::vector<float> marginalCdf(height);
+    std::vector<float> conditionalCdf( texelCount );
+    std::vector<float> totalPdf( texelCount );
 
     float luminanceSum = 0.0f;
 
@@ -1110,40 +1109,151 @@ void VulkanRenderBackend::createEnvironmentMapImportanceSampling(float* pixels, 
         // CDF 작성
         for (int x = 0; x < width; ++x) {
             int i = y * width + x;
-            float pdf = luminances[i] / rowSum;
-            pdf = std::max(pdf, 1e-6f); // clamp
-            accum += pdf;
-            rgbaPixels[i * 4 + 0] = accum;           // conditional CDF
-            rgbaPixels[i * 4 + 1] = pdf;             // conditional PDF
-            rgbaPixels[i * 4 + 2] = marginalPdf[y];  // marginal PDF
-            rgbaPixels[i * 4 + 3] = marginalCdf[y];  // marginal CDF
+            float conditionalPdf = luminances[i] / rowSum;
+            conditionalPdf = std::max( conditionalPdf, 1e-6f); // clamp
+            accum += conditionalPdf;
+
+            conditionalCdf[ i ] = accum;
+            totalPdf[ i ] = conditionalPdf * marginalPdf[ y ];
         }
 
         // normalize conditional CDF
         for (int x = 0; x < width; ++x) {
             int i = y * width + x;
-            rgbaPixels[i * 4 + 0] /= accum;
+            conditionalCdf[ i ] /= accum;
         }
 
         // 마지막 CDF 클램프
         int last = y * width + (width - 1);
-        rgbaPixels[last * 4 + 0] = 1.0f;
+        conditionalCdf[ last ] = 1.0f;
+    }
+
+    constexpr float pi = 3.1415926535897932384626433832795;
+
+    // ---- Marginal CDF 이진 탐색 (Y 방향) ----
+    for( uint32 indexY = 0; indexY < height; ++indexY )
+    {
+        const float indexYNormalized = ( float )indexY / ( height - 1 );
+        uint32 yLow = 0;
+        uint32 yHigh = height - 1;
+        while( yLow < yHigh )
+        {
+            const uint32 yMid = ( yLow + yHigh ) / 2;
+            const float cdf = marginalCdf[ yMid ];
+            if( cdf < indexYNormalized )
+                yLow = yMid + 1;
+            else
+                yHigh = yMid;
+        }
+        const uint32 y = yLow;
+
+        // ---- Conditional CDF 이진 탐색 (X 방향) ----
+        for( uint32 indexX = 0; indexX < width; ++indexX )
+        {
+            const uint32 indexXY = indexX + indexY * width;
+            const float indexXNormalized = ( float )indexX / ( width - 1 );
+            uint32 xLow = 0;
+            uint32 xHigh = width - 1;
+            while( xLow < xHigh )
+            {
+                const uint32 xMid = ( xLow + xHigh ) / 2;
+                const float cdf = conditionalCdf[ yLow * width + xMid ];
+                if( cdf < indexXNormalized )
+                    xLow = xMid + 1;
+                else
+                    xHigh = xMid;
+            }
+            const uint32 x = xLow;
+
+            // ---- UV to Direction ----
+            const float u = x / float( width - 1 );
+            const float v = y / float( height - 1 );
+            const float phi = 2.0 * pi * u;
+            const float theta = pi * v;
+            const float sinTheta = sin( theta );
+
+            // ---- PDF with solid angle correction ----
+            const float texelPdf = totalPdf[ y * width + x ];
+            EnvData[ indexXY ].pdf = width * height * texelPdf / ( 2.0 * pi * pi * sinTheta );
+
+            EnvData[ indexXY ].dir = Vec3( sinTheta * cos( phi ), cos( theta ), sinTheta * sin( phi ) );
+        }
     }
 
     // 4. Vulkan Buffer 업로드
-    VkDeviceSize imageSize = texelCount * 4 * sizeof(float);
+    VkDeviceSize imageSize = sizeof( EnvImportanceSampleData ) * EnvData.size();
 
-    VkDeviceMemory envImportantSamplingMem;
+    std::tie( envImportanceImage, envImportanceMem ) = createImage(
+        { ( uint32 )width, ( uint32 )height },
+        VK_FORMAT_R32G32B32A32_SFLOAT,
+        VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT );
 
-    std::tie(envISBuffer, envISBufferMem) = createBuffer(
+    auto [stagingBuffer, stagingMem] = createBuffer(
         imageSize,
-        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+        VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT );
 
     void* data;
-    vkMapMemory(device, envISBufferMem, 0, imageSize, 0, &data);
-    memcpy(data, rgbaPixels.data(), static_cast<size_t>(imageSize));
-    vkUnmapMemory(device, envISBufferMem);
+    vkMapMemory( device, stagingMem, 0, imageSize, 0, &data );
+    memcpy( data, EnvData.data(), imageSize );
+    vkUnmapMemory( device, stagingMem );
+
+    VkCommandBuffer& cmd = commandBuffers[ imageIndex ];
+    vkResetCommandBuffer( cmd, 0 );
+
+    VkCommandBufferBeginInfo beginInfo{ .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
+    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    vkBeginCommandBuffer( cmd, &beginInfo );
+
+    VkImageSubresourceRange subresourceRange = {
+        .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+        .baseMipLevel = 0,
+        .levelCount = 1,
+        .baseArrayLayer = 0,
+        .layerCount = 1,
+    };
+
+    setImageLayout( cmd, envImportanceImage, VK_IMAGE_LAYOUT_UNDEFINED,
+                    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, subresourceRange,
+                    VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT );
+
+    VkBufferImageCopy region{};
+    region.bufferOffset = 0;
+    region.imageSubresource = {
+        .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+        .mipLevel = 0,
+        .baseArrayLayer = 0,
+        .layerCount = 1,
+    };
+    region.imageExtent = { ( uint32_t )width, ( uint32_t )height, 1 };
+
+    vkCmdCopyBufferToImage( cmd, stagingBuffer, envImportanceImage,
+                            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region );
+
+    setImageLayout( cmd, envImportanceImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                    VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, subresourceRange,
+                    VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT );
+
+    vkEndCommandBuffer( cmd );
+
+    VkSubmitInfo submitInfo{ .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO };
+    submitInfo.commandBufferCount = 1;
+    submitInfo.pCommandBuffers = &cmd;
+    vkQueueSubmit( graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE );
+    vkQueueWaitIdle( graphicsQueue );
+
+    vkDestroyBuffer( device, stagingBuffer, nullptr );
+    vkFreeMemory( device, stagingMem, nullptr );
+
+    VkImageViewCreateInfo viewInfo{
+        .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+        .image = envImportanceImage,
+        .viewType = VK_IMAGE_VIEW_TYPE_2D,
+        .format = VK_FORMAT_R32G32B32A32_SFLOAT,
+        .subresourceRange = subresourceRange,
+    };
+    vkCreateImageView( device, &viewInfo, nullptr, &envImportanceView );
 }
 
 uint32 VulkanRenderBackend::findMemoryType( uint32_t memoryTypeBits, VkMemoryPropertyFlags reqMemProps )
@@ -2062,8 +2172,7 @@ IRenderPipelineRef VulkanRenderBackend::createRayTracingPipeline( const Raytraci
         { 
             nullptr, nullptr,
             cameraBuffer, objectBuffer,
-            lightBuffer, nullptr, nullptr, imguiBuffer,
-            envISBuffer
+            lightBuffer, nullptr, nullptr, imguiBuffer
         };
 
         std::vector<VkWriteDescriptorSet> validDescriptors;
@@ -2132,7 +2241,7 @@ IRenderPipelineRef VulkanRenderBackend::createRayTracingPipeline( const Raytraci
                 writeDescriptorSets.images.emplace_back(
                     VkDescriptorImageInfo{
                         .sampler = envSampler,
-                        .imageView = envImageView,
+                        .imageView = index == 6 ? envImageView : envImportanceView, // @TODO: decouple index based logic
                         .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
                     }
                 );

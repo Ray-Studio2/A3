@@ -109,3 +109,8 @@ float random(uvec2 pixel, uint sampleIndex, uint depth, uint axis)
 {
     return float(generateSeed(pixel, sampleIndex, depth, axis)) / 4294967296.0;
 }
+
+uint random2( uvec2 pixel, uint sampleIndex, uint depth, uint axis )
+{
+    return generateSeed( pixel, sampleIndex, depth, axis );
+}

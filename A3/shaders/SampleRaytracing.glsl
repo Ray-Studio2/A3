@@ -464,53 +464,17 @@ hitAttributeEXT vec2 attribs;
 
 vec3 sampleEnvDirection(uvec2 pixel, uint sampleIndex, uint depth, out float pdf)
 {
-    float marginalY = random(pixel, sampleIndex, depth, 0);
-    float conditionalX = random(pixel, sampleIndex, depth, 1);
-
     ivec2 texSize = textureSize(environmentMap, 0);
-    int width = texSize.x;
-    int height = texSize.y;
+    uint width = texSize.x;
+    uint height = texSize.y;
 
-    // ---- Marginal CDF 이진 탐색 (Y 방향) ----
-    int yLow = 0;
-    int yHigh = height - 1;
-    while (yLow < yHigh) {
-        int yMid = (yLow + yHigh) / 2;
-        float cdf = data[yMid * width].marginal_cdf;
-        if (cdf < marginalY)
-            yLow = yMid + 1;
-        else
-            yHigh = yMid;
-    }
-    int y = yLow;
+    uint x = random2( pixel, sampleIndex, depth, 1 ) & ( width - 1 );   // random % width
+    uint y = random2( pixel, sampleIndex, depth, 0 ) & ( height - 1 );  // random % height
+    vec4 pixelValue = imageLoad( envImportanceData, ivec2( x, y ) );
+    pdf = pixelValue.w;
 
-    // ---- Conditional CDF 이진 탐색 (X 방향) ----
-    int xLow = 0;
-    int xHigh = width - 1;
-    while (xLow < xHigh) {
-        int xMid = (xLow + xHigh) / 2;
-        float cdf = data[y * width + xMid].conditional_cdf;
-        if (cdf < conditionalX)
-            xLow = xMid + 1;
-        else
-            xHigh = xMid;
-    }
-    int x = xLow;
-
-    // ---- UV to Direction ----
-    float u = float(x) / float(width - 1);
-    float v = float(y) / float(height - 1);
-    float phi = 2.0 * PI * u;
-    float theta = PI * v;
-    float sinTheta = sin(theta);
-
-    vec3 dir = vec3(sinTheta * cos(phi), cos(theta), sinTheta * sin(phi));
-
-    // ---- PDF with solid angle correction ----
-    float texelPdf = data[y * width + x].conditional_pdf * data[y * width + x].marginal_pdf;
-    pdf = width * height * texelPdf / (2.0 * PI * PI * sinTheta);
-
-    return normalize(dir);
+    // @TODO: pre-calculate on cpu
+    return normalize( pixelValue.xyz );
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////
@@ -520,9 +484,15 @@ void main()
     if (gPayload.bEnvMap)
     {
         gPayload.radiance = vec3(0.f);
-        return ;
+        return;
     }
-    
+
+    if( gPayload.depth >= gImguiParam.maxDepth )
+    {
+        gPayload.radiance = vec3( 0.0 );
+        return;
+    }
+
     ObjectDesc objDesc = gObjectDescs.desc[gl_InstanceCustomIndexEXT];
 
     IndexBuffer indexBuffer = IndexBuffer(objDesc.indexDeviceAddress);
@@ -551,27 +521,22 @@ void main()
     vec3 worldPos = (gl_ObjectToWorldEXT * vec4(position, 1.0)).xyz;
     vec3 worldNormal = normalize(transpose(inverse(mat3(gl_ObjectToWorldEXT))) * normal);
 
-	if (gPayload.depth >= gImguiParam.maxDepth) {
-        gPayload.radiance = vec3(0.0);
-		return;
-    }
-    
 	//////////////////////////////////////////////////////////////// Direct Light
 	
 	const float eps = 1e-4;
-	uint tempDepth = gPayload.depth;
 	vec3 tempRadianceD = vec3(0.0);
 	uint numSampleByDepth = (gPayload.depth == 0 ? gImguiParam.numSamples : 1);
+
+    gPayload.bEnvMap = true;
 
 	for (uint i=0; i < numSampleByDepth; ++i)
 	{
         float pdf_env;
-        vec3 rayDir = sampleEnvDirection(gl_LaunchIDEXT.xy, i + gPayload.rngState, tempDepth, pdf_env);
+        vec3 rayDir = sampleEnvDirection(gl_LaunchIDEXT.xy, i + gPayload.rngState, gPayload.depth, pdf_env);
         float cosTheta = max(0.0, dot(worldNormal, rayDir));
         
 		gPayload.rayDirection = rayDir;
-		gPayload.bEnvMap = true;
-		gPayload.depth = tempDepth + 1;
+        gPayload.depth++;
 		traceRayEXT(
 			topLevelAS,                         // topLevel
 			gl_RayFlagsOpaqueEXT, 0xff,         // rayFlags, cullMask
@@ -579,7 +544,7 @@ void main()
 			worldPos, eps, rayDir, 100.0,  		// origin, tmin, direction, tmax
 			0);                                 // gPayload 
 			
-		gPayload.depth = tempDepth;
+        gPayload.depth--;
         tempRadianceD += color * gPayload.radiance * cosTheta / (PI * pdf_env);
 	}
 	
@@ -589,6 +554,8 @@ void main()
 
 	vec3 tempRadianceI = vec3(0.0);
 
+    gPayload.bEnvMap = false;
+
 	for (uint i=0; i < numSampleByDepth; ++i)
 	{
         float r3 = random(gPayload.rngState);
@@ -597,15 +564,14 @@ void main()
         vec3 rayDir = RandomCosineHemisphere(worldNormal, seed);
 
 		gPayload.rayDirection = rayDir;
-		gPayload.bEnvMap = false;
-		gPayload.depth = tempDepth + 1;
+		gPayload.depth++;
 		traceRayEXT(
 			topLevelAS,                         // topLevel
 			gl_RayFlagsOpaqueEXT, 0xff,         // rayFlags, cullMask
 			0, 1, SHADOW_MISS_IDX,              // sbtRecordOffset, sbtRecordStride, missIndex
 			worldPos, eps, rayDir, 100.0,  		// origin, tmin, direction, tmax
 			0);                                 // gPayload 
-		gPayload.depth = tempDepth;
+		gPayload.depth--;
 
         // const float cos_p = max(dot(worldNormal, rayDir), 1e-6);
         // const float pdf_p = cos_p / PI; // consine 샘플별 pdf

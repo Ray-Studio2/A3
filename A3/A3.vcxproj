@@ -205,6 +205,7 @@
     <None Include="..\Assets\nee-env.json" />
     <None Include="..\Assets\nee-local.json" />
     <None Include="shaders\Bindings.glsl" />
+    <None Include="shaders\NEELightSampling.glsl" />
     <None Include="shaders\Sampler.glsl" />
     <None Include="shaders\SampleRaytracing.glsl" />
     <None Include="shaders\SharedStructs.glsl" />

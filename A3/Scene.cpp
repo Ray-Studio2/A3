@@ -85,6 +85,8 @@ void Scene::load(const std::string& path) {
 			std::string materialName = object["material"].get<std::string>();
 			auto& material = materials[materialName];
 			auto& baseColor = material["baseColor"];
+			auto& metallic = material["metallic"];
+			auto& roughness = material["roughness"];
 
 			if (resources.find(mesh) == resources.end()) {
 				MeshResource resource;
@@ -103,6 +105,10 @@ void Scene::load(const std::string& path) {
 				lightIndex.push_back(index);
 				auto& emittance = material["emittance"];
 				mo->setEmittance(emittance);
+			}
+			else {
+				mo->setMetallic(metallic.get<float>());
+				mo->setRoughness(roughness.get<float>());
 			}
 
 			this->objects.emplace_back(mo);

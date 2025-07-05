@@ -14,6 +14,7 @@
 #include "shaders/Bindings.glsl"
 #include "shaders/Sampler.glsl"
 #include "shaders/NEELightSampling.glsl"
+#include "shaders/BRDF.glsl"
 
 #if RAY_GENERATION_SHADER
 //=========================
@@ -91,7 +92,9 @@ void main()
 layout( shaderRecordEXT ) buffer CustomData
 {
    vec3 color;
-};
+   float metallic;
+   float roughness;
+} gCustomData;
 
 layout(location = 0) rayPayloadInEXT RayPayload gPayload;
 hitAttributeEXT vec2 attribs;
@@ -129,10 +132,14 @@ void main()
 
     const vec3 lightEmittance = vec3(light.emittance); // emittance per point
     const float lightArea = getLightArea();
-    const vec3 brdf_p = color / PI;
 
     vec3 emit = vec3(0.0);
     vec3 temp = vec3(0.0);
+
+    const vec3 color = gCustomData.color;
+    const float metallic = gCustomData.metallic;
+    const float alpha = gCustomData.roughness * gCustomData.roughness;
+    const vec3 viewDir = -gPayload.rayDirection;
 
     if (gl_InstanceCustomIndexEXT == gLightBuffer.lightIndex[0])
         emit = lightEmittance;
@@ -146,6 +153,7 @@ void main()
                 vec2 seed = vec2(r3, r4);
                 vec3 rayDir = RandomCosineHemisphere(worldNormal, seed);
 
+                gPayload.rayDirection = rayDir;
                 gPayload.depth++;
                 traceRayEXT(
                     topLevelAS,                         // topLevel
@@ -157,7 +165,19 @@ void main()
 
             // const float cos_p = max(dot(worldNormal, rayDir), 1e-6);
             // const float pdf_p = cos_p / PI; // 샘플별 pdf
-            temp += color * gPayload.radiance;
+            // temp += color * gPayload.radiance;
+
+            const float cos_p = max(dot(worldNormal, rayDir), 1e-6);
+            const float pdf_p = cos_p / PI; // consine 샘플별 pdf -> lambertian
+
+            // Cook-Torrance BRDF
+            vec3 halfDir = normalize(viewDir + rayDir);
+            vec3 brdf = metallic < 1e-4 ? color / PI 
+                                        : calculateBRDF(worldNormal, viewDir, rayDir, halfDir, color, metallic, alpha);
+            // float pdf_brdf = pdfGGXVNDF(vec3 worldNormal, vec3 viewDir, vec3 halfDir, float alpha);
+
+            // temp += brdf * gPayload.radiance * cos_p / pdf_brdf;
+            temp += brdf * gPayload.radiance * cos_p / pdf_p;
         }
         temp *= 1.0 / float(numSampleByDepth);
     }
@@ -174,7 +194,9 @@ void main()
 layout( shaderRecordEXT ) buffer CustomData
 {
    vec3 color;
-};
+   float metallic;
+   float roughness;
+} gCustomData;
 
 layout(location = 0) rayPayloadInEXT RayPayload gPayload;
 hitAttributeEXT vec2 attribs;
@@ -214,7 +236,6 @@ void main()
 	const float eps = 1e-4;
     const vec3 lightEmittance = vec3(light.emittance);
     const float lightArea = getLightArea();
-    const vec3 brdf_p = color / PI;
 
     if (gl_InstanceCustomIndexEXT == gLightBuffer.lightIndex[0]) {
         if (gPayload.depth == 0)
@@ -231,9 +252,14 @@ void main()
 
 	//////////////////////////////////////////////////////////////// Direct Light
 	vec3 tempRadianceD = vec3(0.0);
-	uint numSampleByDepth = (gPayload.depth == 0 ? gImguiParam.numSamples : 1);
+    const vec3 color = gCustomData.color;
+    const float metallic = gCustomData.metallic;
+    const float alpha = gCustomData.roughness * gCustomData.roughness;
+    const vec3 viewDir = -gPayload.rayDirection;
 
+	const uint numSampleByDepth = (gPayload.depth == 0 ? gImguiParam.numSamples : 1);
 	for (int i=0; i < numSampleByDepth; ++i) {
+        // NEE Sampling
 		uint triangleIdx = binarySearchTriangleIdx(lightArea, gPayload.rngState);
 
 		vec3 pointOnTriangle, normalOnTriangle, pointOnTriangleWorld, normalOnTriangleWorld;
@@ -263,9 +289,14 @@ void main()
 		const vec3 r = pointOnTriangleWorld - worldPos;
 		const float cos_q = max(dot(normalOnTriangleWorld, -shadowRayDir), 0.0);
         const float cos_p = max(dot(worldNormal, shadowRayDir), 0.0);
-		const float P = cos_q / dot(r, r);
+        const float pdf_light = lightArea * dot(r, r) / cos_q;
 
-		tempRadianceD += brdf_p * cos_p * lightEmittance * visibility * P * lightArea;
+        // Cook-Torrance BRDF
+        vec3 halfDir = normalize(viewDir + shadowRayDir);
+        vec3 brdf = metallic < 1e-4 ? gCustomData.color / PI 
+                                    : calculateBRDF(worldNormal, viewDir, shadowRayDir, halfDir, color, metallic, alpha);
+
+        tempRadianceD += brdf * lightEmittance * visibility * cos_p / pdf_light;
 	}
 	tempRadianceD *= (1 / float(numSampleByDepth)); // average
 
@@ -281,6 +312,13 @@ void main()
         vec2 seed = vec2(r3, r4);
         vec3 rayDir = RandomCosineHemisphere(worldNormal, seed);
 
+        // vec3 viewDirLocal = computeLocalNormal(viewDir, p0, p1, p2); // viewDir -> world2local
+        // float u1 = random(gPayload.rngState);
+        // float u2 = random(gPayload.rngState);
+        // vec3 halfDirLocal = sampleGGXVNDF(viewDirLocal, alpha, alpha, u1, u2);
+        // vec3 halfDir =  // TODO: halfDir local -> world
+        // vec3 rayDir = // TODO: calculate from viewdir and halfdir
+        gPayload.rayDirection = rayDir;
 		gPayload.depth += 1;
 		traceRayEXT(
 			topLevelAS,                         // topLevel
@@ -290,9 +328,17 @@ void main()
 			0);                                 // gPayload 
 		gPayload.depth = tempDepth;
 
-        // const float cos_p = max(dot(worldNormal, rayDir), 1e-6);
-        // const float pdf_p = cos_p / PI; // consine 샘플별 pdf
-        tempRadianceI += color * gPayload.radiance;
+        const float cos_p = max(dot(worldNormal, rayDir), 1e-6);
+        const float pdf_p = cos_p / PI; // consine 샘플별 pdf -> lambertian
+
+        // Cook-Torrance BRDF
+        vec3 halfDir = normalize(viewDir + rayDir);
+        vec3 brdf = metallic < 1e-4 ? gCustomData.color / PI 
+                                    : calculateBRDF(worldNormal, viewDir, rayDir, halfDir, color, metallic, alpha);
+        // float pdf_brdf = pdfGGXVNDF(vec3 worldNormal, vec3 viewDir, vec3 halfDir, float alpha);
+
+        // tempRadianceI += brdf * gPayload.radiance * cos_p / pdf_brdf;
+        tempRadianceI += brdf * gPayload.radiance * cos_p / pdf_p;
 	}
 	tempRadianceI *= (1.0 / float(numSampleByDepth));
     
@@ -309,7 +355,9 @@ void main()
 layout( shaderRecordEXT ) buffer CustomData
 {
    vec3 color;
-};
+   float metallic;
+   float roughness;
+} gCustomData;
 
 layout(location = 0) rayPayloadInEXT RayPayload gPayload;
 hitAttributeEXT vec2 attribs;
@@ -385,7 +433,9 @@ void main()
 layout( shaderRecordEXT ) buffer CustomData
 {
    vec3 color;
-};
+   float metallic;
+   float roughness;
+} gCustomData;
 
 layout(location = 0) rayPayloadInEXT RayPayload gPayload;
 hitAttributeEXT vec2 attribs;

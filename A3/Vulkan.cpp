@@ -2268,6 +2268,8 @@ IRenderPipelineRef VulkanRenderBackend::createRayTracingPipeline( const Raytraci
     struct HitgCustomData
     {
         float color[ 3 ];
+        float metallic;
+        float roughness;
     };
 
     auto alignTo = []( auto value, auto alignment ) -> decltype( value )
@@ -2324,11 +2326,13 @@ IRenderPipelineRef VulkanRenderBackend::createRayTracingPipeline( const Raytraci
 
         for (size_t i = 0; i < geometryCount; ++i)
         {
-            HitgCustomData color;
+            HitgCustomData mat;
             const auto& objectColor = objects[i]->getBaseColor();
-            color = { objectColor.x, objectColor.y, objectColor.z, };
+            const auto& objectMetallic = objects[i]->getMetallic();
+            const auto& objectRoughness = objects[i]->getRoughness();
+            mat = { objectColor.x, objectColor.y, objectColor.z, objectMetallic, objectRoughness };
             *(ShaderGroupHandle*)(dst + hitgOffset + i * hitgStride) = hitgHandle;
-            *(HitgCustomData*)(dst + hitgOffset + i * hitgStride + handleSize) = color;
+            *(HitgCustomData*)(dst + hitgOffset + i * hitgStride + handleSize) = mat;
         }
     }
     vkUnmapMemory( device, sbtBufferMem );

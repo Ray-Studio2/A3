@@ -1,8 +1,9 @@
 //////////////////////////////////////////////////////////////// BRDF methods
 
-vec3 Schlick_F(float cosTheta, vec3 F0)
+vec3 Schlick_F(vec3 viewDir, vec3 halfDir, vec3 F0)
 {
-    return F0 + (1.0 - F0) * pow(1.0 - cosTheta, 5.0);
+    float dotHV = max(dot(viewDir, halfDir), 0.0);
+    return F0 + (1.0 - F0) * pow(1.0 - dotHV, 5.0);
 }
 
 float GGX_G1(vec3 normal, vec3 dir, float alpha) // G1
@@ -11,7 +12,7 @@ float GGX_G1(vec3 normal, vec3 dir, float alpha) // G1
     float k = (r * r) / 8.0; // direct light
     // float k = (alpha * alpha) / 2.0; // IBL
 
-    float dotN = max(dot(normal, dir), 0.0);
+    float dotN = max(dot(normal, dir), 1e-4); // 테두리가 0으로 수렴되는 걸 막아줌
     float num = dotN;
     float denom = dotN * (1.0 - k) + k;
     return num / denom;
@@ -38,22 +39,25 @@ float GGX_D(vec3 normal, vec3 halfDir, float alpha)
 
 vec3 calculateBRDF(vec3 normal, vec3 viewDir, vec3 lightDir, vec3 halfDir, vec3 color, float metallic, float alpha) // Cook-Torrence
 {
+    float dotNV = max(dot(normal, viewDir), 0.0);
+    float dotNL = max(dot(normal, lightDir), 0.0);
+
     const vec3 F0 = mix(vec3(0.04), color, metallic);
 
     float ndf = GGX_D(normal, halfDir, alpha);
     float geometry = GGX_G2(normal, viewDir, lightDir, alpha);
-    vec3 fresnel = Schlick_F(max(dot(halfDir, viewDir), 0.0), F0);
+    vec3 fresnel = Schlick_F(viewDir, halfDir, F0);
 
-    vec3 f_diff = color / PI;
-
-    float dotNV = max(dot(normal, viewDir), 0.0);
-    float dotNL = max(dot(normal, lightDir), 0.0);
     vec3 num = ndf * geometry * fresnel;
     float denom = 4.0 * dotNV * dotNL;
     vec3 f_spec = num / max(denom, 1e-4);
 
-    // return (1 - metallic) * f_diff + f_spec;
-    return f_spec;
+    // vec3 fresnel_diff = Schlick_F(dotNV, F0);
+    // vec3 kD = (vec3(1.0) - F0) * (1.0 - metallic);
+    // vec3 f_diff = kD * color / PI;
+    vec3 f_diff = (1.0 - metallic) * color * (1/PI);
+
+    return clamp(f_diff + f_spec, 0.0, 1.0);
 }
 
 // // TODO: v는 local view vector, rayDir를 표면 normal에 따라 local로 변경

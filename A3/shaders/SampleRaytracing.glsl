@@ -79,8 +79,8 @@ void main()
     }
 
     vec3 finalfinalColor = pow(1.0 - exp(-g.exposure * finalColor), vec3(1/2.2, 1/2.2, 1/2.2)); // simple gamma correction
-    
-   imageStore( image, ivec2( gl_LaunchIDEXT.xy ), vec4( finalfinalColor, 1.0 ) );
+
+    imageStore( image, ivec2( gl_LaunchIDEXT.xy ), vec4( finalfinalColor, 1.0 ) );
 }
 #endif
 
@@ -152,10 +152,15 @@ void main()
             float r3 = random(gPayload.rngState);
             float r4 = random(gPayload.rngState);
             vec2 seed = vec2(r3, r4);
-            vec3 rayDir = RandomCosineHemisphere(worldNormal, seed);
+            // vec3 rayDir = RandomCosineHemisphere(worldNormal, seed);
 
-            if (gCustomData.roughness < 0.1)
-                rayDir = reflect(-viewDir, worldNormal);
+            mat3 TBN = computeTBN(worldNormal);
+
+            vec3 viewDirLocal = normalize(transpose(TBN) * viewDir); // viewDir -> world2local
+
+            vec3 halfDirLocal = sampleGGXVNDF(viewDirLocal, alpha, alpha, seed);
+            vec3 halfDir = normalize(TBN * halfDirLocal);  // halfDir local -> world
+            vec3 rayDir = reflect(-viewDir, halfDir);
 
             gPayload.rayDirection = rayDir;
             gPayload.depth++;
@@ -168,16 +173,14 @@ void main()
             gPayload.depth = tempDepth;
 
             const float cos_p = max(dot(worldNormal, rayDir), 1e-6);
-            const float pdf_p = cos_p / PI; // consine 샘플별 pdf -> lambertian
+            const float pdf_cos = cos_p / PI; // consine 샘플별 pdf -> lambertian
 
             // Cook-Torrance BRDF
-            vec3 halfDir = normalize(viewDir + rayDir);
             vec3 brdf = calculateBRDF(worldNormal, viewDir, rayDir, halfDir, color, metallic, alpha);
-            // float pdf_brdf = pdfGGXVNDF(vec3 worldNormal, vec3 viewDir, vec3 halfDir, float alpha);
+            float pdf_brdf = pdfGGXVNDF(worldNormal, viewDir, halfDir, alpha);
 
-            // temp += brdf * gPayload.radiance * cos_p / pdf_brdf;
-            if (gCustomData.roughness < 0.1) temp += brdf * gPayload.radiance;
-            else temp += brdf * gPayload.radiance * cos_p / pdf_p;
+            temp += brdf * gPayload.radiance * cos_p / pdf_brdf;
+            // temp += gPayload.radiance * calculateW(worldNormal, viewDir, rayDir, halfDir, color, metallic, alpha);
         }
         temp *= 1.0 / float(numSampleByDepth);
     }

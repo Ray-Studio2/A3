@@ -54,21 +54,21 @@ vec3 calculateBRDF(vec3 normal, vec3 viewDir, vec3 lightDir, vec3 halfDir, vec3 
 
     vec3 f_diff = (1.0 - metallic) * color * (1/PI);
 
-    return clamp(f_diff + f_spec, 0.0, 1e24);
+    return f_diff + f_spec;
 }
 
-vec3 calculateW(vec3 normal, vec3 viewDir, vec3 lightDir, vec3 halfDir, vec3 color, float metallic, float alpha)
-{
-    float dotHV = max(dot(viewDir, halfDir), 1e-6);
+// vec3 calculateW(vec3 normal, vec3 viewDir, vec3 lightDir, vec3 halfDir, vec3 color, float metallic, float alpha)
+// {
+//     float dotHV = max(dot(viewDir, halfDir), 1e-6);
 
-    const vec3 F0 = mix(vec3(0.04), color, metallic);
+//     const vec3 F0 = mix(vec3(0.04), color, metallic);
 
-    vec3 F = Schlick_F(viewDir, halfDir, F0);
-    float G2 = GGX_G2(normal, viewDir, lightDir, alpha);
-    float G1 = GGX_G1(normal, viewDir, alpha);
+//     vec3 F = Schlick_F(viewDir, halfDir, F0);
+//     float G2 = GGX_G2(normal, viewDir, lightDir, alpha);
+//     float G1 = GGX_G1(normal, viewDir, alpha);
 
-    return F * G2 / G1;
-}
+//     return F * G2 / G1;
+// }
 
 // TODO: v는 local view vector, rayDir를 표면 normal에 따라 local로 변경
 vec3 sampleGGXVNDF(vec3 v, float alpha_x, float alpha_y, vec2 seed) 

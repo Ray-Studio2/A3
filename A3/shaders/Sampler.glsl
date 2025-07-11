@@ -114,3 +114,12 @@ uint random2( uvec2 pixel, uint sampleIndex, uint depth, uint axis )
 {
     return generateSeed( pixel, sampleIndex, depth, axis );
 }
+
+/////////////////////////////////////////////////////////////////////////////////////////////
+
+float powerHeuristic(float pdfA, float pdfB)
+{
+    float a2 = pdfA * pdfA;
+    float b2 = pdfB * pdfB;
+    return a2 / (a2 + b2 + 1e-6);
+}

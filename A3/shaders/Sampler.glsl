@@ -119,7 +119,16 @@ uint random2( uvec2 pixel, uint sampleIndex, uint depth, uint axis )
 
 float powerHeuristic(float pdfA, float pdfB)
 {
-    float a2 = pdfA * pdfA;
-    float b2 = pdfB * pdfB;
-    return a2 / (a2 + b2 + 1e-6);
+    // 1) 둘 다 0 인 경우를 우선 처리
+    if (pdfA == 0.0 && pdfB == 0.0) return 0.0;
+
+    // 2) 최대값으로 나누어 [0,1] 로 스케일 → 제곱해도 overflow 안 함
+    float maxPdf = max(pdfA, pdfB);
+    float a = pdfA / maxPdf;
+    float b = pdfB / maxPdf;
+
+    float a2 = a * a;
+    float b2 = b * b;
+
+    return a2 / (a2 + b2);  // 분모 > 0 이 보장됨
 }

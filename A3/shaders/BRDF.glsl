@@ -48,7 +48,7 @@ vec3 calculateBRDF(vec3 normal, vec3 viewDir, vec3 lightDir, vec3 halfDir, vec3 
     float geometry = GGX_G2(normal, viewDir, lightDir, alpha);
     vec3 fresnel = Schlick_F(viewDir, halfDir, F0);
 
-    vec3 num = ndf * geometry * fresnel;
+    vec3 num = min(ndf * geometry * fresnel, INF_CLAMP);
     float denom = 4.0 * dotNV * dotNL;
     vec3 f_spec = num / max(denom, 1e-6);
 
@@ -110,7 +110,7 @@ float pdfGGXVNDF(vec3 normal, vec3 viewDir, vec3 halfDir, float alpha)
     float denom = dotNV;
     float pdf_h = num / denom;
 
-    return pdf_h / (4.0 * dotHV);
+    return min(pdf_h / (4.0 * dotHV), INF_CLAMP);
 }
 
 mat3 computeTBN(vec3 worldNormal)

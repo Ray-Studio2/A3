@@ -574,8 +574,8 @@ vec3 sampleEnvDirection(uvec2 pixel, uint sampleIndex, uint depth, out float pdf
 
     uint x = random2( pixel, sampleIndex, depth, 1 ) & ( width - 1 );   // random % width
     uint y = random2( pixel, sampleIndex, depth, 0 ) & ( height - 1 );  // random % height
-    vec4 pixelValue = imageLoad( envImportanceData, ivec2( x, y ) );
-    pdf = pixelValue.w;
+    vec4 pixelValue = texelFetch( envImportanceData, ivec2( x, y ), 0 );
+    pdf = max(pixelValue.w, 1e-6);
 
     // @TODO: pre-calculate on cpu
     return normalize( pixelValue.xyz );

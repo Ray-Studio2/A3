@@ -37,4 +37,4 @@ layout( binding = 7 ) uniform imguiParam {
     float envmapRotDeg;
 } gImguiParam;
 
-layout( binding = 8, rgba32f ) uniform image2D envImportanceData;
+layout( binding = 8 ) uniform sampler2D envImportanceData;

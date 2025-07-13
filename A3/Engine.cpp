@@ -46,7 +46,7 @@ void Engine::Run()
 
     {
         Scene scene;
-        scene.load(RenderSettings::sceneFiles[0]); // TODO: Separated ConfigManager & AppSettings class (constants as file paths, resolution, spp, camera info...)
+        scene.load(RenderSettings::sceneFiles[2]); // TODO: Separated ConfigManager & AppSettings class (constants as file paths, resolution, spp, camera info...)
         // TODO: Scene only handles objects, mesh, lightings from Json
 
         VulkanRenderBackend gfxBackend( window, extensions, screenWidth, screenHeight );

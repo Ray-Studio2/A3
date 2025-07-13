@@ -77,6 +77,9 @@ public:
 	bool isPosUpdated() const { return bPosUpdated; }
 
 private:
+	void loadGLTF(const std::string& fileName);
+
+private:
 	bool bSceneDirty;
 	bool bBufferUpdated;
 	bool bPosUpdated;

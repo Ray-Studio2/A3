@@ -10,6 +10,11 @@
 
 #include "Json.hpp"
 
+#define TINYGLTF_IMPLEMENTATION
+//#define STB_IMAGE_IMPLEMENTATION
+//#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include "ThirdParty/tiny_gltf/tiny_gltf.h"
+
 using namespace A3;
 using Json = nlohmann::json;
 
@@ -23,6 +28,430 @@ Scene::~Scene() {
 	for (auto& resource : resources) {
 		delete resource.second;
 	}
+}
+
+// 노드의 로컬 변환 행렬 얻기 (glm 사용)
+Mat4x4 getNodeLocalTransform(const tinygltf::Node& node) {
+	Mat4x4 local = Mat4x4::identity;
+	if (!node.matrix.empty()) {
+		for (int i = 0; i < 4; ++i) {
+			for (int j = 0; j < 4; ++j) {
+				local[j][i] = node.matrix[i * 4 + j];
+			}
+		}
+	}
+	else {
+		if (!node.scale.empty()) {
+			local[0][0] = node.scale[0];
+			local[1][1] = node.scale[1];
+			local[2][2] = node.scale[2];
+		}
+		if (!node.rotation.empty()) {
+			struct Quaternion {
+				float w = 1.0f, x = 0.0f, y = 0.0f, z = 0.0f;
+			};
+			auto quaternionToMatrix = [](const Quaternion& q)->Mat4x4{
+				Mat4x4 mat = Mat4x4::identity;
+				float xx = q.x * q.x;
+				float xy = q.x * q.y;
+				float xz = q.x * q.z;
+				float xw = q.x * q.w;
+				float yy = q.y * q.y;
+				float yz = q.y * q.z;
+				float yw = q.y * q.w;
+				float zz = q.z * q.z;
+				float zw = q.z * q.w;
+
+				mat[0][0] = 1.0f - 2.0f * (yy + zz);
+				mat[0][1] = 2.0f * (xy + zw);
+				mat[0][2] = 2.0f * (xz - yw);
+				mat[1][0] = 2.0f * (xy - zw);
+				mat[1][1] = 1.0f - 2.0f * (xx + zz);
+				mat[1][2] = 2.0f * (yz + xw);
+				mat[2][0] = 2.0f * (xz + yw);
+				mat[2][1] = 2.0f * (yz - xw);
+				mat[2][2] = 1.0f - 2.0f * (xx + yy);
+
+				return mat;
+				};
+			Quaternion quat = { node.rotation[3], node.rotation[0], node.rotation[1], node.rotation[2] };
+			local = mul(local, quaternionToMatrix(quat));
+
+			//float cx = std::cos(angleRad.x); float sx = std::sin(angleRad.x); // pitch
+			//float cy = std::cos(angleRad.y); float sy = std::sin(angleRad.y); // yaw
+			//float cz = std::cos(angleRad.z); float sz = std::sin(angleRad.z); // roll
+
+			//Mat3x3 rotX{
+			//	1,  0,  0,
+			//	0, cx, -sx,
+			//	0, sx,  cx
+			//};
+			//Mat3x3 rotY{
+			//	 cy, 0, sy,
+			//	  0, 1, 0,
+			//	-sy, 0, cy
+			//};
+			//Mat3x3 rotZ{
+			//	cz, -sz, 0,
+			//	sz,  cz, 0,
+			//	 0,   0, 1
+			//};
+			//Mat3x3 rot = rotZ * rotY * rotX;
+		}
+		if (!node.translation.empty()) {
+			Mat4x4 t = Mat4x4::identity;
+			t[3][0] = node.translation[0];
+			t[3][1] = node.translation[1];
+			t[3][2] = node.translation[2];
+			
+			local = mul(local, t);
+		}
+	}
+	return local;
+}
+// 템플릿 함수 (glm::vec 기반으로 수정)
+template <typename T>
+std::vector<T> getBufferData(const tinygltf::Model& model, int accessorIndex) {
+	std::vector<T> data;
+	if (accessorIndex >= 0 && accessorIndex < model.accessors.size()) {
+		const auto& accessor = model.accessors[accessorIndex];
+		if (accessor.bufferView >= 0 && accessor.bufferView < model.bufferViews.size()) {
+			const auto& bufferView = model.bufferViews[accessor.bufferView];
+			if (bufferView.buffer >= 0 && bufferView.buffer < model.buffers.size()) {
+				const auto& buffer = model.buffers[bufferView.buffer];
+				size_t byteStride = bufferView.byteStride ? bufferView.byteStride : tinygltf::GetComponentSizeInBytes(accessor.componentType) * tinygltf::GetNumComponentsInType(accessor.type);
+				size_t byteOffset = bufferView.byteOffset + accessor.byteOffset;
+				size_t count = accessor.count;
+				size_t componentSize = tinygltf::GetComponentSizeInBytes(accessor.componentType);
+				size_t numComponents = tinygltf::GetNumComponentsInType(accessor.type);
+
+				data.resize(count);
+				for (size_t i = 0; i < count; ++i) {
+					const unsigned char* src = buffer.data.data() + byteOffset + i * byteStride;
+					T* dst = reinterpret_cast<T*>(data.data()) + i;
+					std::memcpy(dst, src, componentSize * numComponents);
+				}
+			}
+		}
+	}
+	return data;
+}
+void Scene::loadGLTF(const std::string& fileName)
+{
+	tinygltf::Model model;
+	tinygltf::TinyGLTF loader;
+	std::string err;
+	std::string warn;
+
+	bool ret = loader.LoadASCIIFromFile(&model, &err, &warn, fileName);
+	// bool ret = loader.LoadBinaryFromFile(&model, &err, &warn, "fileName");
+
+	if (!warn.empty()) {
+		std::cerr << "WARN: " << warn << std::endl;
+	}
+
+	if (!err.empty()) {
+		std::cerr << "ERROR: " << err << std::endl;
+	}
+
+	if (!ret) {
+		std::cerr << "Failed to load glTF" << std::endl;
+		return;
+	}
+
+	std::cout << "glTF file loaded successfully." << std::endl;
+
+	struct Bone
+	{
+		std::string _bonaName;
+		int _parentBoneIndex = -1;
+		std::vector<int> _childBoneIndexArr;
+	};
+	struct Skeleton
+	{
+		std::string _skinName;
+		std::vector<Bone> _boneArray;
+		std::vector<Mat4x4> _boneDressPoseArray;
+		std::vector<Mat4x4> _boneDressPoseInverseArray;
+	};
+	Skeleton _skeleton;
+
+	for (const auto& skin : model.skins) {
+		_skeleton._skinName = skin.name.empty() ? "(unnamed)" : skin.name;
+
+		std::vector<Mat4x4> inverseBindMatrices;
+		if (skin.inverseBindMatrices >= 0) {
+			const auto& ibmAccessor = model.accessors[skin.inverseBindMatrices];
+			if (ibmAccessor.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT && ibmAccessor.type == TINYGLTF_TYPE_MAT4) {
+				inverseBindMatrices = getBufferData<Mat4x4>(model, skin.inverseBindMatrices);
+			}
+			else {
+				std::cerr << "  Warning: Inverse Bind Matrices accessor has unexpected type for skin: " << _skeleton._skinName << std::endl;
+			}
+		}
+
+		std::unordered_map<int, size_t> nodeIndexToBoneIndexMap;
+		for (size_t i = 0; i < skin.joints.size(); ++i) {
+			int jointIndex = skin.joints[i];
+			if (jointIndex >= 0 && jointIndex < model.nodes.size()) {
+				const auto& jointNode = model.nodes[jointIndex];
+				std::string boneName = jointNode.name.empty() ? ("joint_" + std::to_string(jointIndex)) : jointNode.name;
+				Mat4x4 bindPoseLocalMatrix = getNodeLocalTransform(jointNode);
+
+				Bone bone;
+				bone._bonaName = boneName;
+				bone._childBoneIndexArr = jointNode.children;
+
+				_skeleton._boneArray.push_back(std::move(bone));
+
+				nodeIndexToBoneIndexMap[jointIndex] = _skeleton._boneArray.size() - 1;
+
+				_skeleton._boneDressPoseArray.push_back(bindPoseLocalMatrix);
+				if (i < inverseBindMatrices.size()) {
+					_skeleton._boneDressPoseInverseArray.push_back(inverseBindMatrices[i]);
+				}
+				else {
+					std::cerr << "  Warning: No Inverse Bind Matrix found for bone: " << boneName << " in skin: " << _skeleton._skinName << std::endl;
+					_skeleton._boneDressPoseInverseArray.push_back(Mat4x4::identity); // 기본값 추가
+				}
+			}
+			else {
+				std::cerr << "  Error: Invalid joint index: " << jointIndex << " in skin: " << _skeleton._skinName << std::endl;
+			}
+		}
+
+		for (int i = 0; i < _skeleton._boneArray.size(); ++i)
+		{
+			if (_skeleton._boneArray[i]._childBoneIndexArr.empty())
+				continue;
+
+			for (int j = 0; j < _skeleton._boneArray[i]._childBoneIndexArr.size(); ++j)
+			{
+				const int childJointIndex = _skeleton._boneArray[i]._childBoneIndexArr[j];
+				const int childBoneIndex = nodeIndexToBoneIndexMap.find(childJointIndex)->second;
+				_skeleton._boneArray[childBoneIndex]._parentBoneIndex = i;
+			}
+		}
+
+		{
+			std::cout << "\n--- Loaded Skeletons (glm) ---" << std::endl;
+			std::cout << "Skin Name: " << _skeleton._skinName << std::endl;
+			for (size_t i = 0; i < _skeleton._boneArray.size(); ++i) {
+				std::cout << "  Bone Name: " << _skeleton._boneArray[i]._bonaName;
+				if (_skeleton._boneArray[i]._parentBoneIndex >= 0)
+				{
+					std::cout << " (Parent: " << _skeleton._boneArray[_skeleton._boneArray[i]._parentBoneIndex]._bonaName << ")";
+				}
+				std::cout << std::endl;
+			}
+			std::cout << std::endl;
+		}
+	}
+
+	std::cout << "\n--- Mesh Data (glm) ---" << std::endl;
+	for (const auto& mesh : model.meshes)
+	{
+		std::cout << "Mesh: " << mesh.name << std::endl;
+		for (const auto& primitive : mesh.primitives) {
+			std::cout << "  Primitive:" << std::endl;
+
+			auto getVec3Attribute = [&](const std::string& attributeName) {
+				if (primitive.attributes.count(attributeName)) {
+					int accessorIndex = primitive.attributes.at(attributeName);
+					if (accessorIndex >= 0 && accessorIndex < model.accessors.size()) {
+						const auto& accessor = model.accessors[accessorIndex];
+						if (accessor.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT && accessor.type == TINYGLTF_TYPE_VEC3) {
+							return getBufferData<Vec3>(model, accessorIndex);
+						}
+						else {
+							std::cerr << "    Unsupported " << attributeName << " data type." << std::endl;
+						}
+					}
+				}
+				return std::vector<Vec3>();
+				};
+			auto getVec2Attribute = [&](const std::string& attributeName) {
+				if (primitive.attributes.count(attributeName)) {
+					int accessorIndex = primitive.attributes.at(attributeName);
+					if (accessorIndex >= 0 && accessorIndex < model.accessors.size()) {
+						const auto& accessor = model.accessors[accessorIndex];
+						if (accessor.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT && accessor.type == TINYGLTF_TYPE_VEC2) {
+							return getBufferData<Vec2>(model, accessorIndex);
+						}
+						else {
+							std::cerr << "    Unsupported " << attributeName << " data type." << std::endl;
+						}
+					}
+				}
+				return std::vector<Vec2>();
+				};
+			auto getVec4Attribute = [&](const std::string& attributeName, int componentType) {
+				if (primitive.attributes.count(attributeName)) {
+					int accessorIndex = primitive.attributes.at(attributeName);
+					if (accessorIndex >= 0 && accessorIndex < model.accessors.size()) {
+						const auto& accessor = model.accessors[accessorIndex];
+						if (accessor.type == TINYGLTF_TYPE_VEC4) {
+							/*if (componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE) {
+								std::vector<Vec4> data = getBufferData<Vec4>(model, accessorIndex);
+								std::vector<Vec4> converted(data.size());
+								for (size_t i = 0; i < data.size(); ++i) {
+									converted[i] = Vec4(data[i].x, data[i].y, data[i].z, data[i].w);
+								}
+								return converted;
+							}
+							else */if (componentType == TINYGLTF_COMPONENT_TYPE_FLOAT) {
+								return getBufferData<Vec4>(model, accessorIndex);
+							}
+							else {
+								std::cerr << "    Unsupported component type for " << attributeName << std::endl;
+							}
+						}
+						else {
+							std::cerr << "    Unsupported type for " << attributeName << std::endl;
+						}
+					}
+				}
+				return std::vector<Vec4>();
+				};
+
+			std::vector<Vec3> positions = getVec3Attribute("POSITION");
+			std::vector<Vec3> normals = getVec3Attribute("NORMAL");
+			std::vector<Vec2> uvs = getVec2Attribute("TEXCOORD_0");
+			std::vector<Vec4> jointIndicesData = getVec4Attribute("JOINTS_0", TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE);
+			std::vector<Vec4> weightsData = getVec4Attribute("WEIGHTS_0", TINYGLTF_COMPONENT_TYPE_FLOAT);
+
+			std::cout << "    Loaded " << positions.size() << " vertices." << std::endl;
+
+			std::vector<uint32> indices;
+			if (primitive.indices >= 0) {
+				const auto& accessor = model.accessors[primitive.indices];
+				//std::cout << "    Loading indices (count: " << accessor.count << ", type: " << tinygltf::GetComponentTypeString(accessor.componentType) << ")" << std::endl;
+				if (accessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT) {
+					std::vector<uint16_t> data = getBufferData<uint16_t>(model, primitive.indices);
+					indices.assign(data.begin(), data.end());
+				}
+				else if (accessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT) {
+					indices = getBufferData<uint32_t>(model, primitive.indices);
+				}
+				else if (accessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE) {
+					std::vector<uint8_t> data = getBufferData<uint8_t>(model, primitive.indices);
+					indices.assign(data.begin(), data.end());
+				}
+				else {
+					std::cerr << "    Unsupported index component type." << std::endl;
+				}
+			}
+			std::cout << "    Loaded " << indices.size() << " indices." << std::endl;
+
+			std::vector<VertexPosition> vPositions;
+			std::vector<VertexAttributes> vAttributes;
+			vPositions.reserve(positions.size());
+			vAttributes.reserve(positions.size());
+			for (int i = 0; i < positions.size(); ++i)
+			{
+				vPositions.push_back(VertexPosition(positions[i].x, positions[i].y, positions[i].z, 1.0f));
+				vAttributes.push_back(VertexAttributes({ normals[i].x, normals[i].y, normals[i].z, 0.0f }, { uvs[i].x, uvs[i].y, 0.0f, 0.0f }));
+			}
+
+			if (resources.find(mesh.name) == resources.end()) {
+				MeshResource resource;
+				resource.positions = vPositions;
+				resource.attributes = vAttributes;
+				resource.indices = indices;
+				resource.triangleCount = resource.indices.size() / 3;
+				resource.cumulativeTriangleArea.resize(resource.triangleCount + 1);
+				resource.cumulativeTriangleArea[0] = 0;
+				for (uint32 triIndex = 1; triIndex < resource.triangleCount; ++triIndex)
+				{
+					const auto p1 = /*localToWorld * */resource.positions[resource.indices[triIndex * 3 + 0]];
+					const auto p2 = /*localToWorld * */resource.positions[resource.indices[triIndex * 3 + 1]];
+					const auto p3 = /*localToWorld * */resource.positions[resource.indices[triIndex * 3 + 2]];
+
+					const auto v2_1 = p2 - p1;
+					const auto v3_1 = p3 - p1;
+					const auto normal = cross(v2_1, v3_1);
+					const float magnitude = 0.5f * std::sqrt(dot(normal, normal));
+
+					resource.cumulativeTriangleArea[triIndex] = resource.cumulativeTriangleArea[triIndex - 1] + magnitude;
+				}
+				resources[mesh.name] = new MeshResource(resource);
+			}
+
+			MeshObject* mo = new MeshObject(resources[mesh.name]);
+			//mo->setPosition(Vec3(position[0], position[1], position[2]));
+			//mo->setRotation(Vec3(rotation[0], rotation[1], rotation[2]));
+			//mo->setScale(Vec3(scale[0], scale[1], scale[2]));
+
+			//mo->setBaseColor(Vec3(baseColor[0], baseColor[1], baseColor[2]));
+			//if (materialName == "light") {
+			//	lightIndex.push_back(index);
+			//	auto& emittance = material["emittance"];
+			//	mo->setEmittance(emittance);
+			//}
+			//else {
+			//	mo->setMetallic(metallic.get<float>());
+			//	mo->setRoughness(roughness.get<float>());
+			//}
+
+			this->objects.emplace_back(mo);
+		}
+	}
+
+	//std::cout << "\n--- Animations ---" << std::endl;
+	//if (!model.animations.empty()) {
+	//	const auto& anim = model.animations[0];
+	//	std::cout << "\n--- Animation: " << (anim.name.empty() ? "(unnamed)" : anim.name) << " ---" << std::endl;
+
+	//	if (!model.skins.empty()) {
+	//		const auto& skin = model.skins[0];
+	//		for (size_t i = 0; i < skin.joints.size(); ++i) {
+	//			int jointNodeIndex = skin.joints[i];
+	//			std::string boneName = model.nodes[jointNodeIndex].name.empty() ? ("joint_" + std::to_string(jointNodeIndex)) : model.nodes[jointNodeIndex].name;
+	//			AnimationData animData;
+	//			animData._boneName = boneName;
+	//			animData._boneIndex = static_cast<uint32_t>(i);
+
+	//			for (const auto& channel : anim.channels) {
+	//				if (channel.target_node == jointNodeIndex) {
+	//					std::string targetPath = channel.target_path;
+	//					int samplerIndex = channel.sampler;
+
+	//					if (samplerIndex >= 0 && samplerIndex < anim.samplers.size()) {
+	//						const auto& sampler = anim.samplers[samplerIndex];
+	//						if (sampler.input >= 0 && sampler.input < model.accessors.size() &&
+	//							sampler.output >= 0 && sampler.output < model.accessors.size()) {
+	//							const auto& timeAccessor = model.accessors[sampler.input];
+	//							const auto& valueAccessor = model.accessors[sampler.output];
+
+	//							std::vector<float> times;
+	//							if (timeAccessor.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT && timeAccessor.type == TINYGLTF_TYPE_SCALAR) {
+	//								times = getBufferData<float>(model, sampler.input);
+	//							}
+
+	//							if (valueAccessor.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT) {
+	//								if (valueAccessor.type == TINYGLTF_TYPE_VEC3 && targetPath == "translation") {
+	//									animData._translation = getBufferData<glm::vec3>(model, sampler.output);
+	//									animData._times = times;
+	//								}
+	//								else if (valueAccessor.type == TINYGLTF_TYPE_VEC4 && targetPath == "rotation") {
+	//									animData._rotation = getBufferData<glm::quat>(model, sampler.output);
+	//									if (animData._times.empty()) animData._times = times;
+	//								}
+	//								else if (valueAccessor.type == TINYGLTF_TYPE_VEC3 && targetPath == "scale") {
+	//									animData._scale = getBufferData<glm::vec3>(model, sampler.output);
+	//									if (animData._times.empty()) animData._times = times;
+	//								}
+	//							}
+	//						}
+	//					}
+	//				}
+	//			}
+	//			if (!animData._times.empty()) {
+	//				_animations.push_back(animData);
+	//			}
+	//		}
+	//	}
+	//}
 }
 
 void Scene::load(const std::string& path) {
@@ -70,6 +499,7 @@ void Scene::load(const std::string& path) {
 		RenderSettings::envMapPath = "../Assets/" + static_cast<std::string>(envMapPath);
 		this->imgui_param->envmapRotDeg = envmapRotation;
 	}
+#if 0
 
 	auto& materials = data["materials"];
 
@@ -115,6 +545,82 @@ void Scene::load(const std::string& path) {
 			index++;
 		}
 	}
+#elif 0
+	tinygltf::Model model;
+	tinygltf::TinyGLTF loader;
+	std::string err;
+	std::string warn;
+
+	std::string filePath = "C:/Users/dhfla/Desktop/Projects/Universe/asset/phoenix_bird/scene.gltf"; // .glb 파일도 가능합니다.
+
+	bool ret = loader.LoadASCIIFromFile(&model, &err, &warn, filePath);
+
+	if (!warn.empty()) {
+		throw std::runtime_error("Warning: " + warn);
+	}
+
+	if (!err.empty()) {
+		throw std::runtime_error("Error: " + err);
+	}
+
+	if (!ret) {
+		throw std::runtime_error("Fail to parsing glTF\nPath: " + filePath);
+	}
+
+	std::cout << "Success to load glTF!" << std::endl;
+
+	const tinygltf::Scene& scene = model.scenes[model.defaultScene];
+
+	for (size_t i = 0; i < scene.nodes.size(); ++i) {
+		const tinygltf::Node& node = model.nodes[scene.nodes[i]];
+		std::cout << "Node Name: " << node.name << std::endl;
+
+		if (node.mesh > -1) {
+			const tinygltf::Mesh& mesh = model.meshes[node.mesh];
+			std::cout << "  - Mesh Name: " << mesh.name << std::endl;
+
+			for (size_t i = 0; i < mesh.primitives.size(); ++i) {
+				const tinygltf::Primitive& primitive = mesh.primitives[i];
+
+				// primitive.attributes is contain attributename and accessor index
+				for (auto const& [name, accessor_idx] : primitive.attributes) {
+					std::cout << "    - Attribute: " << name << std::endl;
+
+					const tinygltf::Accessor& accessor = model.accessors[accessor_idx];
+					const tinygltf::BufferView& bufferView = model.bufferViews[accessor.bufferView];
+					const tinygltf::Buffer& buffer = model.buffers[bufferView.buffer];
+
+					const uint32 vertexCount = accessor.count;
+
+					if (name == "POSITION") {
+						const unsigned char* data_start = &buffer.data[bufferView.byteOffset + accessor.byteOffset];
+						const float* positions = reinterpret_cast<const float*>(data_start);
+
+						for (size_t v = 0; v < vertexCount; ++v) {
+							float x = positions[v * 3 + 0];
+							float y = positions[v * 3 + 1];
+							float z = positions[v * 3 + 2];
+						}
+					}
+				}
+
+				if (primitive.indices > -1) {
+					const tinygltf::Accessor& indexAccessor = model.accessors[primitive.indices];
+					const tinygltf::BufferView& indexBufferView = model.bufferViews[indexAccessor.bufferView];
+					const tinygltf::Buffer& indexBuffer = model.buffers[indexBufferView.buffer];
+
+					// 인덱스 데이터 시작 위치
+					const unsigned char* data_start = &indexBuffer.data[indexBufferView.byteOffset + indexAccessor.byteOffset];
+
+					// 인덱스 타입(unsigned short, unsigned int 등)에 따라 적절히 캐스팅해야 합니다.
+					// indexAccessor.componentType을 확인하여 처리합니다.
+				}
+			}
+		}
+	}
+#else
+	loadGLTF("C:/Users/dhfla/Desktop/Projects/Universe/asset/phoenix_bird/scene.gltf");
+#endif
 }
 
 void Scene::save(const std::string& path) const {}

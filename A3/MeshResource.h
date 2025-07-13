@@ -1,5 +1,6 @@
 #pragma once
 
+#include <string>
 #include <vector>
 #include "Vector.h"
 #include "Matrix.h"
@@ -59,6 +60,20 @@ struct VertexAttributes
     float uvs[ 4 ];
 };
 
+struct Bone
+{
+    std::string _bonaName;
+    int _parentBoneIndex = -1;
+    std::vector<int> _childBoneIndexArr;
+};
+struct Skeleton
+{
+    std::string _skinName;
+    std::vector<Bone> _boneArray;
+    std::vector<Mat4x4> _boneDressPoseArray;
+    std::vector<Mat4x4> _boneDressPoseInverseArray;
+};
+
 struct MeshResource
 {
     std::vector<VertexPosition> positions;
@@ -66,5 +81,7 @@ struct MeshResource
     std::vector<uint32> indices;
     std::vector<float> cumulativeTriangleArea;
     uint32 triangleCount;
+
+    Skeleton _skeleton;
 };
 }

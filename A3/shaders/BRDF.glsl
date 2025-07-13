@@ -80,8 +80,13 @@ vec3 sampleGGXVNDF(vec3 v, float alpha_x, float alpha_y, vec2 seed)
     vec3 v_h = normalize(vec3(alpha_x * v.x, alpha_y * v.y, v.z));
 
     float lenSq = v_h.x * v_h.x + v_h.y * v_h.y;
-    float invsqrt = 1 / sqrt(lenSq);
-    vec3 T1 = lenSq > 0 ? vec3(-v_h.y, v_h.x, 0) * invsqrt : vec3(1, 0, 0);
+    vec3 T1;
+    if (lenSq > 0.0) {
+        float invsqrt = 1 / sqrt(lenSq);
+        T1 = vec3(-v_h.y, v_h.x, 0.0) * invsqrt;
+    } else {
+        T1 = vec3(1.0, 0.0, 0.0);
+    }
     // T1 is perpendicular to the view vector = normalize(Z x V_h)
     // when v = (0,0,1), cross product is 0, so we pick x = (1,0,0) for a safe approach
     vec3 T2 = cross(v_h, T1);

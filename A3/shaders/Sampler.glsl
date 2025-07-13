@@ -117,18 +117,33 @@ uint random2( uvec2 pixel, uint sampleIndex, uint depth, uint axis )
 
 /////////////////////////////////////////////////////////////////////////////////////////////
 
+bool finite(float v)
+{
+    // 값이 NaN 도 아니고, Inf(±무한) 도 아니면 finite
+    return !(isnan(v) || isinf(v));
+}
+
 float powerHeuristic(float pdfA, float pdfB)
 {
-    // 1) 둘 다 0 인 경우를 우선 처리
-    if (pdfA == 0.0 && pdfB == 0.0) return 0.0;
+    // 1) 음수, 비정상 값 가드
+    if (!finite(pdfA) || !finite(pdfB)) return 0.0;
+    pdfA = max(pdfA, 0.0);
+    pdfB = max(pdfB, 0.0);
 
-    // 2) 최대값으로 나누어 [0,1] 로 스케일 → 제곱해도 overflow 안 함
+    // 2) 둘 다 “사실상 0” 이면 그냥 0.5 리턴
+    const float EPS = 1e-6;          // sub-normal 보정보다 약간 큰 값
     float maxPdf = max(pdfA, pdfB);
+    if (maxPdf < EPS) return 0.5;    // or 0.0, 1.0 → 취향에 맞게
+
+    // 3) 오버플로 방지용 정규화
     float a = pdfA / maxPdf;
     float b = pdfB / maxPdf;
 
+    // 4) 다시 0/0 방지
     float a2 = a * a;
     float b2 = b * b;
+    float denom = max(a2 + b2, EPS); // EPS 덕에 절대 0 안 됨
 
-    return a2 / (a2 + b2);  // 분모 > 0 이 보장됨
+    return a2 / denom;
 }
+

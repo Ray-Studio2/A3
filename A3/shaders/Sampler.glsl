@@ -114,3 +114,15 @@ uint random2( uvec2 pixel, uint sampleIndex, uint depth, uint axis )
 {
     return generateSeed( pixel, sampleIndex, depth, axis );
 }
+
+/////////////////////////////////////////////////////////////////////////////////////////////
+
+mat3 rotateY(float angle) {
+    float c = cos(angle);
+    float s = sin(angle);
+    return mat3(
+        c, 0.0, -s,
+        0.0, 1.0, 0.0,
+        s, 0.0, c
+    );
+}

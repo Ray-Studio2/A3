@@ -583,8 +583,12 @@ vec3 sampleEnvDirection(uvec2 pixel, uint sampleIndex, uint depth, out float pdf
     vec4 pixelValue = texelFetch( envImportanceData, ivec2( x, y ), 0 );
     pdf = max(pixelValue.w, 1e-6);
 
+    vec3 dir = pixelValue.xyz;
+    float rot = gImguiParam.envmapRotDeg * (PI / 180.0);
+    dir = rotateY(-rot) * dir;
+
     // @TODO: pre-calculate on cpu
-    return normalize( pixelValue.xyz );
+    return normalize( dir );
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////
@@ -593,7 +597,7 @@ void main()
 {
     if (gPayload.bEnvMap)
     {
-        gPayload.radiance = vec3(0.f);
+        gPayload.radiance = vec3(0.0); // visibility = 0.0
         return;
     }
 
@@ -677,7 +681,10 @@ void main()
 
         float w = powerHeuristic(pdfEnv, pdfBRDF);
 
-        tempRadianceD += brdf * gPayload.radiance * cos_p * w / pdfEnv;
+        float charFunc = 0.0;
+        if (dot(viewDir, worldNormal) > 0.0) charFunc = 1.0;
+
+        tempRadianceD += brdf * gPayload.radiance * cos_p * charFunc * w / pdfEnv;
 	}
 	tempRadianceD *= (1.0 / float(numSampleByDepth)); 
 	
@@ -794,16 +801,6 @@ void main()
 //=========================
 layout(location = 0) rayPayloadInEXT RayPayload gPayload;
 
-mat3 rotateY(float angle) {
-    float c = cos(angle);
-    float s = sin(angle);
-    return mat3(
-        c, 0.0, -s,
-        0.0, 1.0, 0.0,
-        s, 0.0, c
-    );
-}
-
 void main()
 {
 	if (gPayload.depth >= gImguiParam.maxDepth) {
@@ -815,7 +812,7 @@ void main()
     float rot = gImguiParam.envmapRotDeg * (PI / 180.0);
     dir = rotateY(rot) * dir; // envmap을 회전하는 것과 같음 (역방향 회전)
     vec2 uv = vec2(
-        atan(dir.z, dir.x) / (2.0 * PI) + 0.5,
+        fract(atan(dir.z, dir.x) / (2.0 * PI)), // [−0.5,0.5) → [0,1)
         acos(clamp(dir.y, -1.0, 1.0)) / PI
     );
     gPayload.radiance = texture(environmentMap, uv).rgb;

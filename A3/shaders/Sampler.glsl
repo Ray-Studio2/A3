@@ -159,3 +159,44 @@ mat3 rotateY(float angle) {
         s, 0.0, c
     );
 }
+
+/////////////////////////////////////////////////////////////////////////////////////////////
+
+vec4 getPixelValue(uint x, uint y)
+{
+    return texelFetch( envImportanceData, ivec2( x, y ), 0 );
+}
+
+vec3 sampleEnvDirection(uvec2 pixel, uint sampleIndex, uint depth, out float pdf)
+{
+    ivec2 texSize = textureSize(environmentMap, 0);
+    uint width = texSize.x;
+    uint height = texSize.y;
+
+    uint x = random2( pixel, sampleIndex, depth, 1 ) & ( width - 1 );   // random % width
+    uint y = random2( pixel, sampleIndex, depth, 0 ) & ( height - 1 );  // random % height
+    vec4 pixelValue = getPixelValue(x, y);
+    pdf = max(pixelValue.w, 1e-6);
+
+    vec3 dir = pixelValue.xyz;
+    float rot = gImguiParam.envmapRotDeg * (PI / 180.0);
+    dir = rotateY(-rot) * dir;
+
+    // @TODO: pre-calculate on cpu
+    return normalize( dir );
+}
+
+vec2 getUVfromRay(vec3 rayDir) {
+    float rot = gImguiParam.envmapRotDeg * (PI / 180.0);
+    rayDir = rotateY(rot) * rayDir; // envmap을 회전하는 것과 같음 (역방향 회전)
+
+    return vec2(
+        fract(atan(rayDir.z, rayDir.x) / (2.0 * PI)), // [−0.5,0.5) → [0,1)
+        acos(clamp(rayDir.y, -1.0, 1.0)) / PI
+    );
+}
+
+vec3 getEmitFromEnvmap(vec3 rayDir) {
+    vec2 uv = getUVfromRay(rayDir);
+    return texture(environmentMap, uv).rgb; // function -> get emit from envmap
+}

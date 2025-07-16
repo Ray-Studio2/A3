@@ -52,7 +52,6 @@ void main()
     gPayload.desiredPosition = vec3( 0.0 );
     gPayload.rngState = rngState;
     gPayload.rayDirection = normalize(rayDir);
-    gPayload.bEnvMap = false;
     
     // Single ray per pixel per frame
     traceRayEXT(
@@ -473,10 +472,7 @@ void main()
     // Adaptive probability based on roughness
     const float prob = mix(0.2, 0.8, roughness);
 
-    vec3 emit = vec3(0.0);
     vec3 temp = vec3(0.0);
-
-    uint tempDepth = gPayload.depth;
     uint numSampleByDepth = (gPayload.depth == 0 ? gImguiParam.numSamples : 1);
     if (gPayload.depth < gImguiParam.maxDepth) {
         for (uint i=0; i < numSampleByDepth; ++i) {
@@ -540,7 +536,7 @@ void main()
                 0, 1, ENV_MISS_IDX,                 // sbtRecordOffset, sbtRecordStride, missIndex
                 worldPos, 0.0001, rayDir, 100.0,  	// origin, tmin, direction, tmax
                 0);                                 // payload 
-            gPayload.depth = tempDepth;
+            gPayload.depth--;
 
             if (isMirror)
                 temp += brdf * gPayload.radiance;
@@ -551,8 +547,7 @@ void main()
         }
         temp *= 1.0 / float(numSampleByDepth);
     }
-
-    gPayload.radiance = emit + temp;
+    gPayload.radiance = temp;
 }
 
 #endif
@@ -572,35 +567,10 @@ layout( shaderRecordEXT ) buffer CustomData
 layout(location = 0) rayPayloadInEXT RayPayload gPayload;
 hitAttributeEXT vec2 attribs;
 
-vec3 sampleEnvDirection(uvec2 pixel, uint sampleIndex, uint depth, out float pdf)
-{
-    ivec2 texSize = textureSize(environmentMap, 0);
-    uint width = texSize.x;
-    uint height = texSize.y;
-
-    uint x = random2( pixel, sampleIndex, depth, 1 ) & ( width - 1 );   // random % width
-    uint y = random2( pixel, sampleIndex, depth, 0 ) & ( height - 1 );  // random % height
-    vec4 pixelValue = texelFetch( envImportanceData, ivec2( x, y ), 0 );
-    pdf = max(pixelValue.w, 1e-6);
-
-    vec3 dir = pixelValue.xyz;
-    float rot = gImguiParam.envmapRotDeg * (PI / 180.0);
-    dir = rotateY(-rot) * dir;
-
-    // @TODO: pre-calculate on cpu
-    return normalize( dir );
-}
-
 /////////////////////////////////////////////////////////////////////////////////////////////
 
 void main()
 {
-    if (gPayload.bEnvMap)
-    {
-        gPayload.radiance = vec3(0.0); // visibility = 0.0
-        return;
-    }
-
     if( gPayload.depth >= gImguiParam.maxDepth )
     {
         gPayload.radiance = vec3( 0.0 );
@@ -653,22 +623,22 @@ void main()
 	vec3 tempRadianceD = vec3(0.0);
 	uint numSampleByDepth = (gPayload.depth == 0 ? gImguiParam.numSamples : 1);
 
-    gPayload.bEnvMap = true;
-
 	for (uint i=0; i < numSampleByDepth; ++i)
 	{
         float pdfEnv;
         vec3 rayDir = sampleEnvDirection(gl_LaunchIDEXT.xy, i + gPayload.rngState, gPayload.depth, pdfEnv);
         
 		gPayload.rayDirection = rayDir;
-        gPayload.depth++;
+        gPayload.visibility = 1.0;
 		traceRayEXT(
 			topLevelAS,                         // topLevel
-			gl_RayFlagsOpaqueEXT, 0xff,         // rayFlags, cullMask
-			0, 1, ENV_MISS_IDX,                 // sbtRecordOffset, sbtRecordStride, missIndex
+			gl_RayFlagsNoOpaqueEXT | gl_RayFlagsSkipClosestHitShaderEXT,    // rayFlags
+            0xff,                               // cullMask
+			0, 1, SHADOW_MISS_IDX,              // sbtRecordOffset, sbtRecordStride, missIndex // miss shader should do nothing
 			worldPos, eps, rayDir, 100.0,  		// origin, tmin, direction, tmax
 			0);                                 // gPayload 
-        gPayload.depth--;
+
+        const vec3 emit = getEmitFromEnvmap(rayDir);
 
         float cos_p = max(dot(worldNormal, rayDir), 1e-6);
         // Cook-Torrance BRDF
@@ -684,7 +654,7 @@ void main()
         float charFunc = 0.0;
         if (dot(viewDir, worldNormal) > 0.0) charFunc = 1.0;
 
-        tempRadianceD += brdf * gPayload.radiance * cos_p * charFunc * w / pdfEnv;
+        tempRadianceD += brdf * emit * cos_p * gPayload.visibility * charFunc * w / pdfEnv;
 	}
 	tempRadianceD *= (1.0 / float(numSampleByDepth)); 
 	
@@ -692,16 +662,10 @@ void main()
 
 	vec3 tempRadianceI = vec3(0.0);
 
-    gPayload.bEnvMap = false;
-
 	for (uint i=0; i < numSampleByDepth; ++i)
 	{
         vec3 rayDir = vec3(0.0);
         vec3 halfDir = vec3(0.0);
-
-        float pdfSel = 1.0;
-        float weight = 1.0;
-        vec3 brdf = vec3(0.0);
 
         float a = random(gPayload.rngState);
         float r3 = random(gPayload.rngState);
@@ -730,15 +694,6 @@ void main()
             pdfGGXVal = pdfGGXVNDF(worldNormal, viewDir, halfDir, alpha);
         }
 
-        pdfGGXVal = probGGX * pdfGGXVal;
-        pdfCosineVal = probCos * pdfCosineVal;
-
-        weight = isGGX ? powerHeuristic(pdfGGXVal, pdfCosineVal) 
-                       : powerHeuristic(pdfCosineVal, pdfGGXVal);   
-
-        pdfSel = isGGX ? pdfGGXVal : pdfCosineVal;
-        brdf = calculateBRDF(worldNormal, viewDir, rayDir, halfDir, color, metallic, alpha);
-
 		gPayload.rayDirection = rayDir;
 		gPayload.depth++;
 		traceRayEXT(
@@ -750,7 +705,12 @@ void main()
 		gPayload.depth--;
 
         const float cos_p = max(dot(worldNormal, rayDir), 1e-6);
-        tempRadianceI += brdf * gPayload.radiance * cos_p * weight / pdfSel;
+        
+        const vec3 brdf = calculateBRDF(worldNormal, viewDir, rayDir, halfDir, color, metallic, alpha);
+        const float pdfBRDF = probGGX * pdfGGXVal + probCos * pdfCosineVal;
+        const float weight = powerHeuristic(pdfBRDF, gPayload.envPDF);
+
+        tempRadianceI += brdf * gPayload.radiance * cos_p * weight / pdfBRDF;
 	}
 	tempRadianceI *= (1.0 / float(numSampleByDepth)); 
     
@@ -766,8 +726,12 @@ layout(location = 0) rayPayloadInEXT RayPayload gPayload;
 
 void main()
 {
+    // for local lights
     vec3 worldPos = gl_WorldRayOriginEXT + gl_WorldRayDirectionEXT * gl_HitTEXT;
     gPayload.desiredPosition = worldPos;
+
+    // for envmap
+    gPayload.visibility = 0.0;
 }
 #endif
 
@@ -803,18 +767,20 @@ layout(location = 0) rayPayloadInEXT RayPayload gPayload;
 
 void main()
 {
-	if (gPayload.depth >= gImguiParam.maxDepth) {
+	if (gPayload.depth > gImguiParam.maxDepth) {
         gPayload.radiance = vec3(0.0);
 		return;
     }
     
-    vec3 dir = normalize(gPayload.rayDirection);
-    float rot = gImguiParam.envmapRotDeg * (PI / 180.0);
-    dir = rotateY(rot) * dir; // envmap을 회전하는 것과 같음 (역방향 회전)
-    vec2 uv = vec2(
-        fract(atan(dir.z, dir.x) / (2.0 * PI)), // [−0.5,0.5) → [0,1)
-        acos(clamp(dir.y, -1.0, 1.0)) / PI
-    );
-    gPayload.radiance = texture(environmentMap, uv).rgb;
+    gPayload.radiance = getEmitFromEnvmap(gPayload.rayDirection);
+
+    // get envmap pdf for MIS
+    const ivec2 texSize = textureSize(environmentMap, 0);
+    const uint width = texSize.x;
+    const uint height = texSize.y;
+
+    const vec2 uv = getUVfromRay(gPayload.rayDirection);
+    const vec4 pixelValue = getPixelValue(uint(uv.x * width), uint(uv.y * height));
+    gPayload.envPDF = max(pixelValue.w, 1e-6);
 }
 #endif

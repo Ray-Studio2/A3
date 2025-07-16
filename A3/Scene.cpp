@@ -36,15 +36,15 @@ Mat4x4 getNodeLocalTransform(const tinygltf::Node& node) {
 	if (!node.matrix.empty()) {
 		for (int i = 0; i < 4; ++i) {
 			for (int j = 0; j < 4; ++j) {
-				local[j][i] = node.matrix[i * 4 + j];
+				local[j][i] = static_cast<float>(node.matrix[i * 4 + j]);
 			}
 		}
 	}
 	else {
 		if (!node.scale.empty()) {
-			local[0][0] = node.scale[0];
-			local[1][1] = node.scale[1];
-			local[2][2] = node.scale[2];
+			local[0][0] = static_cast<float>(node.scale[0]);
+			local[1][1] = static_cast<float>(node.scale[1]);
+			local[2][2] = static_cast<float>(node.scale[2]);
 		}
 		if (!node.rotation.empty()) {
 			struct Quaternion {
@@ -74,7 +74,7 @@ Mat4x4 getNodeLocalTransform(const tinygltf::Node& node) {
 
 				return mat;
 				};
-			Quaternion quat = { node.rotation[3], node.rotation[0], node.rotation[1], node.rotation[2] };
+			Quaternion quat = { static_cast<float>(node.rotation[3]), static_cast<float>(node.rotation[0]), static_cast<float>(node.rotation[1]), static_cast<float>(node.rotation[2]) };
 			local = mul(local, quaternionToMatrix(quat));
 
 			//float cx = std::cos(angleRad.x); float sx = std::sin(angleRad.x); // pitch
@@ -100,9 +100,9 @@ Mat4x4 getNodeLocalTransform(const tinygltf::Node& node) {
 		}
 		if (!node.translation.empty()) {
 			Mat4x4 t = Mat4x4::identity;
-			t[3][0] = node.translation[0];
-			t[3][1] = node.translation[1];
-			t[3][2] = node.translation[2];
+			t[3][0] = static_cast<float>(node.translation[0]);
+			t[3][1] = static_cast<float>(node.translation[1]);
+			t[3][2] = static_cast<float>(node.translation[2]);
 			
 			local = mul(local, t);
 		}
@@ -136,25 +136,27 @@ std::vector<T> getBufferData(const tinygltf::Model& model, int accessorIndex) {
 	}
 	return data;
 }
-void Scene::loadGLTF(const std::string& fileName)
+void Scene::loadGLTF(const std::string& fileName, VulkanRenderBackend& vulkanBackend)
 {
 	tinygltf::Model model;
 	tinygltf::TinyGLTF loader;
 	std::string err;
 	std::string warn;
 
-	bool ret = loader.LoadASCIIFromFile(&model, &err, &warn, fileName);
-	// bool ret = loader.LoadBinaryFromFile(&model, &err, &warn, "fileName");
+	bool success = false;
+	if (fileName.size() > 4 && fileName.substr(fileName.size() - 4) == ".glb")
+	    success = loader.LoadBinaryFromFile(&model, &err, &warn, fileName);
+	else 
+		success = loader.LoadASCIIFromFile(&model, &err, &warn, fileName);
 
-	if (!warn.empty()) {
+	if (!warn.empty()) 
 		std::cerr << "WARN: " << warn << std::endl;
-	}
 
-	if (!err.empty()) {
+	if (!err.empty()) 
 		std::cerr << "ERROR: " << err << std::endl;
-	}
 
-	if (!ret) {
+	if (!success) 
+	{
 		std::cerr << "Failed to load glTF" << std::endl;
 		return;
 	}
@@ -223,7 +225,7 @@ void Scene::loadGLTF(const std::string& fileName)
 			for (int j = 0; j < skeleton._boneArray[i]._childBoneIndexArr.size(); ++j)
 			{
 				const int childJointIndex = skeleton._boneArray[i]._childBoneIndexArr[j];
-				const int childBoneIndex = nodeIndexToBoneIndexMap.find(childJointIndex)->second;
+				const int childBoneIndex = static_cast<int>(nodeIndexToBoneIndexMap.find(childJointIndex)->second);
 				skeleton._boneArray[childBoneIndex]._parentBoneIndex = i;
 			}
 		}
@@ -245,55 +247,164 @@ void Scene::loadGLTF(const std::string& fileName)
 		skeletonArr.push_back(std::move(skeleton));
 	}
 
-	std::cout << "\n--- Animations ---" << std::endl;
-	if (!model.animations.empty()) {
-		const auto& anim = model.animations[0];
-		std::cout << "\n--- Animation: " << (anim.name.empty() ? "(unnamed)" : anim.name) << " ---" << std::endl;
+	//std::cout << "\n--- Animations ---" << std::endl;
+	//if (!model.animations.empty()) {
+	//	const auto& anim = model.animations[0];
+	//	std::cout << "\n--- Animation: " << (anim.name.empty() ? "(unnamed)" : anim.name) << " ---" << std::endl;
 
-		AnimationData animData;
+	//	AnimationData animData;
 
-		for (const auto& channel : anim.channels) 
-		{
-			std::string boneName = model.nodes[channel.target_node].name.empty() ? ("joint_" + std::to_string(channel.target_node)) : model.nodes[channel.target_node].name;
-			AnimationData animData;
+	//	for (const auto& channel : anim.channels) 
+	//	{
+	//		std::string boneName = model.nodes[channel.target_node].name.empty() ? ("joint_" + std::to_string(channel.target_node)) : model.nodes[channel.target_node].name;
+	//		AnimationData animData;
 
-			std::string targetPath = channel.target_path;
-			int samplerIndex = channel.sampler;
+	//		std::string targetPath = channel.target_path;
+	//		int samplerIndex = channel.sampler;
 
-			if (samplerIndex >= 0 && samplerIndex < anim.samplers.size()) 
+	//		if (samplerIndex >= 0 && samplerIndex < anim.samplers.size()) 
+	//		{
+	//			const auto& sampler = anim.samplers[samplerIndex];
+	//			if (sampler.input >= 0 && sampler.input < model.accessors.size() && sampler.output >= 0 && sampler.output < model.accessors.size()) 
+	//			{
+	//				const auto& timeAccessor = model.accessors[sampler.input];
+	//				const auto& valueAccessor = model.accessors[sampler.output];
+
+	//				std::vector<float> times;
+	//				if (timeAccessor.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT && timeAccessor.type == TINYGLTF_TYPE_SCALAR) 
+	//				{
+	//					times = getBufferData<float>(model, sampler.input);
+	//				}
+
+	//				//if (valueAccessor.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT) {
+	//				//	if (valueAccessor.type == TINYGLTF_TYPE_VEC3 && targetPath == "translation") {
+	//				//		animData._translation = getBufferData<Vec3>(model, sampler.output);
+	//				//		animData._times = times;
+	//				//	}
+	//				//	else if (valueAccessor.type == TINYGLTF_TYPE_VEC4 && targetPath == "rotation") {
+	//				//		animData._rotation = getBufferData<Vec4>(model, sampler.output);
+	//				//		if (animData._times.empty()) animData._times = times;
+	//				//	}
+	//				//	else if (valueAccessor.type == TINYGLTF_TYPE_VEC3 && targetPath == "scale") {
+	//				//		animData._scale = getBufferData<Vec3>(model, sampler.output);
+	//				//		if (animData._times.empty()) animData._times = times;
+	//				//	}
+	//				//}
+	//			}
+	//		}
+	//	}
+	//	//if (!animData._times.empty()) {
+	//	//	_animations.push_back(animData);
+	//	//}
+	//}
+
+    std::cout << "========================================" << std::endl;
+    std::cout << "Materials Count: " << model.materials.size() << std::endl;
+    std::cout << "========================================" << std::endl;
+	for (size_t i = 0; i < model.materials.size(); ++i)
+	{
+		MaterialParameter materialParameter;
+
+		const auto& material = model.materials[i];
+
+		std::cout << "\n--- Material [" << i << "] ---" << std::endl;
+		std::cout << "Name: " << (material.name.empty() ? "(No Name)" : material.name) << std::endl;
+
+		// PBR Metallic-Roughness 워크플로우 정보 추출
+		const auto& pbr = material.pbrMetallicRoughness;
+
+		// 1. Base Color
+		std::cout << "  PBR Base Color Factor: [" << pbr.baseColorFactor[0] << ", " << pbr.baseColorFactor[1] << ", " << pbr.baseColorFactor[2] << ", " << pbr.baseColorFactor[3] << "]" << std::endl;
+		materialParameter._baseColorFactor = Vec4(static_cast<float>(pbr.baseColorFactor[0]), static_cast<float>(pbr.baseColorFactor[1]), static_cast<float>(pbr.baseColorFactor[2]), static_cast<float>(pbr.baseColorFactor[3]));
+
+		auto ConvertUcharToFloat = [](const tinygltf::Image& image) -> std::vector<float>
 			{
-				const auto& sampler = anim.samplers[samplerIndex];
-				if (sampler.input >= 0 && sampler.input < model.accessors.size() && sampler.output >= 0 && sampler.output < model.accessors.size()) 
-				{
-					const auto& timeAccessor = model.accessors[sampler.input];
-					const auto& valueAccessor = model.accessors[sampler.output];
+				const std::vector<unsigned char>& uchar_data = image.image;
 
-					std::vector<float> times;
-					if (timeAccessor.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT && timeAccessor.type == TINYGLTF_TYPE_SCALAR) 
-					{
-						times = getBufferData<float>(model, sampler.input);
-					}
+				if (uchar_data.empty())
+					return {};
 
-					//if (valueAccessor.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT) {
-					//	if (valueAccessor.type == TINYGLTF_TYPE_VEC3 && targetPath == "translation") {
-					//		animData._translation = getBufferData<Vec3>(model, sampler.output);
-					//		animData._times = times;
-					//	}
-					//	else if (valueAccessor.type == TINYGLTF_TYPE_VEC4 && targetPath == "rotation") {
-					//		animData._rotation = getBufferData<Vec4>(model, sampler.output);
-					//		if (animData._times.empty()) animData._times = times;
-					//	}
-					//	else if (valueAccessor.type == TINYGLTF_TYPE_VEC3 && targetPath == "scale") {
-					//		animData._scale = getBufferData<Vec3>(model, sampler.output);
-					//		if (animData._times.empty()) animData._times = times;
-					//	}
-					//}
-				}
-			}
+				std::vector<float> float_data;
+				float_data.reserve(uchar_data.size());
+
+				for (unsigned char val : uchar_data)
+					float_data.push_back(static_cast<float>(val) / 255.0f);
+
+				return float_data;
+			};
+
+		if (pbr.baseColorTexture.index >= 0)
+		{
+			const auto& texture = model.textures[pbr.baseColorTexture.index];
+			const auto& image = model.images[texture.source];
+			std::cout << "  PBR Base Color Texture: " << image.uri << " (TexCoord: " << pbr.baseColorTexture.texCoord << ")" << std::endl;
+
+			materialParameter._baseColorTexture = TextureManager::createTexture(vulkanBackend, image.name, static_cast<uint32>(VK_FORMAT_R32G32B32A32_SFLOAT), image.width, image.height, ConvertUcharToFloat(image).data());
 		}
-		//if (!animData._times.empty()) {
-		//	_animations.push_back(animData);
+
+		// 2. Metallic & Roughness
+		std::cout << "  PBR Metallic Factor: " << pbr.metallicFactor << std::endl;
+		std::cout << "  PBR Roughness Factor: " << pbr.roughnessFactor << std::endl;
+		materialParameter._metallicFactor = static_cast<float>(pbr.metallicFactor);
+		materialParameter._roughnessFactor = static_cast<float>(pbr.roughnessFactor);
+
+		if (pbr.metallicRoughnessTexture.index >= 0)
+		{
+			const auto& texture = model.textures[pbr.metallicRoughnessTexture.index];
+			const auto& image = model.images[texture.source];
+			std::cout << "  PBR Metallic-Roughness Texture: " << image.uri << " (TexCoord: " << pbr.metallicRoughnessTexture.texCoord << ")" << std::endl;
+
+			materialParameter._metallicRoughnessTexture = TextureManager::createTexture(vulkanBackend, image.name, static_cast<uint32>(VK_FORMAT_R32G32B32A32_SFLOAT), image.width, image.height, ConvertUcharToFloat(image).data());
+		}
+
+		// 3. Normal Texture
+		if (material.normalTexture.index >= 0) 
+		{
+			const auto& texture = model.textures[material.normalTexture.index];
+			const auto& image = model.images[texture.source];
+			std::cout << "  Normal Texture: " << image.uri << " (Scale: " << material.normalTexture.scale << ", TexCoord: " << material.normalTexture.texCoord << ")" << std::endl;
+
+			materialParameter._normalTexture = TextureManager::createTexture(vulkanBackend, image.name, static_cast<uint32>(VK_FORMAT_R32G32B32A32_SFLOAT), image.width, image.height, ConvertUcharToFloat(image).data());
+		}
+
+		// 4. Occlusion Texture
+		if (material.occlusionTexture.index >= 0) 
+		{
+			const auto& texture = model.textures[material.occlusionTexture.index];
+			const auto& image = model.images[texture.source];
+			std::cout << "  Occlusion Texture: " << image.uri << " (Strength: " << material.occlusionTexture.strength << ", TexCoord: " << material.occlusionTexture.texCoord << ")" << std::endl;
+
+			materialParameter._occlusionTexture = TextureManager::createTexture(vulkanBackend, image.name, static_cast<uint32>(VK_FORMAT_R32G32B32A32_SFLOAT), image.width, image.height, ConvertUcharToFloat(image).data());
+		}
+
+		// 5. Emissive
+		std::cout << "  Emissive Factor: [" << material.emissiveFactor[0] << ", " << material.emissiveFactor[1] << ", " << material.emissiveFactor[2] << "]" << std::endl;
+		materialParameter._emissiveFactor = Vec4(static_cast<float>(material.emissiveFactor[0]), static_cast<float>(material.emissiveFactor[1]), static_cast<float>(material.emissiveFactor[2]), static_cast<float>(material.emissiveFactor[3]));
+
+		if (material.emissiveTexture.index >= 0) 
+		{
+			const auto& texture = model.textures[material.emissiveTexture.index];
+			const auto& image = model.images[texture.source];
+			std::cout << "  Emissive Texture: " << image.uri << " (TexCoord: " << material.emissiveTexture.texCoord << ")" << std::endl;
+
+			materialParameter._emissiveTexture = TextureManager::createTexture(vulkanBackend, image.name, static_cast<uint32>(VK_FORMAT_R32G32B32A32_SFLOAT), image.width, image.height, ConvertUcharToFloat(image).data());
+		}
+
+		//// 6. Alpha Mode
+		//std::cout << "  Alpha Mode: " << material.alphaMode << std::endl;
+		//if (material.alphaMode == "MASK") 
+		//{
+		//	std::cout << "  Alpha Cutoff: " << material.alphaCutoff << std::endl;
 		//}
+
+		//// 7. Double Sided
+		//std::cout << "  Double Sided: " << (material.doubleSided ? "True" : "False") << std::endl;
+
+		Material a3Material;
+		a3Material._parameters = std::move(materialParameter);
+		a3Material._buffer = vulkanBackend.createResourceBuffer(sizeof(a3Material._parameters), static_cast<const void*>(&a3Material._parameters));
+
+		materialArr.push_back(std::move(a3Material));
 	}
 
 	std::cout << "\n--- Mesh Data (glm) ---" << std::endl;
@@ -406,7 +517,7 @@ void Scene::loadGLTF(const std::string& fileName)
 				resource.positions = vPositions;
 				resource.attributes = vAttributes;
 				resource.indices = indices;
-				resource.triangleCount = resource.indices.size() / 3;
+				resource.triangleCount = static_cast<uint32>(resource.indices.size() / 3);
 				resource.cumulativeTriangleArea.resize(resource.triangleCount + 1);
 				resource.cumulativeTriangleArea[0] = 0;
 				for (uint32 triIndex = 1; triIndex < resource.triangleCount; ++triIndex)
@@ -426,7 +537,7 @@ void Scene::loadGLTF(const std::string& fileName)
 				resources[mesh.name] = new MeshResource(resource);
 			}
 
-			MeshObject* mo = new MeshObject(resources[mesh.name]);
+			MeshObject* mo = new MeshObject(resources[mesh.name], &materialArr[primitive.material]);
 			//mo->setPosition(Vec3(position[0], position[1], position[2]));
 			//mo->setRotation(Vec3(rotation[0], rotation[1], rotation[2]));
 			//mo->setScale(Vec3(scale[0], scale[1], scale[2]));
@@ -449,8 +560,9 @@ void Scene::loadGLTF(const std::string& fileName)
 	}
 }
 
-void Scene::load(const std::string& path) {
+void Scene::load(const std::string& path, VulkanRenderBackend& vulkanBackend) {
 	this->resources.clear();
+	this->materialArr.clear();
 	this->lightIndex.clear();
 	this->objects.clear();
 
@@ -518,7 +630,18 @@ void Scene::load(const std::string& path) {
 				resources[mesh] = new MeshResource(resource);
 			}
 
-			MeshObject* mo = new MeshObject(resources[mesh]);
+			MaterialParameter materialParameter;
+			materialParameter._metallicFactor = metallic.get<float>();
+			materialParameter._roughnessFactor = roughness.get<float>();
+			materialParameter._emissiveFactor = Vec3(material["emittance"]);
+			materialParameter._baseColorFactor = Vec4(baseColor[0], baseColor[1], baseColor[2], 1);
+
+			Material a3Material;
+			a3Material._parameters = materialParameter;
+			a3Material._buffer = vulkanBackend.createResourceBuffer(sizeof(a3Material._parameters), static_cast<const void*>(&a3Material._parameters));
+			materialArrForObj.push_back(a3Material);
+
+			MeshObject* mo = new MeshObject(resources[mesh], &a3Material);
 			mo->setPosition(Vec3(position[0], position[1], position[2]));
 			mo->setRotation(Vec3(rotation[0], rotation[1], rotation[2]));
 			mo->setScale(Vec3(scale[0], scale[1], scale[2]));
@@ -613,7 +736,7 @@ void Scene::load(const std::string& path) {
 		}
 	}
 #else
-	loadGLTF("C:/Users/Lee/Desktop/Projects/A3/Assets/phoenix_bird/scene.gltf");
+	loadGLTF("../Assets/phoenix_bird/scene.gltf", vulkanBackend);
 #endif
 }
 
@@ -640,4 +763,19 @@ std::vector<MeshObject*> Scene::collectMeshObjects() const
 	}
 
 	return outObjects;
+}
+
+A3::MaterialParameter::MaterialParameter()
+{
+	Vec4 _baseColorFactor = Vec4(1);
+	TextureParameter _baseColorTexture = TextureManager::gWhiteParameter;
+	TextureParameter _normalTexture = TextureManager::gWhiteParameter;
+	TextureParameter _occlusionTexture = TextureManager::gWhiteParameter;
+
+	float _metallicFactor = 0;
+	float _roughnessFactor = 1;
+	TextureParameter _metallicRoughnessTexture = TextureManager::gWhiteParameter;
+
+	Vec3 _emissiveFactor = Vec3(0);
+	TextureParameter _emissiveTexture = TextureManager::gWhiteParameter;
 }

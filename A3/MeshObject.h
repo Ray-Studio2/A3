@@ -9,12 +9,14 @@
 namespace A3
 {
 struct MeshResource;
+struct Material;
 
 class MeshObject : public SceneObject
 {
 public:
-	MeshObject( MeshResource* inResource )
+	MeshObject( MeshResource* inResource, Material* material )
 		: resource( inResource )
+		, _material(material)
 	{}
 
 	void createRenderResources( IRenderBackend* backend )
@@ -24,6 +26,7 @@ public:
 			.attributeData = resource->attributes,
 			.indexData = resource->indices,
 			.cumulativeTriangleAreaData = resource->cumulativeTriangleArea,
+			.material = *_material,
 			.transformData = Mat3x4::identity
 		};
 		blasBatch.blas = backend->createBLAS( params );
@@ -56,6 +59,7 @@ public:
 
 private:
 	MeshResource* resource;
+	Material* _material;
 
 	BLASBatch blasBatch;
 };

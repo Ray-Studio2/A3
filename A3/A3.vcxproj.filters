@@ -22,6 +22,9 @@
     <Filter Include="Scene Configs">
       <UniqueIdentifier>{57683475-1189-456c-b66f-e3d51de1826f}</UniqueIdentifier>
     </Filter>
+    <Filter Include="ThirdParty\tiny_gltf">
+      <UniqueIdentifier>{91ec0983-d786-49fc-8f14-3cc821805b7f}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Main.cpp">
@@ -194,21 +197,12 @@
     <ClInclude Include="stb_image_write.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="ThirdParty\tiny_gltf\tiny_gltf.h">
+      <Filter>ThirdParty\tiny_gltf</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="..\.gitignore" />
-    <None Include="..\Assets\nee-test-scene.json">
-      <Filter>Scene Configs</Filter>
-    </None>
-    <None Include="..\Assets\unidirectional_path_tracer_scene.json">
-      <Filter>Scene Configs</Filter>
-    </None>
-    <None Include="..\Assets\unidirectional_path_tracer_scene_quad.json">
-      <Filter>Scene Configs</Filter>
-    </None>
-    <None Include="..\Assets\unidirectional_path_tracer_scene_scale1.json">
-      <Filter>Scene Configs</Filter>
-    </None>
     <None Include="shaders\Bindings.glsl">
       <Filter>Resource Files</Filter>
     </None>
@@ -221,5 +215,11 @@
     <None Include="shaders\SharedStructs.glsl">
       <Filter>Resource Files</Filter>
     </None>
+    <None Include="..\Assets\bruteforce-env.json" />
+    <None Include="..\Assets\bruteforce-local.json" />
+    <None Include="..\Assets\nee-env.json" />
+    <None Include="..\Assets\nee-local.json" />
+    <None Include="shaders\BRDF.glsl" />
+    <None Include="shaders\NEELightSampling.glsl" />
   </ItemGroup>
 </Project>

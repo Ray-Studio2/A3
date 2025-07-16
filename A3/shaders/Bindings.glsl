@@ -17,6 +17,7 @@ layout(buffer_reference, scalar) buffer PositionBuffer { vec4 p[]; };
 layout(buffer_reference, scalar) buffer AttributeBuffer { VertexAttributes a[]; };
 layout(buffer_reference, scalar) buffer IndexBuffer { uint i[]; };
 layout(buffer_reference, scalar) buffer cumulativeTriangleAreaBuffer { float t[]; };
+layout(buffer_reference, layout = scalar) buffer MaterialBuffer { MaterialParameter mat; };
 
 layout(binding = 4, std430) readonly buffer LightBuffer
 {
@@ -38,3 +39,6 @@ layout( binding = 7 ) uniform imguiParam {
 } gImguiParam;
 
 layout( binding = 8, rgba32f ) uniform image2D envImportanceData;
+
+#define TEXTUREBINDLESS_BINDING_LOCATION 16
+layout(std430, binding = TEXTUREBINDLESS_BINDING_LOCATION) uniform texture2D textures[];

@@ -48,7 +48,7 @@ vec3 calculateBRDF(vec3 normal, vec3 viewDir, vec3 lightDir, vec3 halfDir, vec3 
     float geometry = GGX_G2(normal, viewDir, lightDir, alpha);
     vec3 fresnel = Schlick_F(viewDir, halfDir, F0);
 
-    vec3 num = ndf * geometry * fresnel;
+    vec3 num = min(ndf * geometry * fresnel, INF_CLAMP);
     float denom = 4.0 * dotNV * dotNL;
     vec3 f_spec = num / max(denom, 1e-6);
 
@@ -80,8 +80,13 @@ vec3 sampleGGXVNDF(vec3 v, float alpha_x, float alpha_y, vec2 seed)
     vec3 v_h = normalize(vec3(alpha_x * v.x, alpha_y * v.y, v.z));
 
     float lenSq = v_h.x * v_h.x + v_h.y * v_h.y;
-    float invsqrt = 1 / sqrt(lenSq);
-    vec3 T1 = lenSq > 0 ? vec3(-v_h.y, v_h.x, 0) * invsqrt : vec3(1, 0, 0);
+    vec3 T1;
+    if (lenSq > 0.0) {
+        float invsqrt = 1 / sqrt(lenSq);
+        T1 = vec3(-v_h.y, v_h.x, 0.0) * invsqrt;
+    } else {
+        T1 = vec3(1.0, 0.0, 0.0);
+    }
     // T1 is perpendicular to the view vector = normalize(Z x V_h)
     // when v = (0,0,1), cross product is 0, so we pick x = (1,0,0) for a safe approach
     vec3 T2 = cross(v_h, T1);
@@ -110,7 +115,7 @@ float pdfGGXVNDF(vec3 normal, vec3 viewDir, vec3 halfDir, float alpha)
     float denom = dotNV;
     float pdf_h = num / denom;
 
-    return pdf_h / (4.0 * dotHV);
+    return min(pdf_h / (4.0 * dotHV), INF_CLAMP);
 }
 
 mat3 computeTBN(vec3 worldNormal)

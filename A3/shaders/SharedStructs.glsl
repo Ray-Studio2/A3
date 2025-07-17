@@ -6,7 +6,8 @@ struct RayPayload
     vec3 desiredPosition;
     uint depth;
     uint rngState;
-    bool bEnvMap;
+    float envPDF;
+    float visibility;
 };
 
 // struct ShadowPayload

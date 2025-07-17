@@ -208,7 +208,7 @@ void Addon_imgui::renderFrame( GLFWwindow* window, VulkanRenderBackend* vulkan, 
         ImGui::SeparatorText("Scene");
         {
             auto& items = RenderSettings::sceneFiles;
-            static int item_selected_idx = 0;
+            static uint32 item_selected_idx = RenderSettings::sceneIdx;
             if (ImGui::BeginCombo("Json files", items[item_selected_idx]))
             {
                 for (int n = 0; n < IM_ARRAYSIZE(items); ++n)

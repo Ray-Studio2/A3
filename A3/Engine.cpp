@@ -49,8 +49,10 @@ void Engine::Run()
 
         // Scene must be initialize after VulkanRenderBackend. Cuz using Vulkan Interface function in Scene::load.
         Scene scene;
-        scene.load(RenderSettings::sceneFiles[4], gfxBackend); // TODO: Separated ConfigManager & AppSettings class (constants as file paths, resolution, spp, camera info...)
+        scene.load(RenderSettings::sceneFiles[RenderSettings::sceneIdx], gfxBackend); // TODO: Separated ConfigManager & AppSettings class (constants as file paths, resolution, spp, camera info...)
         // TODO: Scene only handles objects, mesh, lightings from Json
+
+        VulkanRenderBackend gfxBackend( window, extensions, screenWidth, screenHeight );
 
         PathTracingRenderer renderer( &gfxBackend );
 

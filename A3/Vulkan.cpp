@@ -681,11 +681,7 @@ void VulkanRenderBackend::createVkQueueFamily()
         .rayTracingPipeline = VK_TRUE,
     };
 
-    VkPhysicalDeviceFeatures2 feats2{
-    .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2
-    };
-
-    VkPhysicalDeviceDescriptorIndexingFeatures indexingFeatures{
+    VkPhysicalDeviceDescriptorIndexingFeatures descriptorIndexingFeatures{
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES,
         .shaderSampledImageArrayNonUniformIndexing = VK_TRUE,
         .descriptorBindingPartiallyBound = VK_TRUE,
@@ -693,21 +689,35 @@ void VulkanRenderBackend::createVkQueueFamily()
         .runtimeDescriptorArray = VK_TRUE,
     };
 
+    VkPhysicalDeviceFeatures2 feats2{
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2
+    };
+
     feats2.pNext = &bdaFeat;
-    bdaFeat.pNext = &asFeat; //rqFeat
-    //rqFeat.pNext = &asFeat;
+    bdaFeat.pNext = &rqFeat;
+    rqFeat.pNext = &asFeat;
     asFeat.pNext = &rtpFeat;
-    rtpFeat.pNext = &indexingFeatures;
-    indexingFeatures.pNext = nullptr;
+    rtpFeat.pNext = &descriptorIndexingFeatures;
+    descriptorIndexingFeatures.pNext = nullptr;
 
     vkGetPhysicalDeviceFeatures2(physicalDevice, &feats2);
+
+    // Non-uniform indexing and update after bind
+    // binding flags for textures, uniforms, and buffers
+    // are required for our extension
+    assert(descriptorIndexingFeatures.shaderSampledImageArrayNonUniformIndexing);
+    assert(descriptorIndexingFeatures.descriptorBindingSampledImageUpdateAfterBind);
+    assert(descriptorIndexingFeatures.shaderUniformBufferArrayNonUniformIndexing);
+    assert(descriptorIndexingFeatures.descriptorBindingUniformBufferUpdateAfterBind);
+    assert(descriptorIndexingFeatures.shaderStorageBufferArrayNonUniformIndexing);
+    assert(descriptorIndexingFeatures.descriptorBindingStorageBufferUpdateAfterBind);
 
     //if (!rqFeat.rayQuery)
     //    throw std::runtime_error("Device doesn't support VK_KHR_ray_query");
 
     feats2.features.shaderInt64 = VK_TRUE;
     bdaFeat.bufferDeviceAddress = VK_TRUE;
-    //rqFeat.rayQuery = VK_TRUE;
+    rqFeat.rayQuery = VK_TRUE;
     asFeat.accelerationStructure = VK_TRUE;
     rtpFeat.rayTracingPipeline = VK_TRUE;    
 
@@ -754,7 +764,7 @@ void VulkanRenderBackend::createVkDescriptorPools()
     {
         VkDescriptorPoolCreateInfo pool_info = {};
         pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-        pool_info.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
+        pool_info.flags = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT;// VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
         pool_info.maxSets = 0;
         for( VkDescriptorPoolSize& pool_size : poolSizes )
             pool_info.maxSets += pool_size.descriptorCount;
@@ -2179,7 +2189,7 @@ IRenderPipelineRef VulkanRenderBackend::createRayTracingPipeline( const Raytraci
     textureBindlessBinding.stageFlags = getVulkanShaderStage(EShaderStage::SS_ClosestHit);
     bindings[bindings.size() - 1] = textureBindlessBinding;
     
-    VkDescriptorBindingFlags textureBindingFlags = VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT;
+    VkDescriptorBindingFlags textureBindingFlags = VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT;// VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT;// | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT;
     std::vector<VkDescriptorBindingFlags> bindingFlags(bindings.size(), 0);
     bindingFlags[bindingFlags.size() - 1] = textureBindingFlags;
 

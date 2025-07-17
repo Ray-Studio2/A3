@@ -1,4 +1,4 @@
-#extension GL_GOOGLE_include_directive : require
+﻿#extension GL_GOOGLE_include_directive : require
 #extension GL_EXT_ray_query : require
 #extension GL_EXT_ray_tracing : enable
 #extension GL_EXT_buffer_reference2 : require

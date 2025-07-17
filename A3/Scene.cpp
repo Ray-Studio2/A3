@@ -508,7 +508,7 @@ void Scene::loadGLTF(const std::string& fileName, VulkanRenderBackend& vulkanBac
 			vAttributes.reserve(positions.size());
 			for (int i = 0; i < positions.size(); ++i)
 			{
-				vPositions.push_back(VertexPosition(positions[i].x * 0.01f, positions[i].y * 0.01f, positions[i].z * 0.01f, 1.0f));
+				vPositions.push_back(VertexPosition(positions[i].x * 0.02f, positions[i].y * 0.02f, positions[i].z * 0.02f, 1.0f));
 				vAttributes.push_back(VertexAttributes({ normals[i].x, normals[i].y, normals[i].z, 0.0f }, { uvs[i].x, uvs[i].y, 0.0f, 0.0f }));
 			}
 
@@ -675,7 +675,7 @@ void Scene::load(const std::string& path, VulkanRenderBackend& vulkanBackend) {
 	std::string err;
 	std::string warn;
 
-	std::string filePath = "C:/Users/dhfla/Desktop/Projects/Universe/asset/phoenix_bird/scene.gltf"; // .glb ???逾???띠럾??繞③뜮????덈펲.
+	std::string filePath = "C:/Users/dhfla/Desktop/Projects/Universe/asset/phoenix_bird/scene.gltf";
 
 	bool ret = loader.LoadASCIIFromFile(&model, &err, &warn, filePath);
 

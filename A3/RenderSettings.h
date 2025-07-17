@@ -16,7 +16,8 @@ struct RenderSettings
 	static constexpr const char* sceneFiles[] = { "../Assets/bruteforce-local.json",
 												 "../Assets/nee-local.json",
 												 "../Assets/bruteforce-env.json",
-												 "../Assets/nee-env.json" };
+												 "../Assets/nee-env.json", 
+												 "../Assets/nee-env2.json"};
 
 	// static constexpr const char* envMapDefault = "../Assets/reichstag_1_4k.hdr";
 	static constexpr const char* envMapDefault = "../Assets/rogland_sunset_4k.hdr";

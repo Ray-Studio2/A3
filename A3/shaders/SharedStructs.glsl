@@ -45,16 +45,17 @@ struct EnvImportanceSampleData {
 struct MaterialParameter
 {
 	vec4 _baseColorFactor;
+
 	TextureParameter _baseColorTexture;
 	TextureParameter _normalTexture;
 	TextureParameter _occlusionTexture;
-
 	float _metallicFactor;
+
 	float _roughnessFactor;
 	TextureParameter _metallicRoughnessTexture;
+	float _padding1;
+	float _padding2;
 
 	vec3 _emissiveFactor;
 	TextureParameter _emissiveTexture;
-	float _padding1;
-	float _padding2;
 };

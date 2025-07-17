@@ -5,7 +5,7 @@
 #extension GL_EXT_buffer_reference_uvec2 : require
 #extension GL_EXT_scalar_block_layout : require
 #extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
-#extension GL_ARB_bindless_texture : require
+//#extension GL_EXT_descriptor_indexing : require
 
 #define PI 3.1415926535897932384626433832795
 #define ENV_MISS_IDX 0
@@ -137,7 +137,7 @@ void main()
     const vec3 lightEmittance = vec3(light.emittance); // emittance per point
     const float lightArea = getLightArea();
 
-    const vec3 color = material._baseColorFactor;
+    const vec3 color = material._baseColorFactor.xyz;
     const float metallic = clamp(gCustomData.metallic, 0.0, 1.0);
     const float roughness = clamp(gCustomData.roughness, MIRROR_ROUGH, 1.0);
     const float alpha = roughness * roughness;

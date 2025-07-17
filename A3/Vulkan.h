@@ -43,12 +43,13 @@ public:
         VkImageView _view;
     };
 
-    static void createWhiteTexture(VulkanRenderBackend& vulkanBackend);
+    static void initialize(VulkanRenderBackend& vulkanBackend);
 
     static const TextureParameter createTexture(VulkanRenderBackend& vulkanBackend, const std::string path, const uint32 imageFormat, const uint32 width, const uint32 height, const float* pixelData);
 
     static std::vector<TextureView> gTextureArray;
     static TextureParameter gWhiteParameter;
+    static VkSampler gLinearSampler;
 };
 
 struct A3Buffer
@@ -62,29 +63,35 @@ struct MaterialParameter
     MaterialParameter();
 
     Vec4 _baseColorFactor;
+
     TextureParameter _baseColorTexture;
     TextureParameter _normalTexture;
     TextureParameter _occlusionTexture;
-
     float _metallicFactor;
+
     float _roughnessFactor;
     TextureParameter _metallicRoughnessTexture;
+    float _padding1;
+    float _padding2;
 
     Vec3 _emissiveFactor;
     TextureParameter _emissiveTexture;
-    float _padding1;
-    float _padding2;
 };
 struct Material
 {
-    MaterialParameter _parameters;
+    MaterialParameter _parameter;
 
     // innerdata
     A3Buffer _buffer;
+
+    void uploadMaterialParameter(VulkanRenderBackend& vulkanBackend);
 };
 
 class VulkanRenderBackend : public IRenderBackend
 {
+    friend struct Material;
+    friend class TextureManager;
+
 public:
     VulkanRenderBackend( GLFWwindow* window, std::vector<const char*>& extensions, int32 screenWidth, int32 screenHeight );
     ~VulkanRenderBackend();

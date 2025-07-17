@@ -339,7 +339,7 @@ void Scene::loadGLTF(const std::string& fileName, VulkanRenderBackend& vulkanBac
 			const auto& image = model.images[texture.source];
 			std::cout << "  PBR Base Color Texture: " << image.uri << " (TexCoord: " << pbr.baseColorTexture.texCoord << ")" << std::endl;
 
-			materialParameter._baseColorTexture = TextureManager::createTexture(vulkanBackend, image.name, static_cast<uint32>(VK_FORMAT_R32G32B32A32_SFLOAT), image.width, image.height, ConvertUcharToFloat(image).data());
+			materialParameter._baseColorTexture = TextureManager::createTexture(vulkanBackend, image.uri, static_cast<uint32>(VK_FORMAT_R32G32B32A32_SFLOAT), image.width, image.height, ConvertUcharToFloat(image).data());
 		}
 
 		// 2. Metallic & Roughness
@@ -379,7 +379,7 @@ void Scene::loadGLTF(const std::string& fileName, VulkanRenderBackend& vulkanBac
 
 		// 5. Emissive
 		std::cout << "  Emissive Factor: [" << material.emissiveFactor[0] << ", " << material.emissiveFactor[1] << ", " << material.emissiveFactor[2] << "]" << std::endl;
-		materialParameter._emissiveFactor = Vec4(static_cast<float>(material.emissiveFactor[0]), static_cast<float>(material.emissiveFactor[1]), static_cast<float>(material.emissiveFactor[2]), static_cast<float>(material.emissiveFactor[3]));
+		materialParameter._emissiveFactor = Vec3(static_cast<float>(material.emissiveFactor[0]), static_cast<float>(material.emissiveFactor[1]), static_cast<float>(material.emissiveFactor[2]));
 
 		if (material.emissiveTexture.index >= 0) 
 		{
@@ -401,8 +401,8 @@ void Scene::loadGLTF(const std::string& fileName, VulkanRenderBackend& vulkanBac
 		//std::cout << "  Double Sided: " << (material.doubleSided ? "True" : "False") << std::endl;
 
 		Material a3Material;
-		a3Material._parameters = std::move(materialParameter);
-		a3Material._buffer = vulkanBackend.createResourceBuffer(sizeof(a3Material._parameters), static_cast<const void*>(&a3Material._parameters));
+		a3Material._parameter = std::move(materialParameter);
+		a3Material._buffer = vulkanBackend.createResourceBuffer(sizeof(a3Material._parameter), static_cast<const void*>(&a3Material._parameter));
 
 		materialArr.push_back(std::move(a3Material));
 	}
@@ -612,6 +612,7 @@ void Scene::load(const std::string& path, VulkanRenderBackend& vulkanBackend) {
 	auto& objects = data["sceneComponets"];
 	if (objects.is_object()) {
 		int index = 0;
+		materialArrForObj.reserve(100);
 		for (auto& [name, object] : objects.items())
 		{
 			auto& position = object["position"];
@@ -631,17 +632,23 @@ void Scene::load(const std::string& path, VulkanRenderBackend& vulkanBackend) {
 			}
 
 			MaterialParameter materialParameter;
-			materialParameter._metallicFactor = metallic.get<float>();
-			materialParameter._roughnessFactor = roughness.get<float>();
-			materialParameter._emissiveFactor = Vec3(material["emittance"]);
+			if (materialName == "light") 
+			{
+				materialParameter._emissiveFactor = Vec3(material["emittance"]);
+			}
+			else
+			{
+				materialParameter._metallicFactor = metallic.get<float>();
+				materialParameter._roughnessFactor = roughness.get<float>();
+			}
 			materialParameter._baseColorFactor = Vec4(baseColor[0], baseColor[1], baseColor[2], 1);
 
 			Material a3Material;
-			a3Material._parameters = materialParameter;
-			a3Material._buffer = vulkanBackend.createResourceBuffer(sizeof(a3Material._parameters), static_cast<const void*>(&a3Material._parameters));
+			a3Material._parameter = materialParameter;
+			a3Material._buffer = vulkanBackend.createResourceBuffer(sizeof(a3Material._parameter), static_cast<const void*>(&a3Material._parameter));
 			materialArrForObj.push_back(a3Material);
 
-			MeshObject* mo = new MeshObject(resources[mesh], &a3Material);
+			MeshObject* mo = new MeshObject(resources[mesh], &materialArrForObj[materialArrForObj.size() - 1]);
 			mo->setPosition(Vec3(position[0], position[1], position[2]));
 			mo->setRotation(Vec3(rotation[0], rotation[1], rotation[2]));
 			mo->setScale(Vec3(scale[0], scale[1], scale[2]));
@@ -767,15 +774,15 @@ std::vector<MeshObject*> Scene::collectMeshObjects() const
 
 A3::MaterialParameter::MaterialParameter()
 {
-	Vec4 _baseColorFactor = Vec4(1);
-	TextureParameter _baseColorTexture = TextureManager::gWhiteParameter;
-	TextureParameter _normalTexture = TextureManager::gWhiteParameter;
-	TextureParameter _occlusionTexture = TextureManager::gWhiteParameter;
+	_baseColorFactor = Vec4(1);
+	_baseColorTexture = TextureManager::gWhiteParameter;
+	_normalTexture = TextureManager::gWhiteParameter;
+	_occlusionTexture = TextureManager::gWhiteParameter;
 
-	float _metallicFactor = 0;
-	float _roughnessFactor = 1;
-	TextureParameter _metallicRoughnessTexture = TextureManager::gWhiteParameter;
+	_metallicFactor = 0;
+	_roughnessFactor = 1;
+	_metallicRoughnessTexture = TextureManager::gWhiteParameter;
 
-	Vec3 _emissiveFactor = Vec3(0);
-	TextureParameter _emissiveTexture = TextureManager::gWhiteParameter;
+	_emissiveFactor = Vec3(0);
+	_emissiveTexture = TextureManager::gWhiteParameter;
 }

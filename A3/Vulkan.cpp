@@ -63,10 +63,10 @@ void TextureManager::initialize(VulkanRenderBackend& vulkanBackend)
     {
         for (uint32 j = 0; j < width; ++j)
         {
-            pixels[i * width + j + 0] = 1.0f;
-            pixels[i * width + j + 1] = 1.0f;
-            pixels[i * width + j + 2] = 1.0f;
-            pixels[i * width + j + 3] = 1.0f;
+            pixels[i * (width * 4) + j * 4 + 0] = 1.0f;
+            pixels[i * (width * 4) + j * 4 + 1] = 1.0f;
+            pixels[i * (width * 4) + j * 4 + 2] = 1.0f;
+            pixels[i * (width * 4) + j * 4 + 3] = 1.0f;
         }
     }
 
@@ -209,7 +209,7 @@ static bool IsExtensionAvailable( const std::vector<VkExtensionProperties>& prop
 ////////////////////////////////////////////////
 
 #define TEXTUREBINDLESS_BINDING_LOCATION 10
-#define TEXTUREBINDLESS_BINDING_MAX_COUNT 10
+#define TEXTUREBINDLESS_BINDING_MAX_COUNT 1024
 
 void VulkanRenderBackend::beginFrame( int32 screenWidth, int32 screenHeight )
 {
@@ -748,7 +748,7 @@ void VulkanRenderBackend::createVkDescriptorPools()
         { VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 1000 },
         { VK_DESCRIPTOR_TYPE_SAMPLER, 1000 },
         { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1000 },
-        { VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1000 },
+        { VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, TEXTUREBINDLESS_BINDING_MAX_COUNT },
         { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1000 },
         { VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 1000 },
         { VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER, 1000 },

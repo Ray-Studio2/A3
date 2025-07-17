@@ -5,6 +5,9 @@
 #extension GL_EXT_buffer_reference_uvec2 : require
 #extension GL_EXT_scalar_block_layout : require
 #extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
+#extension GL_EXT_nonuniform_qualifier : enable
+#extension GL_EXT_samplerless_texture_functions : enable
+//#extension GL_EXT_descriptor_indexing : enable
 
 #define PI 3.1415926535897932384626433832795
 #define ENV_MISS_IDX 0
@@ -134,6 +137,11 @@ void main()
     vec3 n2 = normalize(attrBuf.a[index.z].norm.xyz);
     vec3 normal = normalize(w * n0 + u * n1 + v * n2);
 
+    vec2 uv0 = attrBuf.a[index.x].uv.xy;
+    vec2 uv1 = attrBuf.a[index.y].uv.xy;
+    vec2 uv2 = attrBuf.a[index.z].uv.xy;
+    vec2 uv = w * uv0 + u * uv1 + v * uv2;
+
     vec3 worldPos = (gl_ObjectToWorldEXT * vec4(position, 1.0)).xyz;
     vec3 worldNormal = normalize(transpose(inverse(mat3(gl_ObjectToWorldEXT))) * normal);
 
@@ -141,7 +149,11 @@ void main()
 
     const vec3 lightEmittance = vec3(light.emittance); // emittance per point
 
-    const vec3 color = gCustomData.color;
+    MaterialParameter material = MaterialBuffer(objDesc.materialAddress).mat;
+    const TextureParameter baseColorTexture = material._baseColorTexture;
+    const vec4 baseColor = texture(sampler2D(textures[nonuniformEXT(baseColorTexture)], linearSampler), uv);
+
+    const vec3 color = material._baseColorFactor.xyz * baseColor.xyz;
     const float metallic = clamp(gCustomData.metallic, 0.0, 1.0);
     const float roughness = clamp(gCustomData.roughness, MIRROR_ROUGH, 1.0);
     const float alpha = roughness * roughness;
@@ -602,12 +614,21 @@ void main()
     vec3 n2 = normalize(attrBuf.a[index.z].norm.xyz);
     vec3 normal = normalize(w * n0 + u * n1 + v * n2);
 
+    vec2 uv0 = attrBuf.a[index.x].uv.xy;
+    vec2 uv1 = attrBuf.a[index.y].uv.xy;
+    vec2 uv2 = attrBuf.a[index.z].uv.xy;
+    vec2 uv = w * uv0 + u * uv1 + v * uv2;
+
     vec3 worldPos = (gl_ObjectToWorldEXT * vec4(position, 1.0)).xyz;
     vec3 worldNormal = normalize(transpose(inverse(mat3(gl_ObjectToWorldEXT))) * normal);
 
     const float eps = 1e-4;
 
-    const vec3 color = gCustomData.color;
+    MaterialParameter material = MaterialBuffer(objDesc.materialAddress).mat;
+    const TextureParameter baseColorTexture = material._baseColorTexture;
+    const vec4 baseColor = texture(sampler2D(textures[nonuniformEXT(baseColorTexture)], linearSampler), uv);
+
+    const vec3 color = material._baseColorFactor.xyz * baseColor.xyz;
     const float metallic = clamp(gCustomData.metallic, 0.0, 1.0);
     const float roughness = clamp(gCustomData.roughness, MIRROR_ROUGH, 1.0);
     const float alpha = roughness * roughness;

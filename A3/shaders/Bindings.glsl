@@ -40,7 +40,7 @@ layout( binding = 7 ) uniform imguiParam {
 
 layout( binding = 8, rgba32f ) uniform image2D envImportanceData;
 
-layout(binding = 9) uniform sampler samplers;
+layout(binding = 9) uniform sampler linearSampler;
 
 #define TEXTUREBINDLESS_BINDING_LOCATION 10
 layout(binding = TEXTUREBINDLESS_BINDING_LOCATION) uniform texture2D textures[];

@@ -5,7 +5,9 @@
 #extension GL_EXT_buffer_reference_uvec2 : require
 #extension GL_EXT_scalar_block_layout : require
 #extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
-//#extension GL_EXT_descriptor_indexing : require
+#extension GL_EXT_nonuniform_qualifier : enable
+#extension GL_EXT_samplerless_texture_functions : enable
+//#extension GL_EXT_descriptor_indexing : enable
 
 #define PI 3.1415926535897932384626433832795
 #define ENV_MISS_IDX 0
@@ -137,7 +139,10 @@ void main()
     const vec3 lightEmittance = vec3(light.emittance); // emittance per point
     const float lightArea = getLightArea();
 
-    const vec3 color = material._baseColorFactor.xyz;
+    const TextureParameter baseColorTexture = material._baseColorTexture;
+    const vec4 baseColor = texture(sampler2D(textures[nonuniformEXT(baseColorTexture)], linearSampler), vec2(u, v));
+
+    vec3 color = material._baseColorFactor.xyz;
     const float metallic = clamp(gCustomData.metallic, 0.0, 1.0);
     const float roughness = clamp(gCustomData.roughness, MIRROR_ROUGH, 1.0);
     const float alpha = roughness * roughness;

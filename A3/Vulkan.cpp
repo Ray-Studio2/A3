@@ -209,7 +209,7 @@ static bool IsExtensionAvailable( const std::vector<VkExtensionProperties>& prop
 ////////////////////////////////////////////////
 
 #define TEXTUREBINDLESS_BINDING_LOCATION 10
-#define TEXTUREBINDLESS_BINDING_MAX_COUNT 1024
+#define TEXTUREBINDLESS_BINDING_MAX_COUNT 10
 
 void VulkanRenderBackend::beginFrame( int32 screenWidth, int32 screenHeight )
 {
@@ -598,9 +598,10 @@ std::vector<const char*> deviceExtensions = {
 
     VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME,
     VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME, // not used
-    //VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME,
+    VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME,
     VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
     //VK_KHR_RAY_QUERY_EXTENSION_NAME,
+    //"VK_EXT_samplerless_texture_functions",
 
     VK_KHR_SPIRV_1_4_EXTENSION_NAME, // not used
     VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME,
@@ -665,10 +666,10 @@ void VulkanRenderBackend::createVkQueueFamily()
         .bufferDeviceAddress = VK_TRUE,
     };
 
-    //VkPhysicalDeviceRayQueryFeaturesKHR rqFeat{
-    //.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_QUERY_FEATURES_KHR,
-    //.rayQuery = VK_TRUE
-    //};
+    VkPhysicalDeviceRayQueryFeaturesKHR rqFeat{
+    .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_QUERY_FEATURES_KHR,
+    .rayQuery = VK_TRUE
+    };
 
     VkPhysicalDeviceAccelerationStructureFeaturesKHR asFeat{
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR,
@@ -737,7 +738,7 @@ void VulkanRenderBackend::createVkDescriptorPools()
         { VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 1000 },
         { VK_DESCRIPTOR_TYPE_SAMPLER, 1000 },
         { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1000 },
-        { VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, TEXTUREBINDLESS_BINDING_MAX_COUNT },
+        { VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1000 },
         { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1000 },
         { VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 1000 },
         { VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER, 1000 },
@@ -2178,7 +2179,7 @@ IRenderPipelineRef VulkanRenderBackend::createRayTracingPipeline( const Raytraci
     textureBindlessBinding.stageFlags = getVulkanShaderStage(EShaderStage::SS_ClosestHit);
     bindings[bindings.size() - 1] = textureBindlessBinding;
     
-    VkDescriptorBindingFlags textureBindingFlags = VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT; // VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT
+    VkDescriptorBindingFlags textureBindingFlags = VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT;
     std::vector<VkDescriptorBindingFlags> bindingFlags(bindings.size(), 0);
     bindingFlags[bindingFlags.size() - 1] = textureBindingFlags;
 
@@ -2187,10 +2188,13 @@ IRenderPipelineRef VulkanRenderBackend::createRayTracingPipeline( const Raytraci
     extendedInfo.bindingCount = bindingFlags.size();
     extendedInfo.pBindingFlags = bindingFlags.data();
 
+    VkDescriptorSetLayoutCreateFlags flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT;
+
     VkDescriptorSetLayoutCreateInfo descriptorLayoutCreateInfo
     {
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
         .pNext = &extendedInfo, 
+        .flags = flags, 
         .bindingCount = ( uint32 )bindings.size(),
         .pBindings = bindings.data(),
     };
@@ -2271,7 +2275,7 @@ IRenderPipelineRef VulkanRenderBackend::createRayTracingPipeline( const Raytraci
         .descriptorSetCount = 1,
         .pSetLayouts = &outPipeline->descriptorSetLayout,
 	};
-    vkAllocateDescriptorSets( device, &allocateInfo, &outPipeline->descriptorSet );
+    result = vkAllocateDescriptorSets( device, &allocateInfo, &outPipeline->descriptorSet );
 
     {
         struct ScopedWriteDescriptorSets

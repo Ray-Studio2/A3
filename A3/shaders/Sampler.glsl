@@ -159,3 +159,30 @@ mat3 rotateY(float angle) {
         s, 0.0, c
     );
 }
+
+/////////////////////////////////////////////////////////////////////////////////////////////
+
+vec4 getEnvImportanceData(uint x, uint y)
+{
+    return texelFetch( envImportanceData, ivec2( x, y ), 0 );
+}
+
+vec3 sampleEnvDirection(uvec2 pixel, uint sampleIndex, uint depth, out float pdf)
+{
+    ivec2 texSize = textureSize(environmentMap, 0);
+    uint width = texSize.x;
+    uint height = texSize.y;
+
+    uint x = random2( pixel, sampleIndex, depth, 1 ) & ( width - 1 );   // random % width
+    uint y = random2( pixel, sampleIndex, depth, 0 ) & ( height - 1 );  // random % height
+    vec4 pixelValue = getEnvImportanceData(x, y);
+    pdf = max(pixelValue.w, 1e-6);
+
+    vec3 dir = pixelValue.xyz;
+    float rot = gImguiParam.envmapRotDeg * (PI / 180.0);
+    dir = rotateY(-rot) * dir;
+
+    // @TODO: pre-calculate on cpu
+    return normalize( dir );
+}
+

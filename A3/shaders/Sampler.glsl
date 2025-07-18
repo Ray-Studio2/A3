@@ -191,7 +191,7 @@ vec2 getUVfromRay(vec3 rayDir) {
     rayDir = rotateY(rot) * rayDir; // envmap을 회전하는 것과 같음 (역방향 회전)
 
     return vec2(
-        fract(atan(rayDir.z, rayDir.x) / (2.0 * PI)), // [−0.5,0.5) → [0,1)
+        atan(rayDir.z, rayDir.x) / (2.0 * PI),
         acos(clamp(rayDir.y, -1.0, 1.0)) / PI
     );
 }

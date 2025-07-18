@@ -5,7 +5,7 @@ struct RayPayload
     vec3 desiredPosition;
     uint depth;
     uint rngState;
-    float envPDF;
+    float pdfBRDF;
     float visibility;
 };
 

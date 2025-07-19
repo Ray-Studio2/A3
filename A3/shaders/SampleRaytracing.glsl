@@ -9,7 +9,7 @@
 #define PI 3.1415926535897932384626433832795
 #define ENV_MISS_IDX 0
 #define SHADOW_MISS_IDX 1
-#define MIRROR_ROUGH 0.04
+#define MIRROR_ROUGH 0.015
 #define INF_CLAMP 1e30
 
 #include "shaders/SharedStructs.glsl"
@@ -605,7 +605,7 @@ void main()
 	for (uint i=0; i < numSampleByDepth; ++i)
 	{
         float pdfEnv;
-        vec3 rayDir = sampleEnvDirection(gl_LaunchIDEXT.xy, i + gPayload.rngState, gPayload.depth, pdfEnv);
+        vec3 rayDir = sampleEnvDirection(gPayload.rngState, pdfEnv);
         
 		gPayload.rayDirection = rayDir;
         gPayload.visibility = 1.0;
@@ -758,13 +758,9 @@ void main()
     // get envmap pdf for MIS
     if (gPayload.depth > 0)
     {
-        const ivec2 texSize = textureSize(environmentMap, 0);
-        const uint width = texSize.x;
-        const uint height = texSize.y;
-
         const vec2 uv = getUVfromRay(gPayload.rayDirection);
-        const vec4 pixelValue = getPixelValue(uint(uv.x * width), uint(uv.y * height));
-        const float pdfEnv = max(pixelValue.w, 1e-6);
+        const vec4 pixelValue = getPixelValue(uv.x, uv.y);
+        const float pdfEnv = pixelValue.w;
         
         weight = powerHeuristic(gPayload.pdfBRDF, pdfEnv);
     }

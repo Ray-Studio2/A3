@@ -159,6 +159,7 @@ private:
     VkImage envImportanceImage;
     VkDeviceMemory envImportanceMem;
     VkImageView envImportanceView;
+    VkSampler envImportanceSampler;
 
     VkImage outImage;
     VkDeviceMemory outImageMem;

@@ -180,7 +180,7 @@ void VulkanRenderBackend::endFrame()
 void VulkanRenderBackend::beginRaytracingPipeline( IRenderPipeline* inPipeline )
 {
     VulkanPipeline* pipeline = static_cast< VulkanPipeline* >( inPipeline );
-    
+
     // Update uniform buffer (including frame count)
     updateCameraBuffer();
 
@@ -335,30 +335,30 @@ VKAPI_ATTR VkBool32 VKAPI_CALL VulkanRenderBackend::debugCallback(
     }
 
     std::cout << "[Debug]" << severity << types << pCallbackData->pMessage << std::endl;
-    
+
     // Print additional information for errors
     if (messageSeverity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) {
         std::cout << "  Message ID: " << pCallbackData->pMessageIdName << std::endl;
         std::cout << "  Message ID Number: " << pCallbackData->messageIdNumber << std::endl;
-        
+
         if (pCallbackData->queueLabelCount > 0) {
             std::cout << "  Queue Labels:" << std::endl;
             for (uint32_t i = 0; i < pCallbackData->queueLabelCount; i++) {
                 std::cout << "    " << pCallbackData->pQueueLabels[i].pLabelName << std::endl;
             }
         }
-        
+
         if (pCallbackData->cmdBufLabelCount > 0) {
             std::cout << "  Command Buffer Labels:" << std::endl;
             for (uint32_t i = 0; i < pCallbackData->cmdBufLabelCount; i++) {
                 std::cout << "    " << pCallbackData->pCmdBufLabels[i].pLabelName << std::endl;
             }
         }
-        
+
         if (pCallbackData->objectCount > 0) {
             std::cout << "  Objects:" << std::endl;
             for (uint32_t i = 0; i < pCallbackData->objectCount; i++) {
-                std::cout << "    Type: " << pCallbackData->pObjects[i].objectType 
+                std::cout << "    Type: " << pCallbackData->pObjects[i].objectType
                           << ", Handle: " << pCallbackData->pObjects[i].objectHandle;
                 if (pCallbackData->pObjects[i].pObjectName) {
                     std::cout << ", Name: " << pCallbackData->pObjects[i].pObjectName;
@@ -366,13 +366,13 @@ VKAPI_ATTR VkBool32 VKAPI_CALL VulkanRenderBackend::debugCallback(
                 std::cout << std::endl;
             }
         }
-        
+
         // Break on error for debugging
         #ifdef _DEBUG
         // __debugbreak();
         #endif
     }
-    
+
     return VK_FALSE;
 }
 
@@ -454,9 +454,9 @@ void VulkanRenderBackend::createVkInstance( std::vector<const char*>& extensions
 
     VkDebugUtilsMessengerCreateInfoEXT debugCreateInfo{
         .sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
-        .messageSeverity = /*VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT | 
-                           VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT |*/ 
-                           VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | 
+        .messageSeverity = /*VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT |
+                           VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT |*/
+                           VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
                            VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT,
         .messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT,
         .pfnUserCallback = debugCallback,
@@ -688,7 +688,7 @@ void VulkanRenderBackend::createVkDescriptorPools()
         vkCreateDescriptorPool( device, &pool_info, allocator, &descriptorPool );
     }
 }
- 
+
 void VulkanRenderBackend::createSwapChain()
 {
     VkSurfaceCapabilitiesKHR capabilities;
@@ -1443,9 +1443,9 @@ IAccelerationStructureRef VulkanRenderBackend::createBLAS( const BLASBuildParams
 
     std::tie(outBlas->vertexPositionBuffer, vertexPositionBufferMem ) = createBuffer(
         positionData.size() * sizeof( VertexPosition ),
-        VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | 
-        VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | 
-        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | 
+        VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
+        VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR |
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
         VK_BUFFER_USAGE_TRANSFER_DST_BIT,
         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT );
 
@@ -1626,7 +1626,7 @@ void VulkanRenderBackend::createTLAS( const std::vector<BLASBatch*>& batches )
         VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
         VK_BUFFER_USAGE_TRANSFER_DST_BIT,
         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-    
+
     vkMapMemory(device, objectBufferMem, 0, objectDescBufferSize, 0, &dst);
     for( int32 batchIndex = 0, objectIndex = 0; batchIndex < batches.size(); ++batchIndex )
     {
@@ -1849,29 +1849,36 @@ void VulkanRenderBackend::createAccumulationImage()
 void VulkanRenderBackend::createUniformBuffer()
 {
     {
-        struct Data
+        struct alignas(16) Data
         {
-            float cameraPos[3];
-            float yFov_degree;
-            float exposure;
-            uint32 frameCount;
-            uint32 padding[2];
+            alignas(16) Vec3 camPos;
+            alignas(16) Vec3 camFront;
+
+            float yFov_degree{ };
+            float exposure{ };
+            uint32 frameCount{ };
+            uint32 padding{ };
         } dataSrc;
+
+        auto camera = tempScenePointer->getCamera();
+
+        dataSrc = {
+            .camPos   = camera->getWorldPosition(),
+            .camFront = camera->getFront(),
+
+            .yFov_degree = camera->getFov(),
+            .exposure    = camera->getExposure(),
+            .frameCount  = currentFrameCount
+        };
 
         std::tie(cameraBuffer, cameraBufferMem) = createBuffer(
             sizeof(dataSrc),
             VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
             VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 
-        CameraObject* co = tempScenePointer->getCamera();
-        const Vec3& pos = co->getWorldPosition();
-        float cameraPos[3] = { pos.x, pos.y, pos.z };
-        float fov = co->getFov();
-        float exposure = co->getExposure();
-
         void* dst;
         vkMapMemory(device, cameraBufferMem, 0, sizeof(dataSrc), 0, &dst);
-        *(Data*)dst = { cameraPos[0], cameraPos[1], cameraPos[2], fov, exposure, currentFrameCount };
+        *(Data*)dst = dataSrc;
         vkUnmapMemory(device, cameraBufferMem);
     }
 
@@ -1906,12 +1913,12 @@ void VulkanRenderBackend::createLightBuffer()
     const size_t maxLights = RenderSettings::maxLightCounts;
     const size_t lightDataSize = sizeof(LightData);
     const size_t bufferSize = sizeof(LightHeaderData) + lightDataSize * maxLights; // header + lights
-    
+
     std::tie( lightBuffer, lightBufferMem ) = createBuffer(
         bufferSize,
         VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT );
-    
+
     // Initialize with zero lights
     void* dst;
     vkMapMemory( device, lightBufferMem, 0, bufferSize, 0, &dst );
@@ -1932,14 +1939,14 @@ void VulkanRenderBackend::updateLightBuffer( const std::vector<LightData>& light
         uint32 pad3;
         // LightData array follows
     };
-    
+
     const size_t headerSize = sizeof(LightHeaderData);
     const size_t lightSize = sizeof(LightData) * lights.size();
     const size_t bufferSize = headerSize + lightSize;
-    
+
     void* dst;
     vkMapMemory( device, lightBufferMem, 0, bufferSize, 0, &dst );
-    
+
     // Write header
     LightHeaderData* header = (LightHeaderData*)dst;
     for (int i = 0; i < lights.size(); ++i)
@@ -1948,36 +1955,43 @@ void VulkanRenderBackend::updateLightBuffer( const std::vector<LightData>& light
     header->pad1 = 0;
     header->pad2 = 0;
     header->pad3 = 0;
-    
+
     // Write light data
     LightData* dstLights = (LightData*)(static_cast<uint8_t*>(dst) + headerSize);
 
     std::memcpy(dstLights, lights.data(), lightSize);
-    
+
     vkUnmapMemory( device, lightBufferMem );
 }
 
 void VulkanRenderBackend::updateCameraBuffer()
 {
     {
-        struct Data
+        struct alignas(16) Data
         {
-            float cameraPos[3];
-            float yFov_degree;
-            float exposure;
-            uint32 frameCount;
-            uint32 padding[2];
+            alignas(16) Vec3 camPos;
+            alignas(16) Vec3 camFront;
+
+            float yFov_degree{ };
+            float exposure{ };
+            uint32 frameCount{ };
+            uint32 padding{ };
         } dataSrc;
 
-        CameraObject* co = tempScenePointer->getCamera();
-        const Vec3& pos = co->getWorldPosition();
-        float cameraPos[3] = { pos.x, pos.y, pos.z };
-        float fov = co->getFov();
-        float exposure = co->getExposure();
+        auto camera = tempScenePointer->getCamera();
+
+        dataSrc = {
+            .camPos   = camera->getWorldPosition(),
+            .camFront = camera->getFront(),
+
+            .yFov_degree = camera->getFov(),
+            .exposure    = camera->getExposure(),
+            .frameCount  = currentFrameCount
+        };
 
         void* dst;
         vkMapMemory(device, cameraBufferMem, 0, sizeof(dataSrc), 0, &dst);
-        *(Data*)dst = { cameraPos[0], cameraPos[1], cameraPos[2], fov, exposure, currentFrameCount };
+        *(Data*)dst = dataSrc;
         vkUnmapMemory(device, cameraBufferMem);
     }
 }
@@ -2080,7 +2094,7 @@ IRenderPipelineRef VulkanRenderBackend::createRayTracingPipeline( const Raytraci
     vkCreatePipelineLayout( device, &pipelineLayoutCreateInfo, nullptr, &outPipeline->pipelineLayout );
 
     //==========================================================
-    // Pipeline 
+    // Pipeline
     //==========================================================
     std::vector<VkPipelineShaderStageCreateInfo> stages( psoDesc.shaders.size() );
     std::vector<VkRayTracingShaderGroupCreateInfoKHR> groups;
@@ -2137,7 +2151,7 @@ IRenderPipelineRef VulkanRenderBackend::createRayTracingPipeline( const Raytraci
     vkCreateRayTracingPipelinesKHR( device, VK_NULL_HANDLE, VK_NULL_HANDLE, 1, &pipelineCreateInfo, nullptr, &outPipeline->pipeline );
 
     //==========================================================
-    // Descriptor set 
+    // Descriptor set
     //==========================================================
 	VkDescriptorSetAllocateInfo allocateInfo
     {
@@ -2168,15 +2182,15 @@ IRenderPipelineRef VulkanRenderBackend::createRayTracingPipeline( const Raytraci
         }
 
         // @TODO: Move to scene level
-        std::vector<VkBuffer> storageBuffers = 
-        { 
+        std::vector<VkBuffer> storageBuffers =
+        {
             nullptr, nullptr,
             cameraBuffer, objectBuffer,
             lightBuffer, nullptr, nullptr, imguiBuffer
         };
 
         std::vector<VkWriteDescriptorSet> validDescriptors;
-        
+
         for( int32 index = 0; index < bindings.size(); ++index )
         {
             const VkDescriptorSetLayoutBinding& binding = bindings[ index ];
@@ -2205,7 +2219,7 @@ IRenderPipelineRef VulkanRenderBackend::createRayTracingPipeline( const Raytraci
             {
                 // binding 1 is output image, binding 5 is accumulation image
                 VkImageView imageView = (index == 1) ? outImageView : accumulationImageView;
-                
+
                 writeDescriptorSets.images.emplace_back(
                     VkDescriptorImageInfo
                     {
@@ -2224,7 +2238,7 @@ IRenderPipelineRef VulkanRenderBackend::createRayTracingPipeline( const Raytraci
                     // Skip this descriptor for now
                     continue;
                 }
-                
+
                 writeDescriptorSets.buffers.emplace_back(
                     VkDescriptorBufferInfo
                     {
@@ -2248,7 +2262,7 @@ IRenderPipelineRef VulkanRenderBackend::createRayTracingPipeline( const Raytraci
 
                 descriptor.pImageInfo = &writeDescriptorSets.images.back();
             }
-            
+
             validDescriptors.push_back(descriptor);
         }
 
@@ -2258,7 +2272,7 @@ IRenderPipelineRef VulkanRenderBackend::createRayTracingPipeline( const Raytraci
     }
 
     //==========================================================
-    // Shader binding table 
+    // Shader binding table
     //==========================================================
     struct ShaderGroupHandle
     {
@@ -2279,9 +2293,9 @@ IRenderPipelineRef VulkanRenderBackend::createRayTracingPipeline( const Raytraci
     const uint32 handleSize = RenderSettings::shaderGroupHandleSize;
     const uint32 groupCount = static_cast<uint32>( groups.size() ); // 1 raygen, 2 miss, 1 hit group
     std::vector<ShaderGroupHandle> handles( groupCount );
-    vkGetRayTracingShaderGroupHandlesKHR( device, outPipeline->pipeline, 
-                                          0, groupCount, 
-                                          handleSize*groupCount, 
+    vkGetRayTracingShaderGroupHandlesKHR( device, outPipeline->pipeline,
+                                          0, groupCount,
+                                          handleSize*groupCount,
                                           handles.data() );
     ShaderGroupHandle rgenHandle = handles[ 0 ];
     ShaderGroupHandle missHandle = handles[ 1 ];
@@ -2357,11 +2371,11 @@ void VulkanRenderBackend::saveCurrentImage(const std::string& filename)
 {
     // Wait for rendering to complete
     vkDeviceWaitIdle(device);
-    
+
     // Get image dimensions
     uint32_t width = swapChainImageExtent.width;
     uint32_t height = swapChainImageExtent.height;
-    
+
     // Create staging buffer for image data
     VkDeviceSize imageSize = width * height * 4; // RGBA8
     auto [stagingBuffer, stagingBufferMem] = createBuffer(
@@ -2369,23 +2383,23 @@ void VulkanRenderBackend::saveCurrentImage(const std::string& filename)
         VK_BUFFER_USAGE_TRANSFER_DST_BIT,
         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
     );
-    
+
     // Create command buffer for copy operation
     VkCommandBufferAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
     allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
     allocInfo.commandPool = commandPools[imageIndex];
     allocInfo.commandBufferCount = 1;
-    
+
     VkCommandBuffer cmdBuffer;
     vkAllocateCommandBuffers(device, &allocInfo, &cmdBuffer);
-    
+
     VkCommandBufferBeginInfo beginInfo{};
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-    
+
     vkBeginCommandBuffer(cmdBuffer, &beginInfo);
-    
+
     // Transition image layout for transfer
     VkImageMemoryBarrier barrier{};
     barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
@@ -2401,7 +2415,7 @@ void VulkanRenderBackend::saveCurrentImage(const std::string& filename)
     barrier.subresourceRange.layerCount = 1;
     barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
     barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-    
+
     vkCmdPipelineBarrier(
         cmdBuffer,
         VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
@@ -2411,7 +2425,7 @@ void VulkanRenderBackend::saveCurrentImage(const std::string& filename)
         0, nullptr,
         1, &barrier
     );
-    
+
     // Copy image to buffer
     VkBufferImageCopy region{};
     region.bufferOffset = 0;
@@ -2423,7 +2437,7 @@ void VulkanRenderBackend::saveCurrentImage(const std::string& filename)
     region.imageSubresource.layerCount = 1;
     region.imageOffset = {0, 0, 0};
     region.imageExtent = {width, height, 1};
-    
+
     vkCmdCopyImageToBuffer(
         cmdBuffer,
         outImage,
@@ -2432,13 +2446,13 @@ void VulkanRenderBackend::saveCurrentImage(const std::string& filename)
         1,
         &region
     );
-    
+
     // Transition back to general layout
     barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
     barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
     barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
     barrier.dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-    
+
     vkCmdPipelineBarrier(
         cmdBuffer,
         VK_PIPELINE_STAGE_TRANSFER_BIT,
@@ -2448,27 +2462,27 @@ void VulkanRenderBackend::saveCurrentImage(const std::string& filename)
         0, nullptr,
         1, &barrier
     );
-    
+
     vkEndCommandBuffer(cmdBuffer);
-    
+
     VkSubmitInfo submitInfo{};
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers = &cmdBuffer;
-    
+
     vkQueueSubmit(graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
     vkQueueWaitIdle(graphicsQueue);
-    
+
     vkFreeCommandBuffers(device, commandPools[imageIndex], 1, &cmdBuffer);
-    
+
     // Map buffer and save to file
     void* data;
     vkMapMemory(device, stagingBufferMem, 0, imageSize, 0, &data);
-    
+
     // Convert BGRA to RGBA for stb_image_write
     uint8_t* pixels = (uint8_t*)data;
     std::vector<uint8_t> rgbaData(width * height * 4);
-    
+
     for (uint32_t y = 0; y < height; y++) {
         for (uint32_t x = 0; x < width; x++) {
             uint32_t idx = (y * width + x) * 4;
@@ -2480,7 +2494,7 @@ void VulkanRenderBackend::saveCurrentImage(const std::string& filename)
             rgbaData[outIdx + 3] = pixels[idx + 3]; // A
         }
     }
-    
+
     // Save as PNG
     std::string folder = "output_images";
     std::string path = folder + "/" + filename;
@@ -2494,9 +2508,9 @@ void VulkanRenderBackend::saveCurrentImage(const std::string& filename)
     } else {
         printf("Failed to save image: %s\n", path.c_str());
     }
-    
+
     vkUnmapMemory(device, stagingBufferMem);
-    
+
     // Cleanup
     vkDestroyBuffer(device, stagingBuffer, nullptr);
     vkFreeMemory(device, stagingBufferMem, nullptr);

@@ -109,13 +109,16 @@ float pdfGGXVNDF(vec3 normal, vec3 viewDir, vec3 halfDir, float alpha)
     float D = GGX_D(normal, halfDir, alpha);
 
     float dotHV = max(dot(viewDir, halfDir), 1e-6);
+    float dotHN = max(dot(halfDir, normal), 1e-6);
     float dotNV = max(dot(viewDir, normal), 1e-6);
 
-    float num = G * D * dotHV;
+    // float num = G * D * dotHV;
+    float num = D * dotHN;
     float denom = dotNV;
     float pdf_h = num / denom;
 
-    return min(pdf_h / (4.0 * dotHV), INF_CLAMP);
+    // return min(pdf_h / (4.0 * dotHV), INF_CLAMP);
+    return min(num / (4.0 * dotHV), INF_CLAMP);
 }
 
 mat3 computeTBN(vec3 worldNormal)

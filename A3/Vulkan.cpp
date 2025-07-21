@@ -1280,8 +1280,8 @@ void VulkanRenderBackend::createEnvironmentMapImportanceSampling(float* pixels, 
             const uint32 x = xLow;
 
             // ---- UV to Direction ----
-            const float u = x / float( width - 1 );
-            const float v = y / float( height - 1 );
+            const float u = (x + 0.5) / float(width);
+            const float v = (y + 0.5) / float(height);
             const float phi = 2.0 * pi * u;
             const float theta = pi * v;
             const float sinTheta = sin( theta );
@@ -1368,6 +1368,18 @@ void VulkanRenderBackend::createEnvironmentMapImportanceSampling(float* pixels, 
         .subresourceRange = subresourceRange,
     };
     vkCreateImageView( device, &viewInfo, nullptr, &envImportanceView );
+
+    VkSamplerCreateInfo samplerInfo{
+    .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+    .magFilter = VK_FILTER_NEAREST,
+    .minFilter = VK_FILTER_NEAREST,
+    .mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST,
+    .addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+    .addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+    .addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+    .maxLod = FLT_MAX,
+    };
+    vkCreateSampler(device, &samplerInfo, nullptr, &envImportanceSampler);
 }
 
 uint32 VulkanRenderBackend::findMemoryType( uint32_t memoryTypeBits, VkMemoryPropertyFlags reqMemProps )
@@ -2384,7 +2396,7 @@ IRenderPipelineRef VulkanRenderBackend::createRayTracingPipeline( const Raytraci
             {
                 writeDescriptorSets.images.emplace_back(
                     VkDescriptorImageInfo{
-                        .sampler = envSampler,
+                        .sampler = index == 6 ? envSampler : envImportanceSampler,
                         .imageView = index == 6 ? envImageView : envImportanceView, // @TODO: decouple index based logic
                         .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
                     }

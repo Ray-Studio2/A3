@@ -151,9 +151,8 @@ mat3 rotateY(float angle) {
 
 /////////////////////////////////////////////////////////////////////////////////////////////
 
-vec4 getPixelValue(float x, float y)
-{
-    return texture(envImportanceData, vec2(x, y));
+float getEnvPdf(float x, float y) {
+    return texture(envHitPdf, vec2(x, y)).r;
 }
 
 vec3 sampleEnvDirection(inout uint rngState, out float pdf)
@@ -164,7 +163,7 @@ vec3 sampleEnvDirection(inout uint rngState, out float pdf)
 
     float x = random(rngState);
     float y = random(rngState);
-    vec4 pixelValue = getPixelValue(x, y);
+    vec4 pixelValue = texture(envImportanceData, vec2(x, y));
     pdf = pixelValue.w;
 
     vec3 dir = pixelValue.xyz;

@@ -12,12 +12,71 @@
 #include "PathTracingRenderer.h"
 #include "Addon_imgui.h"
 #include "Scene.h"
+#include "CameraObject.h"
 
 namespace A3
 {
 static void glfw_error_callback( int error, const char* description )
 {
     fprintf( stderr, "GLFW Error %d: %s\n", error, description );
+}
+
+// TODO: apply delta-time to calibrate camera movement speed
+void updateInput(GLFWwindow* window, Scene& scene) {
+    static bool mouseRightPressed = false;
+    static double prevCursorPosX{ }, prevCursorPosY{ };
+
+    int rightButtonState = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT);
+
+    if (rightButtonState == GLFW_PRESS && !mouseRightPressed) {
+        glfwGetCursorPos(window, &prevCursorPosX, &prevCursorPosY);
+        glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_HIDDEN);
+        mouseRightPressed = true;
+    }
+    else if (rightButtonState == GLFW_RELEASE && mouseRightPressed) {
+        glfwSetCursorPos(window, prevCursorPosX, prevCursorPosY);
+        glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+        mouseRightPressed = false;
+    }
+
+    if (rightButtonState) {
+        CameraObject* camera = scene.getCamera();
+
+        if (glfwGetKey(window, GLFW_KEY_W)) {
+            camera->move(GLFW_KEY_W);
+            scene.markBufferUpdated();
+        }
+        if (glfwGetKey(window, GLFW_KEY_A)) {
+            camera->move(GLFW_KEY_A);
+            scene.markBufferUpdated();
+        }
+        if (glfwGetKey(window, GLFW_KEY_S)) {
+            camera->move(GLFW_KEY_S);
+            scene.markBufferUpdated();
+        }
+        if (glfwGetKey(window, GLFW_KEY_D)) {
+            camera->move(GLFW_KEY_D);
+            scene.markBufferUpdated();
+        }
+
+        static const float camSens = 0.1f;
+        static const float RAD = 0.017453f;
+
+        static double x{ }, y{ };
+        static float dx{ }, dy{ };
+
+        glfwGetCursorPos(window, &x, &y);
+
+        dx = (static_cast<float>(x) - static_cast<float>(prevCursorPosX)) * camSens * RAD;
+        dy = (static_cast<float>(prevCursorPosY) - static_cast<float>(y)) * camSens * RAD;
+
+        if (!floatEqual(dx, 0.0f) || !floatEqual(dy, 0.0f)) {
+            camera->rotateView(dx, dy);
+
+            glfwSetCursorPos(window, prevCursorPosX, prevCursorPosY);
+            scene.markBufferUpdated();
+        }
+    }
 }
 
 void Engine::Run()
@@ -59,6 +118,7 @@ void Engine::Run()
         while( !glfwWindowShouldClose( window ) )
         {
             glfwPollEvents();
+            updateInput(window, scene);
 
             scene.beginFrame();
 

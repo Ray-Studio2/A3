@@ -3,6 +3,8 @@ layout( binding = 1, rgba8 ) uniform image2D image;
 layout( binding = 2 ) uniform CameraProperties
 {
     vec3 cameraPos;
+    vec3 cameraFront;
+
     float yFov_degree;
     float exposure;
     uint currentFrame;
@@ -39,6 +41,7 @@ layout( binding = 7 ) uniform imguiParam {
 } gImguiParam;
 
 layout(binding = 8) uniform sampler2D envImportanceData;
+layout( binding = 11 ) uniform sampler2D envHitPdf;
 
 layout(binding = 9) uniform sampler linearSampler;
 

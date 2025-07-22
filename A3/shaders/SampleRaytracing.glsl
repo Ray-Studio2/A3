@@ -28,27 +28,27 @@
 layout(location = 0) rayPayloadEXT RayPayload gPayload;
 void main()
 {
-    const vec3 cameraX = vec3( 1, 0, 0 );
-    const vec3 cameraY = vec3( 0, -1, 0 );
-    const vec3 cameraZ = vec3( 0, 0, -1 );
+    const vec3 cameraZ = g.cameraFront;
+    const vec3 cameraX = normalize(cross(cameraZ, vec3(0.0, 1.0, 0.0)));
+    const vec3 cameraY = -cross(cameraX, cameraZ);
     const float aspect_y = tan( radians( g.yFov_degree ) * 0.5 );
     const float aspect_x = aspect_y * float( gl_LaunchSizeEXT.x ) / float( gl_LaunchSizeEXT.y );
-    
+
     // Better random seed generation
     uint pixelIndex = gl_LaunchIDEXT.y * gl_LaunchSizeEXT.x + gl_LaunchIDEXT.x;
     uint seed = pixelIndex;
     if (gImguiParam.isProgressive != 0u)
         seed = pixelIndex + g.currentFrame * 1664525u;
     uint rngState = pcg_hash(seed);
-    
+
     // Anti-aliasing jitter
     float r1 = random(rngState);
     float r2 = random(rngState);
-    
+
     const vec2 screenCoord = vec2( gl_LaunchIDEXT.xy ) + vec2( r1, r2 );
     const vec2 ndc = screenCoord / vec2( gl_LaunchSizeEXT.xy ) * 2.0 - 1.0;
     vec3 rayDir = ndc.x * aspect_x * cameraX + ndc.y * aspect_y * cameraY + cameraZ;
-    
+
     // Initialize payload for path tracing
     gPayload.radiance = vec3( 0.0 );
     gPayload.depth = 0;
@@ -57,7 +57,7 @@ void main()
     gPayload.rayDirection = normalize(rayDir);
     gPayload.pdfBRDF = 0.0;
     gPayload.visibility = 1.0;
-    
+
     // Single ray per pixel per frame
     traceRayEXT(
        topLevelAS,
@@ -65,9 +65,9 @@ void main()
        0, 1, ENV_MISS_IDX,
        g.cameraPos, 0.0, rayDir, 100.0,
        0 );
-    
+
     vec3 currentSample = gPayload.radiance;
-    
+
     vec3 finalColor = currentSample;
     if ( gImguiParam.isProgressive != 0u ) {
         // Progressive accumulation
@@ -75,10 +75,10 @@ void main()
         if (g.currentFrame > 1) {
             previousAccumulation = imageLoad(accumulationImage, ivec2(gl_LaunchIDEXT.xy)).rgb;
         }
-        
+
         // Proper incremental average
         vec3 accumulated = (previousAccumulation * float(g.currentFrame - 1) + currentSample) / float(g.currentFrame);
-        
+
         // Store in accumulation buffer
         imageStore(accumulationImage, ivec2(gl_LaunchIDEXT.xy), vec4(accumulated, 1.0));
         finalColor = accumulated;
@@ -119,8 +119,8 @@ void main()
 
     IndexBuffer indexBuffer = IndexBuffer(objDesc.indexDeviceAddress);
     uint base = gl_PrimitiveID * 3u;
-    uvec3 index = uvec3(indexBuffer.i[base + 0], 
-                        indexBuffer.i[base + 1], 
+    uvec3 index = uvec3(indexBuffer.i[base + 0],
+                        indexBuffer.i[base + 1],
                         indexBuffer.i[base + 2]);
 
     PositionBuffer positionBuffer = PositionBuffer(objDesc.vertexPositionDeviceAddress);
@@ -162,7 +162,7 @@ void main()
 
     const float prob = mix(0.2, 0.8, roughness);
     const float probGGX = (1 - prob);
-    const float probCos = prob;    
+    const float probCos = prob;
 
     vec3 emit = vec3(0.0);
     if (gl_InstanceCustomIndexEXT == gLightBuffer.lightIndex[0])
@@ -211,8 +211,8 @@ void main()
             pdfGGXVal = probGGX * pdfGGXVal;
             pdfCosineVal = probCos * pdfCosineVal;
 
-            weight = isGGX ? powerHeuristic(pdfGGXVal, pdfCosineVal) 
-                            : powerHeuristic(pdfCosineVal, pdfGGXVal);   
+            weight = isGGX ? powerHeuristic(pdfGGXVal, pdfCosineVal)
+                            : powerHeuristic(pdfCosineVal, pdfGGXVal);
             pdfSel = isGGX ? pdfGGXVal : pdfCosineVal;
             // Cook-Torrance BRDF
             brdf = calculateBRDF(worldNormal, viewDir, rayDir, halfDir, color, metallic, alpha);
@@ -224,7 +224,7 @@ void main()
                 gl_RayFlagsOpaqueEXT, 0xff,         // rayFlags, cullMask
                 0, 1, SHADOW_MISS_IDX,              // sbtRecordOffset, sbtRecordStride, missIndex
                 worldPos, 0.0001, rayDir, 100.0,  	// origin, tmin, direction, tmax
-                0);                                 // payload 
+                0);                                 // payload
             gPayload.depth = tempDepth;
 
             const float cos_p = max(dot(worldNormal, rayDir), 1e-6);
@@ -258,8 +258,8 @@ void main()
     IndexBuffer indexBuffer = IndexBuffer(objDesc.indexDeviceAddress);
 
     uint base = gl_PrimitiveID * 3u;
-    uvec3 index = uvec3(indexBuffer.i[base + 0], 
-                        indexBuffer.i[base + 1], 
+    uvec3 index = uvec3(indexBuffer.i[base + 0],
+                        indexBuffer.i[base + 1],
                         indexBuffer.i[base + 2]);
 
     PositionBuffer positionBuffer = PositionBuffer(objDesc.vertexPositionDeviceAddress);
@@ -320,11 +320,11 @@ void main()
 		uint triangleIdx = binarySearchTriangleIdx(lightArea, gPayload.rngState);
 
 		vec3 pointOnTriangle, normalOnTriangle, pointOnTriangleWorld, normalOnTriangleWorld;
-		uniformSamplePointOnTriangle(triangleIdx, 
-									 pointOnTriangle, 
-									 normalOnTriangle, 
-									 pointOnTriangleWorld, 
-									 normalOnTriangleWorld, 
+		uniformSamplePointOnTriangle(triangleIdx,
+									 pointOnTriangle,
+									 normalOnTriangle,
+									 pointOnTriangleWorld,
+									 normalOnTriangleWorld,
                                      gPayload.rngState);
 
 		vec3 shadowRayDir = normalize(pointOnTriangleWorld - worldPos);
@@ -338,7 +338,7 @@ void main()
             worldPos, 0.001f, shadowRayDir, 100.0,  // origin, tmin, direction, tmax
             0);                                  // payload
 
-        float visibility = 0.0;    
+        float visibility = 0.0;
         if (length(gPayload.desiredPosition - pointOnTriangleWorld) < 0.0001)
             visibility = 1.0;
 
@@ -393,7 +393,7 @@ void main()
 
             pdfGGXVal = pdfGGXVNDF(worldNormal, viewDir, halfDir, alpha);
             pdfCosineVal = max(dot(worldNormal, rayDir), 1e-6) / PI;
-        } 
+        }
         else {
             rayDir = RandomCosineHemisphere(worldNormal, seed);
             pdfCosineVal = max(dot(worldNormal, rayDir), 1e-6) / PI;
@@ -405,8 +405,8 @@ void main()
         pdfGGXVal = probGGX * pdfGGXVal;
         pdfCosineVal = probCos * pdfCosineVal;
 
-        weight = isGGX ? powerHeuristic(pdfGGXVal, pdfCosineVal) 
-                        : powerHeuristic(pdfCosineVal, pdfGGXVal);   
+        weight = isGGX ? powerHeuristic(pdfGGXVal, pdfCosineVal)
+                        : powerHeuristic(pdfCosineVal, pdfGGXVal);
 
         pdfSel = isGGX ? pdfGGXVal : pdfCosineVal;
         brdf = calculateBRDF(worldNormal, viewDir, rayDir, halfDir, color, metallic, alpha);
@@ -418,14 +418,14 @@ void main()
             gl_RayFlagsOpaqueEXT, 0xff,         // rayFlags, cullMask
             0, 1, SHADOW_MISS_IDX,              // sbtRecordOffset, sbtRecordStride, missIndex
             worldPos, 0.0001, rayDir, 100.0,  	// origin, tmin, direction, tmax
-            0);                                 // payload 
+            0);                                 // payload
         gPayload.depth = tempDepth;
 
         const float cos_p = max(dot(worldNormal, rayDir), 1e-6);
         tempRadianceI += brdf * gPayload.radiance * cos_p * weight / pdfSel;
 	}
 	tempRadianceI *= (1.0 / float(numSampleByDepth));
-    
+
 	gPayload.radiance = tempRadianceD + tempRadianceI;
 }
 #endif
@@ -451,8 +451,8 @@ void main()
 
     IndexBuffer indexBuffer = IndexBuffer(objDesc.indexDeviceAddress);
     uint base = gl_PrimitiveID * 3u;
-    uvec3 index = uvec3(indexBuffer.i[base + 0], 
-                        indexBuffer.i[base + 1], 
+    uvec3 index = uvec3(indexBuffer.i[base + 0],
+                        indexBuffer.i[base + 1],
                         indexBuffer.i[base + 2]);
 
     PositionBuffer positionBuffer = PositionBuffer(objDesc.vertexPositionDeviceAddress);
@@ -479,7 +479,7 @@ void main()
     const float roughness = clamp(gCustomData.roughness, MIRROR_ROUGH, 1.0);
     const float alpha = roughness * roughness;
     const vec3 viewDir = -gPayload.rayDirection;
-    
+
     // Adaptive probability based on roughness
     const float prob = mix(0.2, 0.8, roughness);
     const float probGGX = (1 - prob);
@@ -510,7 +510,7 @@ void main()
 
                 pdfGGXVal = pdfGGXVNDF(worldNormal, viewDir, halfDir, alpha);
                 pdfCosineVal = max(dot(worldNormal, rayDir), 1e-6) / PI;
-            } 
+            }
             else {
                 rayDir = RandomCosineHemisphere(worldNormal, seed);
                 pdfCosineVal = max(dot(worldNormal, rayDir), 1e-6) / PI;
@@ -518,7 +518,7 @@ void main()
                 halfDir = normalize(viewDir + rayDir);
                 pdfGGXVal = pdfGGXVNDF(worldNormal, viewDir, halfDir, alpha);
             }
-  
+
             const float pdfBRDF = probGGX * pdfGGXVal + probCos * pdfCosineVal;
             const vec3 brdf = calculateBRDF(worldNormal, viewDir, rayDir, halfDir, color, metallic, alpha);
 
@@ -530,7 +530,7 @@ void main()
                 gl_RayFlagsOpaqueEXT, 0xff,         // rayFlags, cullMask
                 0, 1, ENV_MISS_IDX,                 // sbtRecordOffset, sbtRecordStride, missIndex
                 worldPos, 0.0001, rayDir, 100.0,  	// origin, tmin, direction, tmax
-                0);                                 // payload 
+                0);                                 // payload
             gPayload.depth--;
 
             const float cos_p = max(dot(worldNormal, rayDir), 1e-6);
@@ -573,8 +573,8 @@ void main()
     IndexBuffer indexBuffer = IndexBuffer(objDesc.indexDeviceAddress);
 
     uint base = gl_PrimitiveID * 3u;
-    uvec3 index = uvec3(indexBuffer.i[base + 0], 
-                        indexBuffer.i[base + 1], 
+    uvec3 index = uvec3(indexBuffer.i[base + 0],
+                        indexBuffer.i[base + 1],
                         indexBuffer.i[base + 2]);
 
     PositionBuffer positionBuffer = PositionBuffer(objDesc.vertexPositionDeviceAddress);
@@ -619,7 +619,7 @@ void main()
     const vec3 viewDir = -gPayload.rayDirection;
 
 	//////////////////////////////////////////////////////////////// Direct Light
-	
+
 	vec3 tempRadianceD = vec3(0.0);
 	uint numSampleByDepth = (gPayload.depth == 0 ? gImguiParam.numSamples : 1);
 
@@ -627,7 +627,7 @@ void main()
 	{
         float pdfEnv;
         vec3 rayDir = sampleEnvDirection(gPayload.rngState, pdfEnv);
-        
+
 		gPayload.rayDirection = rayDir;
         gPayload.visibility = 1.0;
 		traceRayEXT(
@@ -636,7 +636,7 @@ void main()
             0xff,                               // cullMask
 			0, 1, SHADOW_MISS_IDX,              // sbtRecordOffset, sbtRecordStride, missIndex // miss shader should do nothing
 			worldPos, eps, rayDir, 100.0,  		// origin, tmin, direction, tmax
-			0);                                 // gPayload 
+			0);                                 // gPayload
 
         const vec3 emit = getEmitFromEnvmap(rayDir);
 
@@ -656,8 +656,8 @@ void main()
 
         tempRadianceD += brdf * emit * cos_p * gPayload.visibility * charFunc * w / pdfEnv;
 	}
-	tempRadianceD *= (1.0 / float(numSampleByDepth)); 
-	
+	tempRadianceD *= (1.0 / float(numSampleByDepth));
+
 	//////////////////////////////////////////////////////////////// Indirect Light
 
 	vec3 tempRadianceI = vec3(0.0);
@@ -687,7 +687,7 @@ void main()
 
             pdfGGXVal = pdfGGXVNDF(worldNormal, viewDir, halfDir, alpha);
             pdfCosineVal = cos_p / PI;
-        } 
+        }
         else {
             rayDir = RandomCosineHemisphere(worldNormal, seed);
             cos_p = max(dot(worldNormal, rayDir), 1e-6);
@@ -697,8 +697,14 @@ void main()
             pdfGGXVal = pdfGGXVNDF(worldNormal, viewDir, halfDir, alpha);
         }
 
+        pdfGGXVal = probGGX * pdfGGXVal;
+        pdfCosineVal = probCos * pdfCosineVal;
+
+        const float weight = isGGX ? powerHeuristic(pdfGGXVal, pdfCosineVal)
+                                   : powerHeuristic(pdfCosineVal, pdfGGXVal);
+
+        const float pdfBRDF = isGGX ? pdfGGXVal : pdfCosineVal;
         const vec3 brdf = calculateBRDF(worldNormal, viewDir, rayDir, halfDir, color, metallic, alpha);
-        const float pdfBRDF = probGGX * pdfGGXVal + probCos * pdfCosineVal;
 
 		gPayload.rayDirection = rayDir;
         gPayload.pdfBRDF = pdfBRDF;
@@ -708,13 +714,13 @@ void main()
 			gl_RayFlagsOpaqueEXT, 0xff,         // rayFlags, cullMask
 			0, 1, ENV_MISS_IDX,                 // sbtRecordOffset, sbtRecordStride, missIndex
 			worldPos, eps, rayDir, 100.0,  		// origin, tmin, direction, tmax
-			0);                                 // gPayload 
+			0);                                 // gPayload
 		gPayload.depth--;
 
-        tempRadianceI += brdf * gPayload.radiance * cos_p / pdfBRDF; // weighted for the last bounce
+        tempRadianceI += brdf * gPayload.radiance * cos_p * weight / pdfBRDF; // radiance weighted for the last bounce
 	}
-	tempRadianceI *= (1.0 / float(numSampleByDepth)); 
-    
+	tempRadianceI *= (1.0 / float(numSampleByDepth));
+
 	gPayload.radiance = tempRadianceD + tempRadianceI;
 }
 #endif
@@ -768,11 +774,11 @@ layout(location = 0) rayPayloadInEXT RayPayload gPayload;
 
 void main()
 {
-	if (gPayload.depth > gImguiParam.maxDepth) {
+	if (gPayload.depth >= gImguiParam.maxDepth) {
         gPayload.radiance = vec3(0.0);
 		return;
     }
-    
+
     const vec3 Le = getEmitFromEnvmap(gPayload.rayDirection);
 
     float weight = 1.0;
@@ -780,9 +786,7 @@ void main()
     if (gPayload.depth > 0)
     {
         const vec2 uv = getUVfromRay(gPayload.rayDirection);
-        const vec4 pixelValue = getPixelValue(uv.x, uv.y);
-        const float pdfEnv = pixelValue.w;
-        
+        const float pdfEnv = getEnvPdf(uv.x, uv.y);
         weight = powerHeuristic(gPayload.pdfBRDF, pdfEnv);
     }
     gPayload.radiance = weight * Le;

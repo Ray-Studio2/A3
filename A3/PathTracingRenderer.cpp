@@ -14,7 +14,7 @@ PathTracingRenderer::PathTracingRenderer( VulkanRenderBackend* inBackend )
 	: backend( inBackend )
     , samplePSO( new RaytracingPSO() )
 {
-    
+
 }
 
 PathTracingRenderer::~PathTracingRenderer() {}
@@ -34,7 +34,7 @@ void PathTracingRenderer::render( Scene& scene )
             backend->tempScenePointer = &scene;
             buildAccelerationStructure( scene );    // scene 전체가 바뀌면 build 다시해야함
             buildSamplePSO();                       // 얘도 scene 전체가 바뀌면 빌드 해줘야함
-            
+
             scene.cleanPosUpdated();
         }
         // Reset frame count when scene changes
@@ -47,10 +47,10 @@ void PathTracingRenderer::render( Scene& scene )
 
     // Increment frame count
     frameCount++;
-    
+
     // Pass frame count to backend
     backend->currentFrameCount = frameCount;
-    
+
     backend->beginRaytracingPipeline( samplePSO->pipeline.get() );
 }
 
@@ -106,6 +106,7 @@ void PathTracingRenderer::buildSamplePSO()
         environmentMiss.descriptors.emplace_back( SRD_ImageSampler, 6 );
         environmentMiss.descriptors.emplace_back( SRD_UniformBuffer, 7 ); // Imgui parameters
         environmentMiss.descriptors.emplace_back(SRD_ImageSampler, 8); // environmentMap Sampling
+        environmentMiss.descriptors.emplace_back( SRD_ImageSampler, 11 ); // environmentMap HitPos PDF
         ShaderDesc& closestHit = psoDesc.shaders[ 2 ];
         closestHit.descriptors.emplace_back( SRD_AccelerationStructure, 0 );
         closestHit.descriptors.emplace_back( SRD_StorageBuffer, 3 );
@@ -150,10 +151,10 @@ void PathTracingRenderer::buildAccelerationStructure( Scene& scene ) const
 void PathTracingRenderer::updateLightBuffer( const Scene& scene )
 {
     lights.clear();
-    
+
     // Collect all mesh objects that are lights
     std::vector<MeshObject*> meshObjects = scene.collectMeshObjects();
-    
+
     for( size_t i = 0; i < meshObjects.size(); ++i )
     {
         MeshObject* meshObj = meshObjects[i];
@@ -164,11 +165,11 @@ void PathTracingRenderer::updateLightBuffer( const Scene& scene )
             light.transform = meshObj->getLocalToWorld();
             light.emission = meshObj->getEmittance();
             light.triangleCount = meshObj->getResource()->triangleCount;
-            
+
             lights.push_back( light );
         }
     }
-    
+
     // Update light buffer in backend
     backend->updateLightBuffer( lights );
 }

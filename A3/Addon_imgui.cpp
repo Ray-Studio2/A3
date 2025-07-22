@@ -86,7 +86,7 @@ void Addon_imgui::CleanupVulkanWindow( VulkanRenderBackend* vulkan )
 
 static void FrameRender( VkDevice& device, VkQueue& gfxQueue, ImGui_ImplVulkanH_Window* wd, ImDrawData* draw_data )
 {
-    
+
 }
 
 Addon_imgui::Addon_imgui( GLFWwindow* window, VulkanRenderBackend* vulkan, int32 screenWidth, int32 screenHeight )
@@ -141,6 +141,7 @@ Addon_imgui::Addon_imgui( GLFWwindow* window, VulkanRenderBackend* vulkan, int32
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;         // Enable Docking
     io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;       // Enable Multi-Viewport / Platform Windows
+    io.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
     //io.ConfigViewportsNoAutoMerge = true;
     //io.ConfigViewportsNoTaskBarIcon = true;
 
@@ -301,7 +302,7 @@ void Addon_imgui::renderFrame( GLFWwindow* window, VulkanRenderBackend* vulkan, 
             };
 
             static bool autoSave = true;
-            if (ImGui::Checkbox("Autosave", &autoSave)) 
+            if (ImGui::Checkbox("Autosave", &autoSave))
                 scene->markBufferUpdated(); ImGui::SameLine();
             ImGui::Text("at Frame"); ImGui::SameLine();
 
@@ -334,7 +335,7 @@ void Addon_imgui::renderFrame( GLFWwindow* window, VulkanRenderBackend* vulkan, 
     wd->ClearValue.color.float32[ 1 ] = clear_color.y * clear_color.w;
     wd->ClearValue.color.float32[ 2 ] = clear_color.z * clear_color.w;
     wd->ClearValue.color.float32[ 3 ] = clear_color.w;
-    
+
     {
         VkSemaphore waitRT = vulkan->rtFinishedSemaphores[wd->SemaphoreIndex];
         VkSemaphore signalPresent = wd->FrameSemaphores[ wd->SemaphoreIndex ].RenderCompleteSemaphore;

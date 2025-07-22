@@ -19,6 +19,9 @@
     <Filter Include="ThirdParty\imgui">
       <UniqueIdentifier>{ad1afb38-41ba-49d0-8321-2143f56caf76}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Scene Configs">
+      <UniqueIdentifier>{57683475-1189-456c-b66f-e3d51de1826f}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Main.cpp">
@@ -182,11 +185,41 @@
     <ClInclude Include="Json.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="resource.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="stb_image.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="stb_image_write.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <None Include="SampleRaytracing.glsl">
+    <None Include="..\.gitignore" />
+    <None Include="..\Assets\nee-test-scene.json">
+      <Filter>Scene Configs</Filter>
+    </None>
+    <None Include="..\Assets\unidirectional_path_tracer_scene.json">
+      <Filter>Scene Configs</Filter>
+    </None>
+    <None Include="..\Assets\unidirectional_path_tracer_scene_quad.json">
+      <Filter>Scene Configs</Filter>
+    </None>
+    <None Include="..\Assets\unidirectional_path_tracer_scene_scale1.json">
+      <Filter>Scene Configs</Filter>
+    </None>
+    <None Include="shaders\Bindings.glsl">
       <Filter>Resource Files</Filter>
     </None>
-    <None Include="scene.json" />
+    <None Include="shaders\Sampler.glsl">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="shaders\SampleRaytracing.glsl">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="shaders\SharedStructs.glsl">
+      <Filter>Resource Files</Filter>
+    </None>
   </ItemGroup>
 </Project>

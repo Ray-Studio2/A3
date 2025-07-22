@@ -1,7 +1,13 @@
 #pragma once
+#include <cmath>
 
 namespace A3
 {
+
+static bool floatEqual(float a, float b, float eps = 1e-6f) {
+	return std::fabs(a - b) < eps;
+}
+
 struct Vec2
 {
 	union
@@ -18,9 +24,21 @@ struct Vec2
 		};
 	};
 
+	Vec2()
+		: Vec2(0.0f, 0.0f)
+	{}
+
+	Vec2( float num )
+		: Vec2(num, num)
+	{}
+
 	Vec2( float inX, float inY )
 		: x( inX ), y( inY )
 	{}
+
+	bool operator==(const Vec2& other) const {
+		return floatEqual(x, other.x) && floatEqual(y, other.y);
+	}
 };
 
 struct Vec3 : public Vec2
@@ -31,9 +49,21 @@ struct Vec3 : public Vec2
 		float b;
 	};
 
+	Vec3()
+		: Vec2{}, z{0.0f}
+	{}
+
+	Vec3( float num )
+		: Vec2{num}, z{ num }
+	{}
+
 	Vec3( float inX, float inY, float inZ )
 		: Vec2( inX, inY ), z( inZ )
 	{}
+
+	bool operator==(const Vec3& other) const {
+		return Vec2::operator==(other) && floatEqual(z, other.z);
+	}
 };
 
 struct Vec4 : public Vec3
@@ -44,8 +74,16 @@ struct Vec4 : public Vec3
 		float a;
 	};
 
+	Vec4()
+		: Vec3{}, w{ 0.0f } 
+	{}
+
+	Vec4(float num) 
+		: Vec3{ num }, w{ num } 
+	{}
+
 	Vec4( float inX, float inY, float inZ, float inW )
-		: Vec3( inX, inY, inZ ), w( inW )
+		: Vec3( inX, inY, inZ ), w( inW ) 
 	{}
 };
 
@@ -69,4 +107,8 @@ struct IVec4
 	int z;
 	int w;
 };
+
+float lengthSquared(const Vec3& v);
+float length(const Vec3& v);
+Vec3 normalize(const Vec3& v);
 }

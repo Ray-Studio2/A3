@@ -4,6 +4,8 @@
 #include "ThirdParty/imgui/imgui_impl_vulkan.h"
 #include <GLFW/glfw3.h>
 #include "Vulkan.h"
+#include "Scene.h"
+#include "MeshObject.h"
 
 using namespace A3;
 
@@ -104,7 +106,7 @@ Addon_imgui::Addon_imgui( GLFWwindow* window, VulkanRenderBackend* vulkan, int32
     wd->PresentMode = VK_PRESENT_MODE_MAILBOX_KHR;
 
     wd->Swapchain = vulkan->swapChain;
-    wd->ImageCount = 2;
+    wd->ImageCount = 3;
 
     wd->SemaphoreCount = wd->ImageCount;
     wd->Frames.resize( wd->ImageCount );
@@ -175,7 +177,7 @@ Addon_imgui::Addon_imgui( GLFWwindow* window, VulkanRenderBackend* vulkan, int32
     ImGui_ImplVulkan_Init( &init_info );
 }
 
-void Addon_imgui::renderFrame( GLFWwindow* window, VulkanRenderBackend* vulkan )
+void Addon_imgui::renderFrame( GLFWwindow* window, VulkanRenderBackend* vulkan, Scene* scene )
 {
     // Our state
     static bool show_demo_window = true;
@@ -200,40 +202,126 @@ void Addon_imgui::renderFrame( GLFWwindow* window, VulkanRenderBackend* vulkan )
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
 
-    // 1. Show the big demo window (Most of the sample code is in ImGui::ShowDemoWindow()! You can browse its code to learn more about Dear ImGui!).
-    if( show_demo_window )
-        ImGui::ShowDemoWindow( &show_demo_window );
-
-    // 2. Show a simple window that we create ourselves. We use a Begin/End pair to create a named window.
     {
-        static float f = 0.0f;
-        static int counter = 0;
+        ImGui::Begin("A3 Pathtracer");
 
-        ImGui::Begin( "Hello, world!" );                          // Create a window called "Hello, world!" and append into it.
+        ImGui::SeparatorText("Scene");
+        {
+            auto& items = RenderSettings::sceneFiles;
+            static uint32 item_selected_idx = RenderSettings::sceneIdx;
+            if (ImGui::BeginCombo("Json files", items[item_selected_idx]))
+            {
+                for (int n = 0; n < IM_ARRAYSIZE(items); ++n)
+                {
+                    const bool is_selected = (item_selected_idx == n);
+                    if (ImGui::Selectable(items[n], is_selected))
+                    {
+                        item_selected_idx = n;
+                        scene->load(items[item_selected_idx]);
+                        scene->markSceneDirty();
+                    }
+                    if (is_selected)
+                        ImGui::SetItemDefaultFocus();
+                }
+                ImGui::EndCombo();
+            }
+        }
 
-        ImGui::Text( "This is some useful text." );               // Display some text (you can use a format strings too)
-        ImGui::Checkbox( "Demo Window", &show_demo_window );      // Edit bools storing our window open/close state
-        ImGui::Checkbox( "Another Window", &show_another_window );
+        ImGui::SeparatorText("Sample Quality");
+        {
+            int depth = static_cast<int>(scene->getImguiParam()->maxDepth);
+            if (ImGui::InputInt("Max depth", &depth)) {
+                if (depth < 0) depth = 0;
+                if (depth > 5) depth = 5;
+                scene->getImguiParam()->maxDepth = static_cast<uint32>(depth);
+                scene->markBufferUpdated();
+            }
 
-        ImGui::SliderFloat( "float", &f, 0.0f, 1.0f );            // Edit 1 float using a slider from 0.0f to 1.0f
-        ImGui::ColorEdit3( "clear color", ( float* )&clear_color ); // Edit 3 floats representing a color
+            int numSamples = static_cast<int>(scene->getImguiParam()->numSamples);
+            if (ImGui::InputInt("Number of samples", &numSamples)) {
+                if (numSamples < 0) numSamples = 0;
+                if (numSamples > 64) numSamples = 64;
+                scene->getImguiParam()->numSamples = static_cast<uint32>(numSamples);
+                scene->markBufferUpdated();
+            }
 
-        if( ImGui::Button( "Button" ) )                            // Buttons return true when clicked (most widgets return true when edited/activated)
-            counter++;
-        ImGui::SameLine();
-        ImGui::Text( "counter = %d", counter );
+            bool p = scene->getImguiParam()->isProgressive;
+            if (ImGui::Checkbox("Progressive", &p)) {
+                scene->getImguiParam()->isProgressive = static_cast<uint32>(p);
+                scene->markBufferUpdated();
+            }
+        }
 
-        ImGui::Text( "Application average %.3f ms/frame (%.1f FPS)", 1000.0f / io.Framerate, io.Framerate );
-        ImGui::End();
-    }
+        bool lightExists = scene->getLightIndex().size();
+        ImGui::BeginDisabled(!lightExists);
+        ImGui::SeparatorText("Light");
+        {
+            static MeshObject* light = nullptr;
+            if (scene->isSceneDirty()) light = nullptr;
+            if (lightExists) {
+                auto& lightIndex = scene->getLightIndex()[0]; // Assuming 1 light
 
-    // 3. Show another simple window.
-    if( show_another_window )
-    {
-        ImGui::Begin( "Another Window", &show_another_window );   // Pass a pointer to our bool variable (the window will have a closing button that will clear the bool when clicked)
-        ImGui::Text( "Hello from another window!" );
-        if( ImGui::Button( "Close Me" ) )
-            show_another_window = false;
+                if (!light) {
+                    auto objects = scene->collectMeshObjects();
+                    if (objects.size() > lightIndex)
+                        light = objects[lightIndex];
+                }
+            }
+
+            // light position
+            auto lightPos = Vec3(0.0);
+            if (light!=nullptr) lightPos = light->getLocalPosition();
+            float p[3] = { lightPos.x, lightPos.y, lightPos.z };
+            if (ImGui::SliderFloat3("Position", p, -3.0, 3.0)) {
+                light->setPosition(Vec3(p[0], p[1], p[2]));
+                scene->markPosUpdated();
+            }
+
+            float emit = 0.0;
+            if (light!=nullptr) emit = light->getEmittance();
+            if (ImGui::InputFloat("Emittance per point", &emit, 1.0f, 10.0f)) {
+                if (emit < 0.0f) emit = 0.0f;
+                if (emit > 500.0f) emit = 500.0f;
+                light->setEmittance(emit);
+                scene->markBufferUpdated();
+            }
+        }
+        ImGui::EndDisabled();
+
+        ImGui::SeparatorText("Env Map");
+        {
+            if (ImGui::SliderFloat("Rotation", &scene->getImguiParam()->envmapRotDeg, 0.0f, 360.f))
+                scene->markBufferUpdated();
+        }
+
+        ImGui::SeparatorText("Image Capture");
+        {
+            if (ImGui::Button("Save Current Frame")) {
+                vulkan->saveCurrentImage("frame_" + std::to_string(vulkan->currentFrameCount) + ".png");
+            };
+
+            static bool autoSave = true;
+            if (ImGui::Checkbox("Autosave", &autoSave)) 
+                scene->markBufferUpdated(); ImGui::SameLine();
+            ImGui::Text("at Frame"); ImGui::SameLine();
+
+            int frameCount = static_cast<int>(scene->getImguiParam()->frameCount);
+            ImGui::BeginDisabled(!autoSave);
+            {
+                ImGui::SetNextItemWidth(150.0f);
+                if (ImGui::InputInt("##Frame", &frameCount)) {
+                    scene->getImguiParam()->frameCount = static_cast<uint32>(frameCount);
+                    scene->markBufferUpdated();
+                }
+                if (autoSave && vulkan->currentFrameCount == frameCount)
+                    vulkan->saveCurrentImage("frame_" + std::to_string(frameCount) + ".png");
+            }
+            ImGui::EndDisabled();
+        }
+
+        ImGui::SeparatorText("Performance");
+        ImGui::Text("Application average: %.3f ms/frame (%.1f FPS)", 1000.0f / io.Framerate, io.Framerate);
+        ImGui::Text("Current frame: %u", vulkan->currentFrameCount);
         ImGui::End();
     }
 
@@ -248,12 +336,16 @@ void Addon_imgui::renderFrame( GLFWwindow* window, VulkanRenderBackend* vulkan )
     wd->ClearValue.color.float32[ 3 ] = clear_color.w;
     
     {
-        VkSemaphore image_acquired_semaphore = wd->FrameSemaphores[ wd->SemaphoreIndex ].ImageAcquiredSemaphore;
-        VkSemaphore render_complete_semaphore = wd->FrameSemaphores[ wd->SemaphoreIndex ].RenderCompleteSemaphore;
-        VkResult err;
+        VkSemaphore waitRT = vulkan->rtFinishedSemaphores[wd->SemaphoreIndex];
+        VkSemaphore signalPresent = wd->FrameSemaphores[ wd->SemaphoreIndex ].RenderCompleteSemaphore;
 
+        VkResult err;
         ImGui_ImplVulkanH_Frame* fd = &wd->Frames[ wd->FrameIndex ];
         {
+            err = vkWaitForFences(vulkan->device, 1, &fd->Fence, VK_TRUE, UINT64_MAX);
+            check_vk_result(err);
+            err = vkResetFences(vulkan->device, 1, &fd->Fence);    // 다음 프레임 준비
+            check_vk_result(err);
             err = vkResetCommandPool( vulkan->device, fd->CommandPool, 0 );
             check_vk_result( err );
             VkCommandBufferBeginInfo info{
@@ -285,30 +377,24 @@ void Addon_imgui::renderFrame( GLFWwindow* window, VulkanRenderBackend* vulkan )
         vkCmdEndRenderPass( fd->CommandBuffer );
         {
             VkPipelineStageFlags wait_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-            /*VkSubmitInfo info = {};
+            VkSubmitInfo info = {};
             info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
             info.waitSemaphoreCount = 1;
-            info.pWaitSemaphores = &image_acquired_semaphore;
+            info.pWaitSemaphores = &waitRT;
             info.pWaitDstStageMask = &wait_stage;
             info.commandBufferCount = 1;
             info.pCommandBuffers = &fd->CommandBuffer;
             info.signalSemaphoreCount = 1;
-            info.pSignalSemaphores = &render_complete_semaphore;*/
-            VkSubmitInfo info{
-                .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-                .commandBufferCount = 1,
-                .pCommandBuffers = &fd->CommandBuffer,
-            };
+            info.pSignalSemaphores = &signalPresent;
+
             err = vkEndCommandBuffer( fd->CommandBuffer );
             check_vk_result( err );
-            err = vkQueueSubmit( vulkan->graphicsQueue, 1, &info, VK_NULL_HANDLE);
-            check_vk_result(err);
-            err = vkQueueWaitIdle(vulkan->graphicsQueue);
+            err = vkQueueSubmit( vulkan->graphicsQueue, 1, &info, fd->Fence);
             check_vk_result( err );
         }
 
         wd->SemaphoreIndex = ( wd->SemaphoreIndex + 1 ) % wd->SemaphoreCount; // Now we can use the next set of semaphores
-        wd->FrameIndex = ( wd->FrameIndex + 1 ) % 2; // @FIXME: Workaround
+        wd->FrameIndex = ( wd->FrameIndex + 1 ) % 3; // @FIXME: Workaround
     }
 
     // Update and Render additional Platform Windows

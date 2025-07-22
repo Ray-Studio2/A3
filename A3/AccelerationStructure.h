@@ -9,6 +9,6 @@ struct BLASBatch
 {
 	IAccelerationStructureRef blas;
 
-	std::vector<Mat3x4> transforms;
+	std::vector<Mat4x4> transforms;
 };
 }

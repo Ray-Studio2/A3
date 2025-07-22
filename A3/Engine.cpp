@@ -45,10 +45,11 @@ void Engine::Run()
     glfwGetFramebufferSize( window, &screenWidth, &screenHeight );
 
     {
-        VulkanRenderBackend gfxBackend( window, extensions, screenWidth, screenHeight );
-
         Scene scene;
-        scene.load("scene.json");
+        scene.load(RenderSettings::sceneFiles[RenderSettings::sceneIdx]); // TODO: Separated ConfigManager & AppSettings class (constants as file paths, resolution, spp, camera info...)
+        // TODO: Scene only handles objects, mesh, lightings from Json
+
+        VulkanRenderBackend gfxBackend( window, extensions, screenWidth, screenHeight );
 
         PathTracingRenderer renderer( &gfxBackend );
 
@@ -63,7 +64,7 @@ void Engine::Run()
             renderer.beginFrame( screenWidth, screenHeight );
 
             renderer.render( scene );
-            imgui.renderFrame( window, &gfxBackend );
+            imgui.renderFrame( window, &gfxBackend, &scene );
 
             renderer.endFrame();
 

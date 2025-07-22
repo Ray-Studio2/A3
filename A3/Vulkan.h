@@ -40,16 +40,19 @@ public:
 
     //@TODO: Move to renderer
     const class Scene* tempScenePointer = nullptr;
-    virtual IAccelerationStructureRef createBLAS(
-        const std::vector<VertexPosition>& positionData,
-        const std::vector<VertexAttributes>& attributeData,
-        const std::vector<uint32>& indexData,
-        const Mat3x4& transformData ) override;
+    uint32 currentFrameCount = 0;
+    virtual IAccelerationStructureRef createBLAS(const BLASBuildParams params) override;
     virtual void createTLAS( const std::vector<BLASBatch*>& batches ) override;
     virtual IShaderModuleRef createShaderModule( const ShaderDesc& desc ) override;
     virtual IRenderPipelineRef createRayTracingPipeline( const RaytracingPSODesc& psoDesc, RaytracingPSO* pso ) override;
+    virtual void updateLightBuffer( const std::vector<LightData>& lights ) override;
     void createOutImage();
+    void createAccumulationImage();
     void createUniformBuffer();
+    void createLightBuffer();
+    void updateCameraBuffer();
+    void updateImguiBuffer();
+    void saveCurrentImage(const std::string& filename);
     //////////////////////////
 
 private:
@@ -61,7 +64,8 @@ private:
     void createSwapChain();
     void createImguiRenderPass( int32 screenWidth, int32 screenHeight );
     void createCommandCenter();
-    std::tuple<VkImage, VkDeviceMemory, VkImageView, VkSampler> createEnvironmentMap(std::string_view hdrTexturePath);
+    void createEnvironmentMap(std::string_view hdrTexturePath);
+    void createEnvironmentMapImportanceSampling(float* pixels, int width, int height);
 
     void loadDeviceExtensionFunctions( VkDevice device );
 
@@ -137,8 +141,10 @@ private:
     std::vector<VkCommandBuffer> commandBuffers;
 
     std::vector<VkSemaphore> imageAvailableSemaphores;
+    std::vector<VkSemaphore> rtFinishedSemaphores;
     std::vector<VkSemaphore> renderFinishedSemaphores;
     std::vector<VkFence> fences;
+    uint32 semaphoreIndex;
     uint32 imageIndex;
 
     VkBuffer tlasBuffer;
@@ -150,12 +156,30 @@ private:
     VkImageView envImageView;
     VkSampler envSampler;
 
+    VkImage envImportanceImage;
+    VkDeviceMemory envImportanceMem;
+    VkImageView envImportanceView;
+
+    VkImage envHitImage;
+    VkDeviceMemory envHitMem;
+    VkImageView envHitView;
+
     VkImage outImage;
     VkDeviceMemory outImageMem;
     VkImageView outImageView;
+    
+    VkImage accumulationImage;
+    VkDeviceMemory accumulationImageMem;
+    VkImageView accumulationImageView;
 
-    VkBuffer uniformBuffer;
-    VkDeviceMemory uniformBufferMem;
+    VkBuffer cameraBuffer;
+    VkDeviceMemory cameraBufferMem;
+    
+    VkBuffer lightBuffer;
+    VkDeviceMemory lightBufferMem;
+
+    VkBuffer imguiBuffer;
+    VkDeviceMemory imguiBufferMem;
 
     VkDescriptorPool descriptorPool;
     VkBuffer objectBuffer;

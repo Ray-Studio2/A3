@@ -2461,6 +2461,34 @@ IRenderPipelineRef VulkanRenderBackend::createRayTracingPipeline( const Raytraci
 
                 descriptor.pImageInfo = &writeDescriptorSets.images.back();
             }
+            else if (binding.descriptorType == VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE)
+            {
+                for (uint32 i = 0; i < TextureManager::gTextureArray.size(); ++i)
+                {
+                    const TextureManager::TextureView& view = TextureManager::gTextureArray[i];
+                    writeDescriptorSets.texture_image_infos.emplace_back(
+                        VkDescriptorImageInfo{
+                            .sampler = VK_NULL_HANDLE,
+                            .imageView = view._view,
+                            .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                        }
+                        );
+                }
+
+                descriptor.dstBinding = TEXTUREBINDLESS_BINDING_LOCATION;
+                descriptor.descriptorCount = writeDescriptorSets.texture_image_infos.size();
+                descriptor.pImageInfo = writeDescriptorSets.texture_image_infos.data();
+            }
+            else if (binding.descriptorType == VK_DESCRIPTOR_TYPE_SAMPLER)
+            {
+                VkDescriptorImageInfo sampler_infos;
+                sampler_infos.sampler = TextureManager::gLinearSampler;
+                sampler_infos.imageView = VK_NULL_HANDLE;
+                writeDescriptorSets.sampler_infos.push_back(std::move(sampler_infos));
+
+                descriptor.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+                descriptor.pImageInfo = writeDescriptorSets.sampler_infos.data();
+            }
             
             validDescriptors.push_back(descriptor);
         }

@@ -209,7 +209,7 @@ static bool IsExtensionAvailable( const std::vector<VkExtensionProperties>& prop
 }
 ////////////////////////////////////////////////
 
-#define TEXTUREBINDLESS_BINDING_LOCATION 10
+#define TEXTUREBINDLESS_BINDING_LOCATION 11
 #define TEXTUREBINDLESS_BINDING_MAX_COUNT 1024
 
 void VulkanRenderBackend::beginFrame( int32 screenWidth, int32 screenHeight )

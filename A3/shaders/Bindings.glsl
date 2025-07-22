@@ -41,9 +41,9 @@ layout( binding = 7 ) uniform imguiParam {
 } gImguiParam;
 
 layout(binding = 8) uniform sampler2D envImportanceData;
-layout( binding = 11 ) uniform sampler2D envHitPdf;
+layout( binding = 9 ) uniform sampler2D envHitPdf;
 
-layout(binding = 9) uniform sampler linearSampler;
+layout(binding = 10) uniform sampler linearSampler;
 
-#define TEXTUREBINDLESS_BINDING_LOCATION 10
+#define TEXTUREBINDLESS_BINDING_LOCATION 11
 layout(binding = TEXTUREBINDLESS_BINDING_LOCATION) uniform texture2D textures[];

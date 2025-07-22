@@ -105,8 +105,8 @@ void PathTracingRenderer::buildSamplePSO()
         ShaderDesc& environmentMiss = psoDesc.shaders[1];
         environmentMiss.descriptors.emplace_back( SRD_ImageSampler, 6 );
         environmentMiss.descriptors.emplace_back( SRD_UniformBuffer, 7 ); // Imgui parameters
-        environmentMiss.descriptors.emplace_back(SRD_ImageSampler, 8); // environmentMap Sampling
-        environmentMiss.descriptors.emplace_back( SRD_ImageSampler, 11 ); // environmentMap HitPos PDF
+        environmentMiss.descriptors.emplace_back( SRD_ImageSampler, 8 ); // environmentMap Sampling
+        environmentMiss.descriptors.emplace_back( SRD_ImageSampler, 9 ); // environmentMap HitPos PDF
         ShaderDesc& closestHit = psoDesc.shaders[ 2 ];
         closestHit.descriptors.emplace_back( SRD_AccelerationStructure, 0 );
         closestHit.descriptors.emplace_back( SRD_StorageBuffer, 3 );
@@ -114,7 +114,7 @@ void PathTracingRenderer::buildSamplePSO()
         closestHit.descriptors.emplace_back( SRD_UniformBuffer, 7 ); // Imgui parameters
         closestHit.descriptors.emplace_back( SRD_ImageSampler, 6 );
         closestHit.descriptors.emplace_back( SRD_ImageSampler, 8 ); // environmentMap Sampling
-        closestHit.descriptors.emplace_back(SRD_Sampler, 9 );
+        closestHit.descriptors.emplace_back( SRD_Sampler, 10 );
     }
 
     samplePSO->shaders.resize( psoDesc.shaders.size() );

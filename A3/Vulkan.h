@@ -24,9 +24,74 @@ namespace A3
 {
 struct VertexPosition;
 struct VertexAttributes;
+class VulkanRenderBackend;
+
+struct TextureParameter
+{
+    static constexpr const unsigned int InvalidTextureParameter = 0xfffffff;
+    uint32 _index = InvalidTextureParameter;
+};
+class TextureManager
+{
+public:
+    struct TextureView
+    {
+        std::string _path;
+
+        VkImage _image;
+        VkDeviceMemory _memory;
+        VkImageView _view;
+    };
+
+    static void initialize(VulkanRenderBackend& vulkanBackend);
+
+    static const TextureParameter createTexture(VulkanRenderBackend& vulkanBackend, const std::string path, const uint32 imageFormat, const uint32 width, const uint32 height, const float* pixelData);
+
+    static std::vector<TextureView> gTextureArray;
+    static TextureParameter gWhiteParameter;
+    static VkSampler gLinearSampler;
+};
+
+struct A3Buffer
+{
+    VkBuffer _buffer;
+    VkDeviceMemory _memory;
+};
+
+struct MaterialParameter
+{
+    MaterialParameter();
+
+    Vec4 _baseColorFactor;
+
+    TextureParameter _baseColorTexture;
+    TextureParameter _normalTexture;
+    TextureParameter _occlusionTexture;
+    float _metallicFactor;
+
+    float _roughnessFactor;
+    TextureParameter _metallicRoughnessTexture;
+    float _padding1;
+    float _padding2;
+
+    Vec3 _emissiveFactor;
+    TextureParameter _emissiveTexture;
+};
+struct Material
+{
+    MaterialParameter _parameter;
+
+    // innerdata
+    A3Buffer _buffer;
+
+    void uploadMaterialParameter(VulkanRenderBackend& vulkanBackend);
+};
 
 class VulkanRenderBackend : public IRenderBackend
 {
+    friend struct Material;
+    friend class TextureManager;
+
 public:
     VulkanRenderBackend( GLFWwindow* window, std::vector<const char*>& extensions, int32 screenWidth, int32 screenHeight );
     ~VulkanRenderBackend();
@@ -46,6 +111,7 @@ public:
     virtual IShaderModuleRef createShaderModule( const ShaderDesc& desc ) override;
     virtual IRenderPipelineRef createRayTracingPipeline( const RaytracingPSODesc& psoDesc, RaytracingPSO* pso ) override;
     virtual void updateLightBuffer( const std::vector<LightData>& lights ) override;
+    TextureManager::TextureView createResourceImage(const uint32 imageFormat, const uint32 width, const uint32 height, const float* pixelData);
     void createOutImage();
     void createAccumulationImage();
     void createUniformBuffer();
@@ -54,6 +120,8 @@ public:
     void updateImguiBuffer();
     void saveCurrentImage(const std::string& filename);
     //////////////////////////
+
+    const A3Buffer createResourceBuffer(const uint32 size, const void* data);
 
 private:
     void createVkInstance( std::vector<const char*>& extensions );
@@ -101,6 +169,7 @@ private:
         VkPipelineStageFlags srcStageMask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
         VkPipelineStageFlags dstStageMask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT );
 
+public:
     VkDeviceAddress getDeviceAddressOf( VkBuffer buffer );
 
     VkDeviceAddress getDeviceAddressOf( VkAccelerationStructureKHR as );

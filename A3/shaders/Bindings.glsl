@@ -19,6 +19,7 @@ layout(buffer_reference, scalar) buffer PositionBuffer { vec4 p[]; };
 layout(buffer_reference, scalar) buffer AttributeBuffer { VertexAttributes a[]; };
 layout(buffer_reference, scalar) buffer IndexBuffer { uint i[]; };
 layout(buffer_reference, scalar) buffer cumulativeTriangleAreaBuffer { float t[]; };
+layout(buffer_reference, scalar) buffer MaterialBuffer { MaterialParameter mat; };
 
 layout(binding = 4, std430) readonly buffer LightBuffer
 {
@@ -39,5 +40,10 @@ layout( binding = 7 ) uniform imguiParam {
     float envmapRotDeg;
 } gImguiParam;
 
-layout( binding = 8 ) uniform sampler2D envImportanceData;
-layout( binding = 9 ) uniform sampler2D envHitPdf;
+layout(binding = 8) uniform sampler2D envImportanceData;
+layout( binding = 11 ) uniform sampler2D envHitPdf;
+
+layout(binding = 9) uniform sampler linearSampler;
+
+#define TEXTUREBINDLESS_BINDING_LOCATION 10
+layout(binding = TEXTUREBINDLESS_BINDING_LOCATION) uniform texture2D textures[];

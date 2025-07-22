@@ -1,4 +1,4 @@
-// 0.0 ~ 1.0 사이의 float 반환
+﻿// 0.0 ~ 1.0 사이의 float 반환
 float RandomValue(inout uint state) {
     state *= (state + 195439) * (state + 124395) * (state + 845921);
     return float(state) / 4294967295.0;  // float 변환 추가!

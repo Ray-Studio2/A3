@@ -13,6 +13,8 @@ class SceneObject;
 class MeshObject;
 class CameraObject;
 struct MeshResource;
+class VulkanRenderBackend;
+struct Material;
 
 struct imguiParam // TODO: right for being part of scene?
 {
@@ -53,7 +55,7 @@ public:
 	~Scene();
 
 public:
-	void load(const std::string &path);
+	void load(const std::string &path, VulkanRenderBackend& vulkanBackend);
     void save(const std::string &path) const;
 
 	void beginFrame();
@@ -77,6 +79,9 @@ public:
 	bool isPosUpdated() const { return bPosUpdated; }
 
 private:
+	void loadGLTF(const std::string& fileName, VulkanRenderBackend& vulkanBackend);
+
+private:
 	bool bSceneDirty;
 	bool bBufferUpdated;
 	bool bPosUpdated;
@@ -85,6 +90,9 @@ private:
     std::vector<std::unique_ptr<SceneObject>> objects;
 	std::unique_ptr<CameraObject> camera;
 	std::unique_ptr<imguiParam> imgui_param;
+
+	std::vector<Material> materialArrForObj;
+	std::vector<Material> materialArr;
 
 	std::vector<uint32> lightIndex;
 };

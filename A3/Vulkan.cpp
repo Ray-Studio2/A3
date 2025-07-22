@@ -50,6 +50,67 @@ const char* getVkResultString(VkResult result) {
 
 using namespace A3;
 
+std::vector<TextureManager::TextureView> TextureManager::gTextureArray;
+TextureParameter TextureManager::gWhiteParameter;
+VkSampler TextureManager::gLinearSampler;
+
+void TextureManager::initialize(VulkanRenderBackend& vulkanBackend)
+{
+    std::string whiteTextureName = "NullTexture_White";
+
+    uint32 width = 2, height = 2;
+    std::vector<float> pixels(width * height * 4, 0);
+    for (uint32 i = 0; i < height; ++i)
+    {
+        for (uint32 j = 0; j < width; ++j)
+        {
+            pixels[i * (width * 4) + j * 4 + 0] = 1.0f;
+            pixels[i * (width * 4) + j * 4 + 1] = 1.0f;
+            pixels[i * (width * 4) + j * 4 + 2] = 1.0f;
+            pixels[i * (width * 4) + j * 4 + 3] = 1.0f;
+        }
+    }
+
+    gWhiteParameter = createTexture(vulkanBackend, whiteTextureName, static_cast<uint32>(VK_FORMAT_R32G32B32A32_SFLOAT), width, height, pixels.data());
+
+    VkSamplerCreateInfo samplerInfo{
+        .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+        .magFilter = VK_FILTER_LINEAR,
+        .minFilter = VK_FILTER_LINEAR,
+        .mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR,
+        .addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+        .addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+        .addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+        .maxLod = FLT_MAX,
+    };
+    vkCreateSampler(vulkanBackend.device, &samplerInfo, nullptr, &gLinearSampler);
+}
+
+const TextureParameter TextureManager::createTexture(VulkanRenderBackend& vulkanBackend, const std::string path, const uint32 imageFormat, const uint32 width, const uint32 height, const float* pixelData)
+{
+    uint32 index = 0;
+    for (; index < gTextureArray.size(); ++index)
+    {
+        const TextureView& view = gTextureArray[index];
+        if (view._path == path)
+            return TextureParameter{ index };
+    }
+
+    TextureView view = vulkanBackend.createResourceImage(imageFormat, width, height, pixelData);
+    view._path = path;
+    gTextureArray.push_back(view);
+
+    return TextureParameter{ index };
+}
+
+void A3::Material::uploadMaterialParameter(VulkanRenderBackend& vulkanBackend)
+{
+    void* dst;
+    vkMapMemory(vulkanBackend.device, _buffer._memory, 0, sizeof(_parameter), 0, &dst);
+    memcpy(dst, static_cast<void*>(&_parameter), sizeof(_parameter));
+    vkUnmapMemory(vulkanBackend.device, _buffer._memory);
+}
+
 VulkanRenderBackend::VulkanRenderBackend( GLFWwindow* window, std::vector<const char*>& extensions, int32 screenWidth, int32 screenHeight )
     : lightBuffer(VK_NULL_HANDLE), lightBufferMem(VK_NULL_HANDLE)
 {
@@ -61,6 +122,8 @@ VulkanRenderBackend::VulkanRenderBackend( GLFWwindow* window, std::vector<const 
     createSwapChain();
     createImguiRenderPass( screenWidth, screenHeight );
     createCommandCenter();
+
+    TextureManager::initialize(*this);
 
     //// 옮겨야함
     //createEnvironmentMap(RenderSettings::envMapPath);
@@ -145,6 +208,9 @@ static bool IsExtensionAvailable( const std::vector<VkExtensionProperties>& prop
     return false;
 }
 ////////////////////////////////////////////////
+
+#define TEXTUREBINDLESS_BINDING_LOCATION 10
+#define TEXTUREBINDLESS_BINDING_MAX_COUNT 1024
 
 void VulkanRenderBackend::beginFrame( int32 screenWidth, int32 screenHeight )
 {
@@ -533,9 +599,10 @@ std::vector<const char*> deviceExtensions = {
 
     VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME,
     VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME, // not used
-    VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME, // not used
+    VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME,
     VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
-    VK_KHR_RAY_QUERY_EXTENSION_NAME,
+    //VK_KHR_RAY_QUERY_EXTENSION_NAME,
+    //"VK_EXT_samplerless_texture_functions",
 
     VK_KHR_SPIRV_1_4_EXTENSION_NAME, // not used
     VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME,
@@ -615,27 +682,45 @@ void VulkanRenderBackend::createVkQueueFamily()
         .rayTracingPipeline = VK_TRUE,
     };
 
+    VkPhysicalDeviceDescriptorIndexingFeatures descriptorIndexingFeatures{
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES,
+        .shaderSampledImageArrayNonUniformIndexing = VK_TRUE,
+        .descriptorBindingPartiallyBound = VK_TRUE,
+        .descriptorBindingVariableDescriptorCount = VK_TRUE,
+        .runtimeDescriptorArray = VK_TRUE,
+    };
+
     VkPhysicalDeviceFeatures2 feats2{
-    .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2
     };
 
     feats2.pNext = &bdaFeat;
     bdaFeat.pNext = &rqFeat;
     rqFeat.pNext = &asFeat;
     asFeat.pNext = &rtpFeat;
-    rtpFeat.pNext = nullptr;
+    rtpFeat.pNext = &descriptorIndexingFeatures;
+    descriptorIndexingFeatures.pNext = nullptr;
 
     vkGetPhysicalDeviceFeatures2(physicalDevice, &feats2);
 
-    if (!rqFeat.rayQuery)
-        throw std::runtime_error("Device doesn't support VK_KHR_ray_query");
+    // Non-uniform indexing and update after bind
+    // binding flags for textures, uniforms, and buffers
+    // are required for our extension
+    assert(descriptorIndexingFeatures.shaderSampledImageArrayNonUniformIndexing);
+    assert(descriptorIndexingFeatures.descriptorBindingSampledImageUpdateAfterBind);
+    assert(descriptorIndexingFeatures.shaderUniformBufferArrayNonUniformIndexing);
+    assert(descriptorIndexingFeatures.descriptorBindingUniformBufferUpdateAfterBind);
+    assert(descriptorIndexingFeatures.shaderStorageBufferArrayNonUniformIndexing);
+    assert(descriptorIndexingFeatures.descriptorBindingStorageBufferUpdateAfterBind);
+
+    //if (!rqFeat.rayQuery)
+    //    throw std::runtime_error("Device doesn't support VK_KHR_ray_query");
 
     feats2.features.shaderInt64 = VK_TRUE;
     bdaFeat.bufferDeviceAddress = VK_TRUE;
     rqFeat.rayQuery = VK_TRUE;
     asFeat.accelerationStructure = VK_TRUE;
-    rtpFeat.rayTracingPipeline = VK_TRUE;
-
+    rtpFeat.rayTracingPipeline = VK_TRUE;    
 
     VkDeviceCreateInfo createInfo{
         .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
@@ -664,7 +749,7 @@ void VulkanRenderBackend::createVkDescriptorPools()
         { VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 1000 },
         { VK_DESCRIPTOR_TYPE_SAMPLER, 1000 },
         { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1000 },
-        { VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1000 },
+        { VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, TEXTUREBINDLESS_BINDING_MAX_COUNT },
         { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1000 },
         { VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 1000 },
         { VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER, 1000 },
@@ -680,7 +765,7 @@ void VulkanRenderBackend::createVkDescriptorPools()
     {
         VkDescriptorPoolCreateInfo pool_info = {};
         pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-        pool_info.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
+        pool_info.flags = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT;// VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
         pool_info.maxSets = 0;
         for( VkDescriptorPoolSize& pool_size : poolSizes )
             pool_info.maxSets += pool_size.descriptorCount;
@@ -947,13 +1032,55 @@ void A3::VulkanRenderBackend::createEnvironmentMap(std::string_view hdrTexturePa
         rgbaPixels[i * 4 + 3] = 1.0f;
     }
 
+    TextureManager::TextureView envTexture = createResourceImage(static_cast<uint32>(VK_FORMAT_R32G32B32A32_SFLOAT), width, height, rgbaPixels.data());
+    envImage = envTexture._image;
+    envImageMem = envTexture._memory;
+    envImageView = envTexture._view;
+
+    VkSamplerCreateInfo samplerInfo{
+        .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+        .magFilter = VK_FILTER_LINEAR,
+        .minFilter = VK_FILTER_LINEAR,
+        .mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR,
+        .addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+        .addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+        .addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+        .maxLod = FLT_MAX,
+    };
+    vkCreateSampler( device, &samplerInfo, nullptr, &envSampler );
+
+    createEnvironmentMapImportanceSampling(pixels, width, height);
+    stbi_image_free(pixels);
+}
+
+TextureManager::TextureView VulkanRenderBackend::createResourceImage(const uint32 imageFormat, const uint32 width, const uint32 height, const float* pixelData)
+{
+    TextureManager::TextureView textureView;
+
+    VkFormat format = static_cast<VkFormat>(imageFormat);
+
     vkQueueWaitIdle(graphicsQueue);
 
-    std::tie( envImage, envImageMem ) = createImage(
+    std::tie(textureView._image, textureView._memory) = createImage(
         { (uint32_t)width, (uint32_t)height },
-        VK_FORMAT_R32G32B32A32_SFLOAT,
+        format,
         VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+    VkDeviceSize imageSize = width * height * sizeof(float);
+    if (format == VK_FORMAT_R32G32B32A32_SFLOAT)
+    {
+        imageSize *= 4;
+    }
+    else if (format == VK_FORMAT_R32G32B32_SFLOAT)
+    {
+        imageSize *= 3;
+    }
+    else
+    {
+        // not support image type
+        return textureView;
+    }
 
     auto [stagingBuffer, stagingMem] = createBuffer(
         imageSize,
@@ -962,7 +1089,7 @@ void A3::VulkanRenderBackend::createEnvironmentMap(std::string_view hdrTexturePa
 
     void* data;
     vkMapMemory(device, stagingMem, 0, imageSize, 0, &data);
-    memcpy(data, rgbaPixels.data(), static_cast<size_t>(imageSize));
+    memcpy(data, pixelData, static_cast<size_t>(imageSize));
     vkUnmapMemory(device, stagingMem);
 
     VkCommandBuffer& cmd = commandBuffers[imageIndex];
@@ -980,7 +1107,7 @@ void A3::VulkanRenderBackend::createEnvironmentMap(std::string_view hdrTexturePa
         .layerCount = 1,
     };
 
-    setImageLayout(cmd, envImage, VK_IMAGE_LAYOUT_UNDEFINED,
+    setImageLayout(cmd, textureView._image, VK_IMAGE_LAYOUT_UNDEFINED,
         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, subresourceRange,
         VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
 
@@ -994,10 +1121,10 @@ void A3::VulkanRenderBackend::createEnvironmentMap(std::string_view hdrTexturePa
     };
     region.imageExtent = { (uint32_t)width, (uint32_t)height, 1 };
 
-    vkCmdCopyBufferToImage(cmd, stagingBuffer, envImage,
+    vkCmdCopyBufferToImage(cmd, stagingBuffer, textureView._image,
         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
 
-    setImageLayout(cmd, envImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+    setImageLayout(cmd, textureView._image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, subresourceRange,
         VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
 
@@ -1014,27 +1141,14 @@ void A3::VulkanRenderBackend::createEnvironmentMap(std::string_view hdrTexturePa
 
     VkImageViewCreateInfo viewInfo{
         .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-        .image = envImage,
+        .image = textureView._image,
         .viewType = VK_IMAGE_VIEW_TYPE_2D,
-        .format = VK_FORMAT_R32G32B32A32_SFLOAT,
+        .format = format,
         .subresourceRange = subresourceRange,
     };
-    vkCreateImageView(device, &viewInfo, nullptr, &envImageView );
+    vkCreateImageView(device, &viewInfo, nullptr, &textureView._view);
 
-    VkSamplerCreateInfo samplerInfo{
-        .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
-        .magFilter = VK_FILTER_LINEAR,
-        .minFilter = VK_FILTER_LINEAR,
-        .mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR,
-        .addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT,
-        .addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT,
-        .addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,
-        .maxLod = FLT_MAX,
-    };
-    vkCreateSampler( device, &samplerInfo, nullptr, &envSampler );
-
-    createEnvironmentMapImportanceSampling(pixels, width, height);
-    stbi_image_free(pixels);
+    return textureView;
 }
 
 void VulkanRenderBackend::createEnvironmentMapImportanceSampling(float* pixels, int width, int height)
@@ -1528,6 +1642,8 @@ IAccelerationStructureRef VulkanRenderBackend::createBLAS( const BLASBuildParams
         VK_BUFFER_USAGE_TRANSFER_DST_BIT,
         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 
+    outBlas->materialBuffer = params.material._buffer._buffer;
+
     auto [geoTransformBuffer, geoTransformBufferMem] = createBuffer(
         sizeof( Mat3x4 ),
         VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR,
@@ -1658,6 +1774,7 @@ struct ObjectDesc
 	uint64 vertexAttributeDeviceAddress = 0;
 	uint64 indexDeviceAddress = 0;
     uint64 cumulativeTriangleAreaAddress = 0;
+    uint64 materialAddress = 0;
 };
 
 // @TODO: Support more than 1 instance
@@ -1707,6 +1824,7 @@ void VulkanRenderBackend::createTLAS( const std::vector<BLASBatch*>& batches )
 				.vertexAttributeDeviceAddress = getDeviceAddressOf(blas->vertexAttributeBuffer),
 				.indexDeviceAddress = getDeviceAddressOf(blas->indexBuffer),
                 .cumulativeTriangleAreaAddress = getDeviceAddressOf(blas->cumulativeTriangleAreaBuffer),
+                .materialAddress = getDeviceAddressOf(blas->materialBuffer)
             };
             memcpy((ObjectDesc*)dst + objectIndex, &objectDesc, sizeof(ObjectDesc));
         }
@@ -2100,6 +2218,7 @@ VkDescriptorType getVulkanShaderDescriptorType( EShaderResourceDescriptor type )
         case SRD_StorageBuffer:         return VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         case SRD_StorageImage:          return VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
         case SRD_UniformBuffer:         return VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        case SRD_Sampler:               return VK_DESCRIPTOR_TYPE_SAMPLER;
         case SRD_ImageSampler:          return VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     }
 
@@ -2119,7 +2238,7 @@ IRenderPipelineRef VulkanRenderBackend::createRayTracingPipeline( const Raytraci
     //==========================================================
     // Pipeline layout
     //==========================================================
-    std::vector<VkDescriptorSetLayoutBinding> bindings( 10 );
+    std::vector<VkDescriptorSetLayoutBinding> bindings( 12 );
     for( const ShaderDesc& shaderDesc : psoDesc.shaders )
     {
         for( const ShaderResourceDescriptor& descriptor : shaderDesc.descriptors )
@@ -2132,13 +2251,33 @@ IRenderPipelineRef VulkanRenderBackend::createRayTracingPipeline( const Raytraci
         }
     }
 
+    VkDescriptorSetLayoutBinding textureBindlessBinding = {};
+    textureBindlessBinding.binding = TEXTUREBINDLESS_BINDING_LOCATION;
+    textureBindlessBinding.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+    textureBindlessBinding.descriptorCount = TEXTUREBINDLESS_BINDING_MAX_COUNT;
+    textureBindlessBinding.stageFlags = getVulkanShaderStage(EShaderStage::SS_ClosestHit);
+    bindings[bindings.size() - 1] = textureBindlessBinding;
+    
+    VkDescriptorBindingFlags textureBindingFlags = VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT;// VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT;// | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT;
+    std::vector<VkDescriptorBindingFlags> bindingFlags(bindings.size(), 0);
+    bindingFlags[bindingFlags.size() - 1] = textureBindingFlags;
+
+    VkDescriptorSetLayoutBindingFlagsCreateInfo extendedInfo{};
+    extendedInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO;
+    extendedInfo.bindingCount = bindingFlags.size();
+    extendedInfo.pBindingFlags = bindingFlags.data();
+
+    VkDescriptorSetLayoutCreateFlags flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT;
+
     VkDescriptorSetLayoutCreateInfo descriptorLayoutCreateInfo
     {
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+        .pNext = &extendedInfo, 
+        .flags = flags, 
         .bindingCount = ( uint32 )bindings.size(),
         .pBindings = bindings.data(),
     };
-    vkCreateDescriptorSetLayout( device, &descriptorLayoutCreateInfo, nullptr, &outPipeline->descriptorSetLayout );
+    VkResult result = vkCreateDescriptorSetLayout( device, &descriptorLayoutCreateInfo, nullptr, &outPipeline->descriptorSetLayout );
 
     VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo
     {
@@ -2215,7 +2354,7 @@ IRenderPipelineRef VulkanRenderBackend::createRayTracingPipeline( const Raytraci
         .descriptorSetCount = 1,
         .pSetLayouts = &outPipeline->descriptorSetLayout,
 	};
-    vkAllocateDescriptorSets( device, &allocateInfo, &outPipeline->descriptorSet );
+    result = vkAllocateDescriptorSets( device, &allocateInfo, &outPipeline->descriptorSet );
 
     {
         struct ScopedWriteDescriptorSets
@@ -2225,6 +2364,9 @@ IRenderPipelineRef VulkanRenderBackend::createRayTracingPipeline( const Raytraci
             std::vector<VkWriteDescriptorSetAccelerationStructureKHR> accelerationStructures;
             std::vector<VkDescriptorImageInfo> images;
             std::vector<VkDescriptorBufferInfo> buffers;
+
+            std::vector<VkDescriptorImageInfo> texture_image_infos;
+            std::vector<VkDescriptorImageInfo> sampler_infos;
         };
 
         ScopedWriteDescriptorSets writeDescriptorSets;
@@ -2234,6 +2376,8 @@ IRenderPipelineRef VulkanRenderBackend::createRayTracingPipeline( const Raytraci
             writeDescriptorSets.accelerationStructures.reserve( bindings.size() );
             writeDescriptorSets.images.reserve( bindings.size() );
             writeDescriptorSets.buffers.reserve( bindings.size() );
+            writeDescriptorSets.texture_image_infos.reserve(TextureManager::gTextureArray.size());
+            writeDescriptorSets.sampler_infos.reserve(bindings.size());
         }
 
         // @TODO: Move to scene level
@@ -2317,7 +2461,7 @@ IRenderPipelineRef VulkanRenderBackend::createRayTracingPipeline( const Raytraci
 
                 descriptor.pImageInfo = &writeDescriptorSets.images.back();
             }
-
+            
             validDescriptors.push_back(descriptor);
         }
 
@@ -2569,4 +2713,26 @@ void VulkanRenderBackend::saveCurrentImage(const std::string& filename)
     // Cleanup
     vkDestroyBuffer(device, stagingBuffer, nullptr);
     vkFreeMemory(device, stagingBufferMem, nullptr);
+}
+
+const A3Buffer A3::VulkanRenderBackend::createResourceBuffer(const uint32 size, const void* data)
+{
+    A3Buffer buffer;
+
+    if (size <= 0)
+        return buffer;
+
+    std::tie(buffer._buffer, buffer._memory) = createBuffer(
+        size,
+        VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+        VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+    void* dst;
+    vkMapMemory(device, buffer._memory, 0, size, 0, &dst);
+    memcpy(dst, data, size);
+    vkUnmapMemory(device, buffer._memory);
+
+    return buffer;
 }

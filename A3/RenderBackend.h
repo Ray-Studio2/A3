@@ -12,6 +12,7 @@ struct BLASBatch;
 struct RaytracingPSO;
 struct RaytracingPSODesc;
 struct LightData;
+struct Material;
 
 struct BLASBuildParams
 {
@@ -19,6 +20,7 @@ struct BLASBuildParams
     const std::vector<VertexAttributes>& attributeData;
     const std::vector<uint32>& indexData;
     const std::vector<float>& cumulativeTriangleAreaData;
+    const Material& material;
     const Mat3x4 transformData;
 };
 

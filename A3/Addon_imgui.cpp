@@ -218,7 +218,7 @@ void Addon_imgui::renderFrame( GLFWwindow* window, VulkanRenderBackend* vulkan, 
                     if (ImGui::Selectable(items[n], is_selected))
                     {
                         item_selected_idx = n;
-                        scene->load(items[item_selected_idx]);
+                        scene->load(items[item_selected_idx], *vulkan);
                         scene->markSceneDirty();
                     }
                     if (is_selected)

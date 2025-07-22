@@ -30,7 +30,6 @@ _ReSharper*/
 .idea/
 #Nuget packages folder
 packages/
-ThirdParty/
 asset/
 output_images/
 

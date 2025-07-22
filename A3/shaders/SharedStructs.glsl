@@ -33,9 +33,29 @@ struct ObjectDesc
    uint64_t vertexAttributeDeviceAddress;
    uint64_t indexDeviceAddress;
    uint64_t cumulativeTriangleAreaAddress;
+   uint64_t materialAddress;
 };
 
 struct EnvImportanceSampleData {
     vec3 dir;
     float pdf;
+};
+
+#define TextureParameter uint
+struct MaterialParameter
+{
+	vec4 _baseColorFactor;
+
+	TextureParameter _baseColorTexture;
+	TextureParameter _normalTexture;
+	TextureParameter _occlusionTexture;
+	float _metallicFactor;
+
+	float _roughnessFactor;
+	TextureParameter _metallicRoughnessTexture;
+	float _padding1;
+	float _padding2;
+
+	vec3 _emissiveFactor;
+	TextureParameter _emissiveTexture;
 };

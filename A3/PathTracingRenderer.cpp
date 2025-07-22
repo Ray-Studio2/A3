@@ -106,6 +106,7 @@ void PathTracingRenderer::buildSamplePSO()
         environmentMiss.descriptors.emplace_back( SRD_ImageSampler, 6 );
         environmentMiss.descriptors.emplace_back( SRD_UniformBuffer, 7 ); // Imgui parameters
         environmentMiss.descriptors.emplace_back(SRD_ImageSampler, 8); // environmentMap Sampling
+        environmentMiss.descriptors.emplace_back( SRD_ImageSampler, 9 ); // environmentMap HitPos PDF
         ShaderDesc& closestHit = psoDesc.shaders[ 2 ];
         closestHit.descriptors.emplace_back( SRD_AccelerationStructure, 0 );
         closestHit.descriptors.emplace_back( SRD_StorageBuffer, 3 );

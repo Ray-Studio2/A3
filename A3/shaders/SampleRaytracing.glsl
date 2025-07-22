@@ -676,8 +676,14 @@ void main()
             pdfGGXVal = pdfGGXVNDF(worldNormal, viewDir, halfDir, alpha);
         }
 
+        pdfGGXVal = probGGX * pdfGGXVal;
+        pdfCosineVal = probCos * pdfCosineVal;
+
+        const float weight = isGGX ? powerHeuristic(pdfGGXVal, pdfCosineVal) 
+                                   : powerHeuristic(pdfCosineVal, pdfGGXVal);   
+
+        const float pdfBRDF = isGGX ? pdfGGXVal : pdfCosineVal;
         const vec3 brdf = calculateBRDF(worldNormal, viewDir, rayDir, halfDir, color, metallic, alpha);
-        const float pdfBRDF = probGGX * pdfGGXVal + probCos * pdfCosineVal;
 
 		gPayload.rayDirection = rayDir;
         gPayload.pdfBRDF = pdfBRDF;
@@ -690,7 +696,7 @@ void main()
 			0);                                 // gPayload 
 		gPayload.depth--;
 
-        tempRadianceI += brdf * gPayload.radiance * cos_p / pdfBRDF; // weighted for the last bounce
+        tempRadianceI += brdf * gPayload.radiance * cos_p * weight / pdfBRDF; // radiance weighted for the last bounce
 	}
 	tempRadianceI *= (1.0 / float(numSampleByDepth)); 
     
@@ -747,7 +753,7 @@ layout(location = 0) rayPayloadInEXT RayPayload gPayload;
 
 void main()
 {
-	if (gPayload.depth > gImguiParam.maxDepth) {
+	if (gPayload.depth >= gImguiParam.maxDepth) {
         gPayload.radiance = vec3(0.0);
 		return;
     }
@@ -759,9 +765,7 @@ void main()
     if (gPayload.depth > 0)
     {
         const vec2 uv = getUVfromRay(gPayload.rayDirection);
-        const vec4 pixelValue = getPixelValue(uv.x, uv.y);
-        const float pdfEnv = pixelValue.w;
-        
+        const float pdfEnv = getEnvPdf(uv.x, uv.y);
         weight = powerHeuristic(gPayload.pdfBRDF, pdfEnv);
     }
     gPayload.radiance = weight * Le;

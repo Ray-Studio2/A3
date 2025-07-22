@@ -25,6 +25,8 @@ public:
 	const Vec3& getLocalPosition() { return position; }
 	const Vec3& getWorldPosition() { return Vec3( localToWorld.m03, localToWorld.m13, localToWorld.m23 ); }
 	const Vec3& getBaseColor() { return baseColor; }
+	const float getMetallic() const { return metallic; }
+	const float getRoughness() const { return roughness; }
 	const float getEmittance() const { return emittance; }
 
 	void setPosition( const Vec3& position )
@@ -74,15 +76,10 @@ public:
 		updateLocalToWorld();
 	}
 
-	void setBaseColor(const Vec3& baseColor) 
-	{
-		this->baseColor = baseColor;
-	}
-
-	void setEmittance(float emittance)
-	{
-		this->emittance = emittance;
-	}
+	void setBaseColor(const Vec3& baseColor) { this->baseColor = baseColor; }
+	void setMetallic(const float& metallic) { this->metallic = metallic; }
+	void setRoughness(const float& roughness) { this->roughness = roughness; }
+	void setEmittance(float emittance) { this->emittance = emittance; }
 
 	bool isLight()
 	{
@@ -123,6 +120,8 @@ protected:
 	Mat4x4 localToWorld;
 
 	Vec3 baseColor;
+	float metallic;
+	float roughness;
 	// for light objects
 	float emittance; 
 };

@@ -2,11 +2,11 @@ struct RayPayload
 {
     vec3 rayDirection;
     vec3 radiance;
-    vec3 throughput;
     vec3 desiredPosition;
     uint depth;
     uint rngState;
-    bool bEnvMap;
+    float pdfBRDF;
+    float visibility;
 };
 
 // struct ShadowPayload

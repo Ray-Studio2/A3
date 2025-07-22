@@ -117,6 +117,28 @@ uint random2( uvec2 pixel, uint sampleIndex, uint depth, uint axis )
 
 /////////////////////////////////////////////////////////////////////////////////////////////
 
+bool finite(float v)
+{
+    return !(isnan(v) || isinf(v));
+}
+
+float powerHeuristic(float pdfA, float pdfB)
+{
+    float maxPdf = max(pdfA, pdfB);
+
+    float a = pdfA / maxPdf;
+    float b = pdfB / maxPdf;
+
+    float a2 = a * a;
+    float b2 = b * b;
+    float denom = a2 + b2;
+
+    return a2 / denom;
+}
+
+
+/////////////////////////////////////////////////////////////////////////////////////////////
+
 mat3 rotateY(float angle) {
     float c = cos(angle);
     float s = sin(angle);
@@ -125,4 +147,46 @@ mat3 rotateY(float angle) {
         0.0, 1.0, 0.0,
         s, 0.0, c
     );
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////
+
+float getEnvPdf(float x, float y) {
+    return texture(envHitPdf, vec2(x, y)).r;
+}
+
+vec3 sampleEnvDirection(inout uint rngState, out float pdf)
+{
+    ivec2 texSize = textureSize(environmentMap, 0);
+    uint width = texSize.x;
+    uint height = texSize.y;
+
+    float x = random(rngState);
+    float y = random(rngState);
+    vec4 pixelValue = texture(envImportanceData, vec2(x, y));
+    pdf = pixelValue.w;
+
+    vec3 dir = pixelValue.xyz;
+    float rot = gImguiParam.envmapRotDeg * (PI / 180.0);
+    dir = rotateY(-rot) * dir;
+
+    // @TODO: pre-calculate on cpu
+    return normalize( dir );
+}
+
+vec2 getUVfromRay(vec3 rayDir) {
+    float rot = gImguiParam.envmapRotDeg * (PI / 180.0);
+    rayDir = rotateY(rot) * rayDir; // envmap을 회전하는 것과 같음 (역방향 회전)
+
+    vec2 uv = vec2(
+        atan(rayDir.z, rayDir.x) / (2.0 * PI),
+        acos(rayDir.y) / PI
+    );
+    if (uv.x < 0.0) uv.x += 1.0;
+    return uv;
+}
+
+vec3 getEmitFromEnvmap(vec3 rayDir) {
+    vec2 uv = getUVfromRay(rayDir);
+    return texture(environmentMap, uv).rgb; // function -> get emit from envmap
 }

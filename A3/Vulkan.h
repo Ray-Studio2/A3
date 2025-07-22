@@ -160,6 +160,10 @@ private:
     VkDeviceMemory envImportanceMem;
     VkImageView envImportanceView;
 
+    VkImage envHitImage;
+    VkDeviceMemory envHitMem;
+    VkImageView envHitView;
+
     VkImage outImage;
     VkDeviceMemory outImageMem;
     VkImageView outImageView;

@@ -3,6 +3,8 @@ layout( binding = 1, rgba8 ) uniform image2D image;
 layout( binding = 2 ) uniform CameraProperties
 {
     vec3 cameraPos;
+    vec3 cameraFront;
+
     float yFov_degree;
     float exposure;
     uint currentFrame;

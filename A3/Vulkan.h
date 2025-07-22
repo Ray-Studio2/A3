@@ -167,14 +167,14 @@ private:
     VkImage outImage;
     VkDeviceMemory outImageMem;
     VkImageView outImageView;
-    
+
     VkImage accumulationImage;
     VkDeviceMemory accumulationImageMem;
     VkImageView accumulationImageView;
 
     VkBuffer cameraBuffer;
     VkDeviceMemory cameraBufferMem;
-    
+
     VkBuffer lightBuffer;
     VkDeviceMemory lightBufferMem;
 

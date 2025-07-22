@@ -40,3 +40,4 @@ layout( binding = 7 ) uniform imguiParam {
 } gImguiParam;
 
 layout( binding = 8 ) uniform sampler2D envImportanceData;
+layout( binding = 9 ) uniform sampler2D envHitPdf;

@@ -160,17 +160,21 @@ private:
     VkDeviceMemory envImportanceMem;
     VkImageView envImportanceView;
 
+    VkImage envHitImage;
+    VkDeviceMemory envHitMem;
+    VkImageView envHitView;
+
     VkImage outImage;
     VkDeviceMemory outImageMem;
     VkImageView outImageView;
-    
+
     VkImage accumulationImage;
     VkDeviceMemory accumulationImageMem;
     VkImageView accumulationImageView;
 
     VkBuffer cameraBuffer;
     VkDeviceMemory cameraBufferMem;
-    
+
     VkBuffer lightBuffer;
     VkDeviceMemory lightBufferMem;
 

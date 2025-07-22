@@ -15,6 +15,7 @@
 #include "PathTracingRenderer.h" // For LightData
 #include <random>
 #include <filesystem>
+#include <iostream>
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
@@ -1074,7 +1075,7 @@ void VulkanRenderBackend::createEnvironmentMapImportanceSampling(float* pixels, 
         }
     }
 
-    if (luminanceSum <= 0.0f) luminanceSum = 1e-6f;
+    if (luminanceSum <= 0.0f) luminanceSum = 1e-6f; // TODO: throw an exception instead
 
     // 2. Marginal PDF & CDF (y 방향)
     float marginalAccum = 0.0f;
@@ -1084,7 +1085,7 @@ void VulkanRenderBackend::createEnvironmentMapImportanceSampling(float* pixels, 
             rowSum += luminances[y * width + x];
         }
         float pdf = rowSum / luminanceSum;
-        pdf = std::max(pdf, 1e-6f); // clamp 최소값
+        //pdf = std::max(pdf, 1e-6f); // clamp 최소값
         marginalPdf[y] = pdf;
         marginalAccum += pdf;
         marginalCdf[y] = marginalAccum;
@@ -1110,7 +1111,7 @@ void VulkanRenderBackend::createEnvironmentMapImportanceSampling(float* pixels, 
         for (int x = 0; x < width; ++x) {
             int i = y * width + x;
             float conditionalPdf = luminances[i] / rowSum;
-            conditionalPdf = std::max( conditionalPdf, 1e-6f); // clamp
+            //conditionalPdf = std::max( conditionalPdf, 1e-6f); // clamp
             accum += conditionalPdf;
 
             conditionalCdf[ i ] = accum;
@@ -1133,7 +1134,7 @@ void VulkanRenderBackend::createEnvironmentMapImportanceSampling(float* pixels, 
     // ---- Marginal CDF 이진 탐색 (Y 방향) ----
     for( uint32 indexY = 0; indexY < height; ++indexY )
     {
-        const float indexYNormalized = ( float )indexY / ( height - 1 );
+        const float indexYNormalized = (float(indexY) + 0.5) / height;
         uint32 yLow = 0;
         uint32 yHigh = height - 1;
         while( yLow < yHigh )
@@ -1151,13 +1152,13 @@ void VulkanRenderBackend::createEnvironmentMapImportanceSampling(float* pixels, 
         for( uint32 indexX = 0; indexX < width; ++indexX )
         {
             const uint32 indexXY = indexX + indexY * width;
-            const float indexXNormalized = ( float )indexX / ( width - 1 );
+            const float indexXNormalized = (float(indexX) + 0.5) / width;
             uint32 xLow = 0;
             uint32 xHigh = width - 1;
             while( xLow < xHigh )
             {
                 const uint32 xMid = ( xLow + xHigh ) / 2;
-                const float cdf = conditionalCdf[ yLow * width + xMid ];
+                const float cdf = conditionalCdf[ y * width + xMid ];
                 if( cdf < indexXNormalized )
                     xLow = xMid + 1;
                 else
@@ -1166,8 +1167,8 @@ void VulkanRenderBackend::createEnvironmentMapImportanceSampling(float* pixels, 
             const uint32 x = xLow;
 
             // ---- UV to Direction ----
-            const float u = x / float( width - 1 );
-            const float v = y / float( height - 1 );
+            const float u = (x + 0.5) / float(width);
+            const float v = (y + 0.5) / float(height);
             const float phi = 2.0 * pi * u;
             const float theta = pi * v;
             const float sinTheta = sin( theta );
@@ -1181,6 +1182,7 @@ void VulkanRenderBackend::createEnvironmentMapImportanceSampling(float* pixels, 
     }
 
     // 4. Vulkan Buffer 업로드
+    // Envmap Sampling Image
     VkDeviceSize imageSize = sizeof( EnvImportanceSampleData ) * EnvData.size();
 
     std::tie( envImportanceImage, envImportanceMem ) = createImage(
@@ -1199,13 +1201,6 @@ void VulkanRenderBackend::createEnvironmentMapImportanceSampling(float* pixels, 
     memcpy( data, EnvData.data(), imageSize );
     vkUnmapMemory( device, stagingMem );
 
-    VkCommandBuffer& cmd = commandBuffers[ imageIndex ];
-    vkResetCommandBuffer( cmd, 0 );
-
-    VkCommandBufferBeginInfo beginInfo{ .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
-    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-    vkBeginCommandBuffer( cmd, &beginInfo );
-
     VkImageSubresourceRange subresourceRange = {
         .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
         .baseMipLevel = 0,
@@ -1213,38 +1208,6 @@ void VulkanRenderBackend::createEnvironmentMapImportanceSampling(float* pixels, 
         .baseArrayLayer = 0,
         .layerCount = 1,
     };
-
-    setImageLayout( cmd, envImportanceImage, VK_IMAGE_LAYOUT_UNDEFINED,
-                    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, subresourceRange,
-                    VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT );
-
-    VkBufferImageCopy region{};
-    region.bufferOffset = 0;
-    region.imageSubresource = {
-        .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-        .mipLevel = 0,
-        .baseArrayLayer = 0,
-        .layerCount = 1,
-    };
-    region.imageExtent = { ( uint32_t )width, ( uint32_t )height, 1 };
-
-    vkCmdCopyBufferToImage( cmd, stagingBuffer, envImportanceImage,
-                            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region );
-
-    setImageLayout( cmd, envImportanceImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                    VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, subresourceRange,
-                    VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT );
-
-    vkEndCommandBuffer( cmd );
-
-    VkSubmitInfo submitInfo{ .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO };
-    submitInfo.commandBufferCount = 1;
-    submitInfo.pCommandBuffers = &cmd;
-    vkQueueSubmit( graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE );
-    vkQueueWaitIdle( graphicsQueue );
-
-    vkDestroyBuffer( device, stagingBuffer, nullptr );
-    vkFreeMemory( device, stagingMem, nullptr );
 
     VkImageViewCreateInfo viewInfo{
         .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
@@ -1254,6 +1217,98 @@ void VulkanRenderBackend::createEnvironmentMapImportanceSampling(float* pixels, 
         .subresourceRange = subresourceRange,
     };
     vkCreateImageView( device, &viewInfo, nullptr, &envImportanceView );
+
+    // Envmap Hit Image
+    VkDeviceSize imageSizeHit = sizeof(totalPdf[0]) * totalPdf.size();
+
+    std::tie(envHitImage, envHitMem) = createImage(
+        { (uint32)width, (uint32)height },
+        VK_FORMAT_R32_SFLOAT,
+        VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+    auto [hitStagingBuffer, hitStagingMem] = createBuffer(
+        imageSizeHit,
+        VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+    vkMapMemory(device, hitStagingMem, 0, imageSizeHit, 0, &data);
+    memcpy(data, totalPdf.data(), imageSizeHit);
+    vkUnmapMemory(device, hitStagingMem);
+
+    VkImageViewCreateInfo hitViewInfo{
+    .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+    .image = envHitImage,
+    .viewType = VK_IMAGE_VIEW_TYPE_2D,
+    .format = VK_FORMAT_R32_SFLOAT,
+    .subresourceRange = subresourceRange,
+    };
+    vkCreateImageView(device, &hitViewInfo, nullptr, &envHitView);
+
+    VkCommandBuffer& cmd = commandBuffers[imageIndex];
+    vkResetCommandBuffer(cmd, 0);
+
+    VkCommandBufferBeginInfo beginInfo{ .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
+    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    vkBeginCommandBuffer(cmd, &beginInfo);
+
+    // Importance(RGBA32F) 업로드 -------------------------------------------------
+    setImageLayout(cmd, envImportanceImage, VK_IMAGE_LAYOUT_UNDEFINED,
+        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, subresourceRange,
+        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+
+    VkBufferImageCopy region{};
+    region.bufferOffset = 0;
+    region.imageSubresource = {
+        .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+        .mipLevel = 0,
+        .baseArrayLayer = 0,
+        .layerCount = 1,
+    };
+    region.imageExtent = { (uint32_t)width, (uint32_t)height, 1 };
+
+    vkCmdCopyBufferToImage(cmd, stagingBuffer, envImportanceImage,
+        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+
+    // HitPdf(R32F) 업로드 --------------------------------------------------------
+    setImageLayout(cmd, envHitImage, VK_IMAGE_LAYOUT_UNDEFINED,
+        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, subresourceRange,
+        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+
+    VkBufferImageCopy hitRegion{};
+    hitRegion.bufferOffset = 0;
+    hitRegion.imageSubresource = {
+        .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+        .mipLevel = 0,
+        .baseArrayLayer = 0,
+        .layerCount = 1,
+    };
+    hitRegion.imageExtent = { (uint32_t)width, (uint32_t)height, 1 };
+
+    vkCmdCopyBufferToImage(cmd, hitStagingBuffer, envHitImage,
+        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &hitRegion);
+
+    // Shader-read 전환 ----------------------------------------------------------
+    setImageLayout(cmd, envImportanceImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, subresourceRange,
+        VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+    setImageLayout(cmd, envHitImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, subresourceRange,
+        VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+
+    // 커맨드버퍼 종료 & Submit ----------------------------------------------------
+    vkEndCommandBuffer(cmd);
+
+    VkSubmitInfo submitInfo{ .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO };
+    submitInfo.commandBufferCount = 1;
+    submitInfo.pCommandBuffers = &cmd;
+    vkQueueSubmit(graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
+    vkQueueWaitIdle(graphicsQueue);
+
+    vkDestroyBuffer(device, stagingBuffer, nullptr);
+    vkFreeMemory(device, stagingMem, nullptr);
+    vkDestroyBuffer(device, hitStagingBuffer, nullptr);
+    vkFreeMemory(device, hitStagingMem, nullptr);
 }
 
 uint32 VulkanRenderBackend::findMemoryType( uint32_t memoryTypeBits, VkMemoryPropertyFlags reqMemProps )
@@ -2064,7 +2119,7 @@ IRenderPipelineRef VulkanRenderBackend::createRayTracingPipeline( const Raytraci
     //==========================================================
     // Pipeline layout
     //==========================================================
-    std::vector<VkDescriptorSetLayoutBinding> bindings( 9 );
+    std::vector<VkDescriptorSetLayoutBinding> bindings( 10 );
     for( const ShaderDesc& shaderDesc : psoDesc.shaders )
     {
         for( const ShaderResourceDescriptor& descriptor : shaderDesc.descriptors )
@@ -2255,7 +2310,7 @@ IRenderPipelineRef VulkanRenderBackend::createRayTracingPipeline( const Raytraci
                 writeDescriptorSets.images.emplace_back(
                     VkDescriptorImageInfo{
                         .sampler = envSampler,
-                        .imageView = index == 6 ? envImageView : envImportanceView, // @TODO: decouple index based logic
+                        .imageView = index == 6 ? envImageView : index == 8 ? envImportanceView : envHitView, // @TODO: decouple index based logic
                         .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
                     }
                 );

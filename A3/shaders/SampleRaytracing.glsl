@@ -649,12 +649,36 @@ void main()
         float pdfCos = cos_p / PI;
         float pdfBRDF = probGGX * pdfGGX + probCos * pdfCos;
 
+        // Safety check for PDFs before MIS calculation
+        const float minPdf = 1e-6; // increased minimum PDF
+        if (pdfEnv <= minPdf || !finite(pdfEnv) || pdfEnv > 100.0) {
+            pdfEnv = 1.0 / (4.0 * PI); // uniform sphere fallback
+        }
+        if (pdfBRDF <= minPdf || !finite(pdfBRDF) || pdfBRDF > 100.0) {
+            continue; // skip this sample if BRDF PDF is invalid
+        }
+
         float w = powerHeuristic(pdfEnv, pdfBRDF);
 
         float charFunc = 0.0;
         if (dot(viewDir, worldNormal) > 0.0) charFunc = 1.0;
 
-        tempRadianceD += brdf * emit * cos_p * gPayload.visibility * charFunc * w / pdfEnv;
+        // Additional safety checks before calculation
+        if (!finite(brdf.x) || !finite(brdf.y) || !finite(brdf.z) ||
+            !finite(emit.x) || !finite(emit.y) || !finite(emit.z) ||
+            !finite(w) || w <= 0.0) {
+            continue; // skip invalid samples
+        }
+
+        // Safety check for environment contribution
+        vec3 envContribution = brdf * emit * cos_p * gPayload.visibility * charFunc * w / pdfEnv;
+        
+        // More aggressive validation
+        if (finite(envContribution.x) && finite(envContribution.y) && finite(envContribution.z) &&
+            all(greaterThanEqual(envContribution, vec3(0.0))) && 
+            all(lessThan(envContribution, vec3(10.0)))) { // lower clamp threshold
+            tempRadianceD += envContribution;
+        }
 	}
 	tempRadianceD *= (1.0 / float(numSampleByDepth));
 
@@ -786,8 +810,21 @@ void main()
     if (gPayload.depth > 0)
     {
         const vec2 uv = getUVfromRay(gPayload.rayDirection);
-        const float pdfEnv = getEnvPdf(uv.x, uv.y);
-        weight = powerHeuristic(gPayload.pdfBRDF, pdfEnv);
+        float pdfEnv = getEnvPdf(uv.x, uv.y);
+        
+        // Safety check for environment PDF
+        const float minPdf = 1e-8;
+        if (pdfEnv <= minPdf || !finite(pdfEnv)) {
+            // Calculate approximate uniform sphere PDF as fallback
+            pdfEnv = 1.0 / (4.0 * PI);
+        }
+        
+        // Ensure BRDF PDF is also valid
+        if (gPayload.pdfBRDF <= minPdf || !finite(gPayload.pdfBRDF)) {
+            weight = 1.0; // fallback to no MIS weighting
+        } else {
+            weight = powerHeuristic(gPayload.pdfBRDF, pdfEnv);
+        }
     }
     gPayload.radiance = weight * Le;
 }

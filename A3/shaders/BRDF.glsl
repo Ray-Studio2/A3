@@ -50,11 +50,20 @@ vec3 calculateBRDF(vec3 normal, vec3 viewDir, vec3 lightDir, vec3 halfDir, vec3 
 
     vec3 num = min(ndf * geometry * fresnel, INF_CLAMP);
     float denom = 4.0 * dotNV * dotNL;
-    vec3 f_spec = num / max(denom, 1e-6);
+    vec3 f_spec = num / max(denom, 1e-3); // increased epsilon for more stability
 
-    vec3 f_diff = (1.0 - metallic) * color * (1/PI);
+    vec3 f_diff = (1.0 - metallic) * color * (1.0/PI);
+    
+    vec3 result = f_diff + f_spec;
+    
+    // Safety check for BRDF result
+    if (!finite(result.x) || !finite(result.y) || !finite(result.z) || 
+        any(lessThan(result, vec3(0.0))) || any(greaterThan(result, vec3(100.0)))) {
+        // Return diffuse-only fallback for invalid BRDF
+        return f_diff;
+    }
 
-    return f_diff + f_spec;
+    return result;
 }
 
 // vec3 calculateW(vec3 normal, vec3 viewDir, vec3 lightDir, vec3 halfDir, vec3 color, float metallic, float alpha)

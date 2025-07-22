@@ -124,7 +124,18 @@ bool finite(float v)
 
 float powerHeuristic(float pdfA, float pdfB)
 {
+    const float eps = 1e-8;
+    
+    // Handle zero or invalid PDFs
+    if (pdfA <= eps && pdfB <= eps) return 0.5;
+    if (pdfA <= eps) return 0.0;
+    if (pdfB <= eps) return 1.0;
+    
+    // Check for infinity or NaN
+    if (!finite(pdfA) || !finite(pdfB)) return 0.5;
+    
     float maxPdf = max(pdfA, pdfB);
+    if (maxPdf <= eps) return 0.5;
 
     float a = pdfA / maxPdf;
     float b = pdfB / maxPdf;
@@ -132,6 +143,8 @@ float powerHeuristic(float pdfA, float pdfB)
     float a2 = a * a;
     float b2 = b * b;
     float denom = a2 + b2;
+    
+    if (denom <= eps) return 0.5;
 
     return a2 / denom;
 }
@@ -165,8 +178,21 @@ vec3 sampleEnvDirection(inout uint rngState, out float pdf)
     float y = random(rngState);
     vec4 pixelValue = texture(envImportanceData, vec2(x, y));
     pdf = pixelValue.w;
+    
+    // Safety check for PDF
+    const float minPdf = 1e-8;
+    if (pdf <= minPdf || !finite(pdf)) {
+        // Calculate approximate uniform sphere PDF as fallback
+        pdf = 1.0 / (4.0 * PI);
+    }
 
     vec3 dir = pixelValue.xyz;
+    
+    // Safety check for direction
+    if (length(dir) < 1e-6) {
+        dir = vec3(0.0, 1.0, 0.0); // fallback direction
+    }
+    
     float rot = gImguiParam.envmapRotDeg * (PI / 180.0);
     dir = rotateY(-rot) * dir;
 
@@ -188,5 +214,15 @@ vec2 getUVfromRay(vec3 rayDir) {
 
 vec3 getEmitFromEnvmap(vec3 rayDir) {
     vec2 uv = getUVfromRay(rayDir);
-    return texture(environmentMap, uv).rgb; // function -> get emit from envmap
+    vec3 emit = texture(environmentMap, uv).rgb;
+    
+    // Safety check for environment map values
+    if (!finite(emit.x) || !finite(emit.y) || !finite(emit.z)) {
+        return vec3(0.0); // black fallback for invalid values
+    }
+    
+    // Clamp extremely bright values that could cause fireflies
+    emit = min(emit, vec3(10.0));
+    
+    return max(emit, vec3(0.0)); // ensure non-negative
 }

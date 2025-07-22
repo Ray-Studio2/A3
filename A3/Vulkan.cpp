@@ -601,7 +601,7 @@ std::vector<const char*> deviceExtensions = {
     VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME, // not used
     VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME,
     VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
-    //VK_KHR_RAY_QUERY_EXTENSION_NAME,
+    VK_KHR_RAY_QUERY_EXTENSION_NAME,
     //"VK_EXT_samplerless_texture_functions",
 
     VK_KHR_SPIRV_1_4_EXTENSION_NAME, // not used
@@ -713,8 +713,8 @@ void VulkanRenderBackend::createVkQueueFamily()
     assert(descriptorIndexingFeatures.shaderStorageBufferArrayNonUniformIndexing);
     assert(descriptorIndexingFeatures.descriptorBindingStorageBufferUpdateAfterBind);
 
-    //if (!rqFeat.rayQuery)
-    //    throw std::runtime_error("Device doesn't support VK_KHR_ray_query");
+    if (!rqFeat.rayQuery)
+        throw std::runtime_error("Device doesn't support VK_KHR_ray_query");
 
     feats2.features.shaderInt64 = VK_TRUE;
     bdaFeat.bufferDeviceAddress = VK_TRUE;

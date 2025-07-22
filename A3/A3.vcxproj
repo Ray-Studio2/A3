@@ -160,6 +160,7 @@
     <ClCompile Include="ThirdParty\imgui\imgui_stdlib.cpp" />
     <ClCompile Include="ThirdParty\imgui\imgui_tables.cpp" />
     <ClCompile Include="ThirdParty\imgui\imgui_widgets.cpp" />
+    <ClCompile Include="Vector.cpp" />
     <ClCompile Include="Vulkan.cpp" />
   </ItemGroup>
   <ItemGroup>

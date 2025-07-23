@@ -35,6 +35,11 @@ public:
 		updateLocalToWorld();
 	}
 
+	Vec3 getPosition()
+	{
+		return position;
+	}
+
 	void setScale(const Vec3& scale)
 	{
 		this->scale = scale;

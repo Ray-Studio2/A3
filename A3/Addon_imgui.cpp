@@ -7,6 +7,8 @@
 #include "Scene.h"
 #include "MeshObject.h"
 
+#include "CameraObject.h"
+
 using namespace A3;
 
 // Dear ImGui: standalone example application for Glfw + Vulkan
@@ -206,6 +208,64 @@ void Addon_imgui::renderFrame( GLFWwindow* window, VulkanRenderBackend* vulkan, 
     {
         ImGui::Begin("A3 Pathtracer");
 
+        ImGui::SeparatorText("Performance");
+        ImGui::Text("Application average: %.3f ms/frame (%.1f FPS)", 1000.0f / io.Framerate, io.Framerate);
+        ImGui::Text("Current frame: %u", vulkan->currentFrameCount);
+
+        ImGui::SeparatorText("Camera");
+        {
+            CameraObject* camera = scene->getCamera();
+
+             // Camera position
+            Vec3 cameraPos = camera->getPosition();
+            float p[3] = { cameraPos.x, cameraPos.y, cameraPos.z };
+            if (ImGui::InputFloat3("Camera Position", p)) {
+                camera->setPosition(Vec3(p[0], p[1], p[2]));
+                scene->markPosUpdated();
+            }
+
+            // Camera fovY
+            float fovY = camera->getFov();
+            if (ImGui::SliderFloat("Camera fovY", &fovY, 30, 120)) {
+                camera->setFov(fovY);
+                scene->markPosUpdated();
+            }
+
+            // Camera Exposure
+            float exposure = camera->getExposure();
+            if (ImGui::InputFloat("Camera Exposure", &exposure, 0.25, 2.5)) {
+                if (exposure < 0)    exposure = 0;
+                camera->setExposure(exposure);
+                scene->markPosUpdated();
+            }
+
+            // Camera Max Depth
+            int depth = static_cast<int>(scene->getImguiParam()->maxDepth);
+            if (ImGui::InputInt("Max depth", &depth)) {
+                if (depth < 0) depth = 0;
+                if (depth > 5) depth = 5;
+                scene->getImguiParam()->maxDepth = static_cast<uint32>(depth);
+                scene->markBufferUpdated();
+            }
+
+            // Camera SPP
+            int numSamples = static_cast<int>(scene->getImguiParam()->numSamples);
+            if (ImGui::InputInt("Number of samples", &numSamples)) {
+                if (numSamples < 0) numSamples = 0;
+                if (numSamples > 64) numSamples = 64;
+                scene->getImguiParam()->numSamples = static_cast<uint32>(numSamples);
+                scene->markBufferUpdated();
+            }
+
+            // Camera Progressive
+            bool pBool = scene->getImguiParam()->isProgressive;
+            if (ImGui::Checkbox("Progressive", &pBool)) {
+                scene->getImguiParam()->isProgressive = static_cast<uint32>(pBool);
+                scene->markBufferUpdated();
+            }
+        }
+
+        /*
         ImGui::SeparatorText("Scene");
         {
             auto& items = RenderSettings::sceneFiles;
@@ -225,31 +285,6 @@ void Addon_imgui::renderFrame( GLFWwindow* window, VulkanRenderBackend* vulkan, 
                         ImGui::SetItemDefaultFocus();
                 }
                 ImGui::EndCombo();
-            }
-        }
-
-        ImGui::SeparatorText("Sample Quality");
-        {
-            int depth = static_cast<int>(scene->getImguiParam()->maxDepth);
-            if (ImGui::InputInt("Max depth", &depth)) {
-                if (depth < 0) depth = 0;
-                if (depth > 5) depth = 5;
-                scene->getImguiParam()->maxDepth = static_cast<uint32>(depth);
-                scene->markBufferUpdated();
-            }
-
-            int numSamples = static_cast<int>(scene->getImguiParam()->numSamples);
-            if (ImGui::InputInt("Number of samples", &numSamples)) {
-                if (numSamples < 0) numSamples = 0;
-                if (numSamples > 64) numSamples = 64;
-                scene->getImguiParam()->numSamples = static_cast<uint32>(numSamples);
-                scene->markBufferUpdated();
-            }
-
-            bool p = scene->getImguiParam()->isProgressive;
-            if (ImGui::Checkbox("Progressive", &p)) {
-                scene->getImguiParam()->isProgressive = static_cast<uint32>(p);
-                scene->markBufferUpdated();
             }
         }
 
@@ -318,11 +353,11 @@ void Addon_imgui::renderFrame( GLFWwindow* window, VulkanRenderBackend* vulkan, 
                     vulkan->saveCurrentImage("frame_" + std::to_string(frameCount) + ".png");
             }
             ImGui::EndDisabled();
-        }
+        }*/
 
-        ImGui::SeparatorText("Performance");
-        ImGui::Text("Application average: %.3f ms/frame (%.1f FPS)", 1000.0f / io.Framerate, io.Framerate);
-        ImGui::Text("Current frame: %u", vulkan->currentFrameCount);
+        //ImGui::SeparatorText("Performance");
+        //ImGui::Text("Application average: %.3f ms/frame (%.1f FPS)", 1000.0f / io.Framerate, io.Framerate);
+        //ImGui::Text("Current frame: %u", vulkan->currentFrameCount);
         ImGui::End();
     }
 

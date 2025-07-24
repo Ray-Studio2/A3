@@ -241,18 +241,21 @@ void Addon_imgui::renderFrame( GLFWwindow* window, VulkanRenderBackend* vulkan, 
 
             // Camera Max Depth
             int depth = static_cast<int>(scene->getImguiParam()->maxDepth);
+            // @TODO: think about where should we place this min/max data
+            constexpr int minDepth = 0;
+            constexpr int maxDepth = 5;
             if (ImGui::InputInt("Max depth", &depth)) {
-                if (depth < 0) depth = 0;
-                if (depth > 5) depth = 5;
+                depth = std::min(maxDepth, std::max(minDepth, depth));
                 scene->getImguiParam()->maxDepth = static_cast<uint32>(depth);
                 scene->markBufferUpdated();
             }
 
             // Camera SPP
             int numSamples = static_cast<int>(scene->getImguiParam()->numSamples);
+            constexpr int minNumSamples = 0;
+            constexpr int maxNumSamples = 64;
             if (ImGui::InputInt("Number of samples", &numSamples)) {
-                if (numSamples < 0) numSamples = 0;
-                if (numSamples > 64) numSamples = 64;
+                numSamples = std::min(maxNumSamples, std::max(minNumSamples, numSamples));
                 scene->getImguiParam()->numSamples = static_cast<uint32>(numSamples);
                 scene->markBufferUpdated();
             }

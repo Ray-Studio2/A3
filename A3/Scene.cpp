@@ -403,7 +403,7 @@ void Scene::loadGLTF(const std::string& fileName, VulkanRenderBackend& vulkanBac
 		Material a3Material;
 		a3Material._parameter = std::move(materialParameter);
 		a3Material._buffer = vulkanBackend.createResourceBuffer(sizeof(a3Material._parameter), static_cast<const void*>(&a3Material._parameter));
-
+		a3Material._name = material.name;
 		materialArr.push_back(std::move(a3Material));
 	}
 
@@ -554,6 +554,7 @@ void Scene::loadGLTF(const std::string& fileName, VulkanRenderBackend& vulkanBac
 			//}
 			mo->setMetallic(0.0f);
 			mo->setRoughness(1.0f);
+			mo->setName(mesh.name);
 
 			this->objects.emplace_back(mo);
 		}
@@ -646,9 +647,11 @@ void Scene::load(const std::string& path, VulkanRenderBackend& vulkanBackend) {
 			Material a3Material;
 			a3Material._parameter = materialParameter;
 			a3Material._buffer = vulkanBackend.createResourceBuffer(sizeof(a3Material._parameter), static_cast<const void*>(&a3Material._parameter));
+			a3Material._name = materialName;
 			materialArrForObj.push_back(a3Material);
 
 			MeshObject* mo = new MeshObject(resources[mesh], &materialArrForObj[materialArrForObj.size() - 1]);
+			mo->setName(name);
 			mo->setPosition(Vec3(position[0], position[1], position[2]));
 			mo->setRotation(Vec3(rotation[0], rotation[1], rotation[2]));
 			mo->setScale(Vec3(scale[0], scale[1], scale[2]));

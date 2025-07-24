@@ -217,7 +217,7 @@ void Addon_imgui::renderFrame( GLFWwindow* window, VulkanRenderBackend* vulkan, 
             CameraObject* camera = scene->getCamera();
 
              // Camera position
-            Vec3 cameraPos = camera->getPosition();
+            Vec3 cameraPos = camera->getLocalPosition();
             float p[3] = { cameraPos.x, cameraPos.y, cameraPos.z };
             if (ImGui::InputFloat3("Camera Position", p)) {
                 camera->setPosition(Vec3(p[0], p[1], p[2]));
@@ -268,7 +268,7 @@ void Addon_imgui::renderFrame( GLFWwindow* window, VulkanRenderBackend* vulkan, 
             }
         }
 
-        /*
+        
         ImGui::SeparatorText("Scene");
         {
             auto& items = RenderSettings::sceneFiles;
@@ -291,41 +291,56 @@ void Addon_imgui::renderFrame( GLFWwindow* window, VulkanRenderBackend* vulkan, 
             }
         }
 
-        bool lightExists = scene->getLightIndex().size();
-        ImGui::BeginDisabled(!lightExists);
-        ImGui::SeparatorText("Light");
+        static bool showObjectsUI = true;
+            
+        ImGui::SeparatorText("Objects");
         {
-            static MeshObject* light = nullptr;
-            if (scene->isSceneDirty()) light = nullptr;
-            if (lightExists) {
-                auto& lightIndex = scene->getLightIndex()[0]; // Assuming 1 light
+            if (showObjectsUI) {
+                if (ImGui::Button("Disable Objects UI")) {
+                    showObjectsUI = false;
+                }
+                const auto& objects = scene->collectMeshObjects();
+                int objectIndex = 0;
+                for (auto& object : objects) {
+                    ImGui::Text(object->getName().data());
+                    const std::string label = "##" + std::to_string(objectIndex);
 
-                if (!light) {
-                    auto objects = scene->collectMeshObjects();
-                    if (objects.size() > lightIndex)
-                        light = objects[lightIndex];
+                    auto position = object->getLocalPosition();
+                    float p[3] = { position.x, position.y, position.z };
+                    const std::string positionLabel = "Position" + label;
+                    if (ImGui::SliderFloat3(positionLabel.data(), p, -3.0, 3.0)) {
+                        object->setPosition(Vec3(p[0], p[1], p[2]));
+                        scene->markPosUpdated();
+                    }
+
+                    auto scale = object->getLocalScale();
+                    float s[3] = { scale.x, scale.y, scale.z };
+                    const std::string scaleLabel = "Scale" + label;
+                    if (ImGui::SliderFloat3(scaleLabel.data(), s, -3.0, 3.0)) {
+                        object->setScale(Vec3(s[0], s[1], s[2]));
+                        scene->markPosUpdated();
+                    }
+
+                    // @TODO: add rotation
+
+                    auto material = object->getMaterial();
+                    const std::string materialLabel = "Material: " + material->_name;
+                    ImGui::Text(materialLabel.data());
+
+                    ++objectIndex;
+                }
+            } else {
+                if (ImGui::Button("Enable Objects UI")) {
+                    showObjectsUI = true;
                 }
             }
-
-            // light position
-            auto lightPos = Vec3(0.0);
-            if (light!=nullptr) lightPos = light->getLocalPosition();
-            float p[3] = { lightPos.x, lightPos.y, lightPos.z };
-            if (ImGui::SliderFloat3("Position", p, -3.0, 3.0)) {
-                light->setPosition(Vec3(p[0], p[1], p[2]));
-                scene->markPosUpdated();
-            }
-
-            float emit = 0.0;
-            if (light!=nullptr) emit = light->getEmittance();
-            if (ImGui::InputFloat("Emittance per point", &emit, 1.0f, 10.0f)) {
-                if (emit < 0.0f) emit = 0.0f;
-                if (emit > 500.0f) emit = 500.0f;
-                light->setEmittance(emit);
-                scene->markBufferUpdated();
-            }
         }
-        ImGui::EndDisabled();
+
+        ImGui::SeparatorText("Material");
+        {
+            // @TODO: get material array and show name & each params
+            // BUT, should we have to use imguiParams struct for all of these UI things?
+        }
 
         ImGui::SeparatorText("Env Map");
         {
@@ -356,11 +371,7 @@ void Addon_imgui::renderFrame( GLFWwindow* window, VulkanRenderBackend* vulkan, 
                     vulkan->saveCurrentImage("frame_" + std::to_string(frameCount) + ".png");
             }
             ImGui::EndDisabled();
-        }*/
-
-        //ImGui::SeparatorText("Performance");
-        //ImGui::Text("Application average: %.3f ms/frame (%.1f FPS)", 1000.0f / io.Framerate, io.Framerate);
-        //ImGui::Text("Current frame: %u", vulkan->currentFrameCount);
+        }
         ImGui::End();
     }
 

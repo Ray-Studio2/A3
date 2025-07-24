@@ -9,6 +9,7 @@
 #include <bitset>
 #include <span>
 #include <memory>
+#include <string>
 #include "EngineTypes.h"
 #include "RenderSettings.h"
 #include "RenderBackend.h"
@@ -83,6 +84,7 @@ struct Material
 
     // innerdata
     A3Buffer _buffer;
+    std::string _name;
 
     void uploadMaterialParameter(VulkanRenderBackend& vulkanBackend);
 };

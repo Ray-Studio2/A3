@@ -35,6 +35,7 @@ public:
 
 	BLASBatch* getBLASBatch() { return &blasBatch; }
 	MeshResource* getResource() { return resource; }
+	Material* getMaterial() { return _material; }
 	virtual bool canRender() override { return true; }
 
 	void calculateTriangleArea()

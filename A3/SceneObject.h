@@ -2,6 +2,7 @@
 
 #include "Vector.h"
 #include "Matrix.h"
+#include <string>
 
 namespace A3
 {
@@ -14,7 +15,8 @@ public:
 		  rotation(Mat3x3::identity),
 		  localToWorld( Mat4x4::identity ),
 		  baseColor(0.0f),
-		  emittance(0.0f)
+		  emittance(0.0f),
+		  name("temp")
 	{
 		updateLocalToWorld();
 	}
@@ -24,20 +26,24 @@ public:
 	const Mat4x4& getLocalToWorld() { return localToWorld; }
 	const Vec3& getLocalPosition() { return position; }
 	const Vec3& getWorldPosition() { return Vec3( localToWorld.m03, localToWorld.m13, localToWorld.m23 ); }
+	const Vec3& getLocalScale() { return scale; }
+	const Vec3& getWorldScale() {
+		return Vec3(
+			length(Vec3(localToWorld.m00, localToWorld.m01, localToWorld.m02)),
+			length(Vec3(localToWorld.m10, localToWorld.m11, localToWorld.m12)),
+			length(Vec3(localToWorld.m20, localToWorld.m21, localToWorld.m22))
+		);
+	}
 	const Vec3& getBaseColor() { return baseColor; }
 	const float getMetallic() const { return metallic; }
 	const float getRoughness() const { return roughness; }
 	const float getEmittance() const { return emittance; }
+	std::string_view getName() const { return name; }
 
 	void setPosition( const Vec3& position )
 	{
 		this->position = position;
 		updateLocalToWorld();
-	}
-
-	Vec3 getPosition()
-	{
-		return position;
 	}
 
 	void setScale(const Vec3& scale)
@@ -85,6 +91,7 @@ public:
 	void setMetallic(const float& metallic) { this->metallic = metallic; }
 	void setRoughness(const float& roughness) { this->roughness = roughness; }
 	void setEmittance(float emittance) { this->emittance = emittance; }
+	void setName(std::string_view name) { this->name = name; }
 
 	bool isLight()
 	{
@@ -128,6 +135,8 @@ protected:
 	float metallic;
 	float roughness;
 	// for light objects
-	float emittance; 
+	float emittance;
+
+	std::string name;
 };
 }

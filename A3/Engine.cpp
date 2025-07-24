@@ -115,12 +115,13 @@ void Engine::Run()
 
         Addon_imgui imgui( window, &gfxBackend, screenWidth, screenHeight );
 
+        static const float fixedDeltaTime = 0.0166f;
         while( !glfwWindowShouldClose( window ) )
         {
             glfwPollEvents();
             updateInput(window, scene);
 
-            scene.beginFrame();
+            scene.beginFrame(fixedDeltaTime);
 
             renderer.beginFrame( screenWidth, screenHeight );
 

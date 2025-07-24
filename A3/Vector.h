@@ -143,6 +143,25 @@ inline Vec3 operator*(const Vec3& lhs, float rhs)
 	};
 }
 
+inline Vec4 operator+(const Vec4& lhs, const Vec4& rhs)
+{
+	return {
+		lhs.x + rhs.x,
+		lhs.y + rhs.y,
+		lhs.z + rhs.z,
+		lhs.w + rhs.w,
+	};
+}
+inline Vec4 operator*(const Vec4& lhs, float rhs)
+{
+	return {
+		lhs.x * rhs,
+		lhs.y * rhs,
+		lhs.z * rhs,
+		lhs.w * rhs,
+	};
+}
+
 float lengthSquared(const Vec3& v);
 float length(const Vec3& v);
 Vec3 normalize(const Vec3& v);

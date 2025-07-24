@@ -125,7 +125,7 @@ VulkanRenderBackend::VulkanRenderBackend( GLFWwindow* window, std::vector<const 
 
     TextureManager::initialize(*this);
 
-    //// 옮겨야함
+    //// ??????몃쭥
     //createEnvironmentMap(RenderSettings::envMapPath);
 }
 
@@ -1173,7 +1173,7 @@ void VulkanRenderBackend::createEnvironmentMapImportanceSampling(float* pixels, 
 
     float luminanceSum = 0.0f;
 
-    // 1. Luminance × sin(theta) 계산 (soften: gamma 적용)
+    // 1. Luminance ??sin(theta) ??ｌ뫒亦?(soften: gamma ??⑤챷??
     const float gamma = 0.9f;
     for (int y = 0; y < height; ++y) {
         float theta = 3.14159265f * (y + 0.5f) / float(height);
@@ -1191,7 +1191,7 @@ void VulkanRenderBackend::createEnvironmentMapImportanceSampling(float* pixels, 
 
     if (luminanceSum <= 0.0f) luminanceSum = 1e-6f; // TODO: throw an exception instead
 
-    // 2. Marginal PDF & CDF (y 방향)
+    // 2. Marginal PDF & CDF (y ?꾩렮維싧젆?
     float marginalAccum = 0.0f;
     for (int y = 0; y < height; ++y) {
         float rowSum = 0.0f;
@@ -1199,7 +1199,7 @@ void VulkanRenderBackend::createEnvironmentMapImportanceSampling(float* pixels, 
             rowSum += luminances[y * width + x];
         }
         float pdf = rowSum / luminanceSum;
-        //pdf = std::max(pdf, 1e-6f); // clamp 최소값
+        //pdf = std::max(pdf, 1e-6f); // clamp 嶺뚣끉裕??붿쾸?
         marginalPdf[y] = pdf;
         marginalAccum += pdf;
         marginalCdf[y] = marginalAccum;
@@ -1209,9 +1209,9 @@ void VulkanRenderBackend::createEnvironmentMapImportanceSampling(float* pixels, 
     for (int y = 0; y < height; ++y) {
         marginalCdf[y] /= marginalAccum;
     }
-    marginalCdf[height - 1] = 1.0f; // 강제 클램프
+    marginalCdf[height - 1] = 1.0f; // ?띠룆踰????????
 
-    // 3. Conditional PDF & CDF (x 방향 per row)
+    // 3. Conditional PDF & CDF (x ?꾩렮維싧젆?per row)
     for (int y = 0; y < height; ++y) {
         float rowSum = 0.0f;
         for (int x = 0; x < width; ++x) {
@@ -1221,7 +1221,7 @@ void VulkanRenderBackend::createEnvironmentMapImportanceSampling(float* pixels, 
         rowSum = std::max(rowSum, 1e-6f);
         float accum = 0.0f;
 
-        // CDF 작성
+        // CDF ??얜???
         for (int x = 0; x < width; ++x) {
             int i = y * width + x;
             float conditionalPdf = luminances[i] / rowSum;
@@ -1238,14 +1238,14 @@ void VulkanRenderBackend::createEnvironmentMapImportanceSampling(float* pixels, 
             conditionalCdf[ i ] /= accum;
         }
 
-        // 마지막 CDF 클램프
+        // 嶺뚮씭??嶺?CDF ??????
         int last = y * width + (width - 1);
         conditionalCdf[ last ] = 1.0f;
     }
 
     constexpr float pi = 3.1415926535897932384626433832795;
 
-    // ---- Marginal CDF 이진 탐색 (Y 방향) ----
+    // ---- Marginal CDF ??怨몄땟 ?????(Y ?꾩렮維싧젆? ----
     for( uint32 indexY = 0; indexY < height; ++indexY )
     {
         const float indexYNormalized = (float(indexY) + 0.5) / height;
@@ -1262,7 +1262,7 @@ void VulkanRenderBackend::createEnvironmentMapImportanceSampling(float* pixels, 
         }
         const uint32 y = yLow;
 
-        // ---- Conditional CDF 이진 탐색 (X 방향) ----
+        // ---- Conditional CDF ??怨몄땟 ?????(X ?꾩렮維싧젆? ----
         for( uint32 indexX = 0; indexX < width; ++indexX )
         {
             const uint32 indexXY = indexX + indexY * width;
@@ -1295,7 +1295,7 @@ void VulkanRenderBackend::createEnvironmentMapImportanceSampling(float* pixels, 
         }
     }
 
-    // 4. Vulkan Buffer 업로드
+    // 4. Vulkan Buffer ???놁Ŧ??
     // Envmap Sampling Image
     VkDeviceSize imageSize = sizeof( EnvImportanceSampleData ) * EnvData.size();
 
@@ -1366,7 +1366,7 @@ void VulkanRenderBackend::createEnvironmentMapImportanceSampling(float* pixels, 
     beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
     vkBeginCommandBuffer(cmd, &beginInfo);
 
-    // Importance(RGBA32F) 업로드 -------------------------------------------------
+    // Importance(RGBA32F) ???놁Ŧ??-------------------------------------------------
     setImageLayout(cmd, envImportanceImage, VK_IMAGE_LAYOUT_UNDEFINED,
         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, subresourceRange,
         VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
@@ -1384,7 +1384,7 @@ void VulkanRenderBackend::createEnvironmentMapImportanceSampling(float* pixels, 
     vkCmdCopyBufferToImage(cmd, stagingBuffer, envImportanceImage,
         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
 
-    // HitPdf(R32F) 업로드 --------------------------------------------------------
+    // HitPdf(R32F) ???놁Ŧ??--------------------------------------------------------
     setImageLayout(cmd, envHitImage, VK_IMAGE_LAYOUT_UNDEFINED,
         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, subresourceRange,
         VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
@@ -1402,7 +1402,7 @@ void VulkanRenderBackend::createEnvironmentMapImportanceSampling(float* pixels, 
     vkCmdCopyBufferToImage(cmd, hitStagingBuffer, envHitImage,
         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &hitRegion);
 
-    // Shader-read 전환 ----------------------------------------------------------
+    // Shader-read ?熬곥굦??----------------------------------------------------------
     setImageLayout(cmd, envImportanceImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, subresourceRange,
         VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
@@ -1410,7 +1410,7 @@ void VulkanRenderBackend::createEnvironmentMapImportanceSampling(float* pixels, 
         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, subresourceRange,
         VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
 
-    // 커맨드버퍼 종료 & Submit ----------------------------------------------------
+    // ??ｋ걞???類ㅼ뮅????リ턁筌?& Submit ----------------------------------------------------
     vkEndCommandBuffer(cmd);
 
     VkSubmitInfo submitInfo{ .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO };

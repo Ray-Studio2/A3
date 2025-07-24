@@ -2,6 +2,7 @@
 
 #include <string>
 #include <vector>
+#include <unordered_map>
 #include "Vector.h"
 #include "Matrix.h"
 #include "EngineTypes.h"
@@ -20,14 +21,14 @@ struct VertexPosition : public Vec4
         return sqrt(x * x + y * y + z * z);
     }
 
-    /// 벡터 * 스칼라
+    /// ?뺢껴?㎬땻?* ??????
     VertexPosition operator*(float s) const {
         return { x * s, y * s, z * s, w * s };
     }
 
-    /// 스칼라 * 벡터  (비멤버·friend 로 정의)
+    /// ??????* ?뺢껴?㎬땻? (???ъ묠?뺢퀗??由뻟end ???筌먦끉踰?
     friend VertexPosition operator*(float s, const VertexPosition& v) {
-        return v * s;          // 위 멤버 함수를 재사용
+        return v * s;          // ??嶺뚮、?뉓떋???貫?????亦??
     }
 };
 
@@ -72,6 +73,8 @@ struct Skeleton
     std::vector<Bone> _boneArray;
     std::vector<Mat4x4> _boneDressPoseArray;
     std::vector<Mat4x4> _boneDressPoseInverseArray;
+
+    std::unordered_map<std::string, uint32> _boneNameIndexMapper;
 };
 
 struct MeshResource
@@ -79,6 +82,8 @@ struct MeshResource
     std::vector<VertexPosition> positions;
     std::vector<VertexAttributes> attributes;
     std::vector<uint32> indices;
+    std::vector<IVec4> _jointIndicesData;
+    std::vector<Vec4> _weightsData;
     std::vector<float> cumulativeTriangleArea;
     uint32 triangleCount;
 

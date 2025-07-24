@@ -17,7 +17,7 @@ public:
 	Vec3 getFront() { return front; }
 
 	void move(int key) {
-		static const float camSpeed = 0.05f;
+		static const float camSpeed = 1.0f;
 		static const Vec3 upVector(0.0f, 1.0f, 0.0f);
 
 		if (key == GLFW_KEY_W) position += (front * camSpeed);

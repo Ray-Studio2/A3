@@ -22,8 +22,8 @@ public:
 	void createRenderResources( IRenderBackend* backend )
 	{
 		BLASBuildParams params = {
-			.positionData = resource->positions,
-			.attributeData = resource->attributes,
+			.positionData = resource->_jointIndicesData.empty() || resource->_weightsData.empty() ? resource->positions : _skinnedPositions,
+			.attributeData = resource->_jointIndicesData.empty() || resource->_weightsData.empty() ? resource->attributes : _skinnedAttributes,
 			.indexData = resource->indices,
 			.cumulativeTriangleAreaData = resource->cumulativeTriangleArea,
 			.material = *_material,
@@ -56,6 +56,13 @@ public:
 			resource->cumulativeTriangleArea[sumIdx++] = resource->cumulativeTriangleArea[sumIdx - 1] + magnitude;
 		}
 	}
+
+public:
+	uint32 _skeletonIndex = 0;
+	uint32 _animationIndex = 0;
+
+	std::vector<VertexPosition> _skinnedPositions;
+	std::vector<VertexAttributes> _skinnedAttributes;
 
 private:
 	MeshResource* resource;

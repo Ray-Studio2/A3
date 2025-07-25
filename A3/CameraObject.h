@@ -4,6 +4,16 @@
 
 namespace A3
 {
+
+inline Vec3 operator*(const Mat3x3& m, const Vec3& v)
+{
+	return Vec3{
+		m.m00 * v.x + m.m01 * v.y + m.m02 * v.z,
+		m.m10 * v.x + m.m11 * v.y + m.m12 * v.z,
+		m.m20 * v.x + m.m21 * v.y + m.m22 * v.z
+	};
+}
+
 class CameraObject : public SceneObject
 {
 public:
@@ -48,10 +58,25 @@ public:
 		);
 	}
 
+	void initializeFrontFromLocalToWorld()
+	{
+		// 기본 front 방향 (-Z)
+		const Vec3 defaultFront(0.0f, 0.0f, -1.0f);
+
+		// 회전 부분만 추출 (upper-left 3x3)
+		Mat3x3 rot{
+			localToWorld.m00, localToWorld.m01, localToWorld.m02,
+			localToWorld.m10, localToWorld.m11, localToWorld.m12,
+			localToWorld.m20, localToWorld.m21, localToWorld.m22
+		};
+
+		front = normalize(rot * defaultFront);
+	}
+
 private:
 	float fov = 60.f;
 	float exposure = 0.0f;
 
-	Vec3 front = { 0.0f, 0.0f, -1.0f };
+	Vec3 front = { 0.0f, 0.0f, 0.0f };
 };
 }

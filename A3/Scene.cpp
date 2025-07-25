@@ -588,6 +588,7 @@ void Scene::load(const std::string& path, VulkanRenderBackend& vulkanBackend) {
 		this->camera = std::make_unique<CameraObject>();
 		this->camera->setPosition(Vec3(position[0], position[1], position[2]));
 		this->camera->setRotation(Vec3(rotation[0], rotation[1], rotation[2]));
+		this->camera->initializeFrontFromLocalToWorld();
 		this->camera->setFov(fov);
 		this->camera->setExposure(exposure);
 

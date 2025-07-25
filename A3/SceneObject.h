@@ -72,7 +72,7 @@ public:
 		};
 
 		Mat3x3 rot = rotZ * rotY * rotX;
-		rotation = rot;
+		this->rotation = rot;
 		updateLocalToWorld();
 	}
 

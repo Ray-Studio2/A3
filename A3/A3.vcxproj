@@ -206,6 +206,7 @@
     <None Include="..\Assets\bruteforce-local.json" />
     <None Include="..\Assets\nee-env.json" />
     <None Include="..\Assets\nee-local.json" />
+    <None Include="..\Assets\nee-local2.json" />
     <None Include="shaders\Bindings.glsl" />
     <None Include="shaders\BRDF.glsl" />
     <None Include="shaders\NEELightSampling.glsl" />

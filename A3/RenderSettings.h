@@ -15,6 +15,7 @@ struct RenderSettings
 
 	static constexpr const char* sceneFiles[] = { "../Assets/bruteforce-local.json",
 												 "../Assets/nee-local.json",
+												 "../Assets/nee-local2.json",
 												 "../Assets/bruteforce-env.json",
 												 "../Assets/nee-env.json",
 												 "../Assets/nee-env2.json" };

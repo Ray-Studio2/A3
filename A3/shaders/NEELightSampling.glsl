@@ -1,19 +1,19 @@
-float getLightArea() 
+float getLightArea(uint lightIndex) 
 {
-	ObjectDesc lightObjDesc = gObjectDescs.desc[gLightBuffer.lightIndex[0]];
+	ObjectDesc lightObjDesc = gObjectDescs.desc[gLightBuffer.lightIndex[lightIndex]];
 	cumulativeTriangleAreaBuffer sum = cumulativeTriangleAreaBuffer(lightObjDesc.cumulativeTriangleAreaAddress);
 
-	return sum.t[gLightBuffer.lights[0].triangleCount];
+	return sum.t[gLightBuffer.lights[lightIndex].triangleCount];
 }
 
-uint binarySearchTriangleIdx(const float lightArea, inout uint rngState) 
+uint binarySearchTriangleIdx(const float lightArea, uint lightIndex, inout uint rngState) 
 {
-	ObjectDesc lightObjDesc = gObjectDescs.desc[gLightBuffer.lightIndex[0]];
+	ObjectDesc lightObjDesc = gObjectDescs.desc[gLightBuffer.lightIndex[lightIndex]];
 	cumulativeTriangleAreaBuffer sum = cumulativeTriangleAreaBuffer(lightObjDesc.cumulativeTriangleAreaAddress);
 	float target = random(rngState) * lightArea;
 
 	uint l = 1;
-	uint r = gLightBuffer.lights[0].triangleCount;
+	uint r = gLightBuffer.lights[lightIndex].triangleCount;
 	while (l <= r) {
 		uint mid = l + ((r - l) / 2);
 		if (sum.t[mid - 1] < target && target <= sum.t[mid])
@@ -24,13 +24,14 @@ uint binarySearchTriangleIdx(const float lightArea, inout uint rngState)
 }
 
 void uniformSamplePointOnTriangle(uint triangleIdx, 
+								  uint lightIndex,
 								  out vec3 pointOnTriangle, 
 								  out vec3 normalOnTriangle, 
 								  out vec3 pointOnTriangleWorld, 
 								  out vec3 normalOnTriangleWorld, 
                                   inout uint rngState) 
 {
-	ObjectDesc lightObjDesc = gObjectDescs.desc[gLightBuffer.lightIndex[0]];
+	ObjectDesc lightObjDesc = gObjectDescs.desc[gLightBuffer.lightIndex[lightIndex]];
 
 	IndexBuffer lightIndexBuffer = IndexBuffer(lightObjDesc.indexDeviceAddress);
 	uint base = triangleIdx * 3u;
@@ -60,7 +61,7 @@ void uniformSamplePointOnTriangle(uint triangleIdx,
 	pointOnTriangle = (w * p0 + u * p1 + v * p2).xyz;
 	normalOnTriangle = normalize(w * n0 + u * n1 + v * n2).xyz;
 
-    mat4 localToWorld = transpose(gLightBuffer.lights[0].transform);
+    mat4 localToWorld = transpose(gLightBuffer.lights[lightIndex].transform);
     pointOnTriangleWorld = (localToWorld * vec4(pointOnTriangle, 1.0f)).xyz;
 	normalOnTriangleWorld = normalize(localToWorld * vec4(normalOnTriangle, 0.0f)).xyz;
 }    

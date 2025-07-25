@@ -253,6 +253,11 @@ hitAttributeEXT vec2 attribs;
 
 void main()
 {
+    if (gPayload.depth >= gImguiParam.maxDepth) {
+        gPayload.radiance = vec3(0.0);
+        return;
+    }
+
     ObjectDesc objDesc = gObjectDescs.desc[gl_InstanceCustomIndexEXT];
 
     IndexBuffer indexBuffer = IndexBuffer(objDesc.indexDeviceAddress);
@@ -280,153 +285,160 @@ void main()
 
     vec3 worldPos = (gl_ObjectToWorldEXT * vec4(position, 1.0)).xyz;
     vec3 worldNormal = normalize(transpose(inverse(mat3(gl_ObjectToWorldEXT))) * normal);
+    
+    const float eps = 1e-4;
+    uint numLights = 2;
+    
+    vec3 radianceD = vec3(0.0);
+    vec3 radianceI = vec3(0.0);
 
-    LightData light = gLightBuffer.lights[0];
+    for(uint lightIndex = 0; lightIndex < numLights; ++lightIndex)
+    {
+        LightData light = gLightBuffer.lights[lightIndex];
 
-	const float eps = 1e-4;
-    const vec3 lightEmittance = vec3(light.emittance);
-    const float lightArea = getLightArea();
+        const vec3 lightEmittance = vec3(light.emittance);
+        const float lightArea = getLightArea(lightIndex);
 
-    if (gl_InstanceCustomIndexEXT == gLightBuffer.lightIndex[0]) {
-        if (gPayload.depth == 0)
-            gPayload.radiance = lightEmittance;
-        else
-            gPayload.radiance = vec3(0.0);
-        return;
-    }
-
-	if (gPayload.depth >= gImguiParam.maxDepth) {
-        gPayload.radiance = vec3(0.0);
-		return;
-    }
-
-    const vec3 color = gCustomData.color;
-    const float metallic = clamp(gCustomData.metallic, 0.0, 1.0);
-    const float roughness = clamp(gCustomData.roughness, MIRROR_ROUGH, 1.0);
-    const float alpha = roughness * roughness;
-
-    const float prob = mix(0.2, 0.8, roughness);
-    const float probGGX = (1 - prob);
-    const float probCos = prob;
-
-    const vec3 viewDir = -gPayload.rayDirection;
-
-	//////////////////////////////////////////////////////////////// Direct Light
-
-	vec3 tempRadianceD = vec3(0.0);
-	const uint numSampleByDepth = (gPayload.depth == 0 ? gImguiParam.numSamples : 1);
-	for (int i=0; i < numSampleByDepth; ++i) {
-        // NEE Sampling
-		uint triangleIdx = binarySearchTriangleIdx(lightArea, gPayload.rngState);
-
-		vec3 pointOnTriangle, normalOnTriangle, pointOnTriangleWorld, normalOnTriangleWorld;
-		uniformSamplePointOnTriangle(triangleIdx,
-									 pointOnTriangle,
-									 normalOnTriangle,
-									 pointOnTriangleWorld,
-									 normalOnTriangleWorld,
-                                     gPayload.rngState);
-
-		vec3 shadowRayDir = normalize(pointOnTriangleWorld - worldPos);
-
-        gPayload.desiredPosition = vec3(0.0);
-        traceRayEXT(
-            topLevelAS,                          // topLevel
-            gl_RayFlagsNoOpaqueEXT | gl_RayFlagsSkipClosestHitShaderEXT, // rayFlags
-            0xff,                                // cullMask
-            0, 1, SHADOW_MISS_IDX,               // sbtRecordOffset, sbtRecordStride, missIndex
-            worldPos, 0.001f, shadowRayDir, 100.0,  // origin, tmin, direction, tmax
-            0);                                  // payload
-
-        float visibility = 0.0;
-        if (length(gPayload.desiredPosition - pointOnTriangleWorld) < 0.0001)
-            visibility = 1.0;
-
-		const vec3 r = pointOnTriangleWorld - worldPos;
-		const float cos_q = max(dot(normalOnTriangleWorld, -shadowRayDir), 1e-6);
-        const float cos_p = max(dot(worldNormal, shadowRayDir), 1e-6);
-        const float pdfLight = dot(r, r) / (cos_q * lightArea);
-
-        // Cook-Torrance BRDF
-        vec3 halfDir = normalize(viewDir + shadowRayDir);
-        vec3 brdf = calculateBRDF(worldNormal, viewDir, shadowRayDir, halfDir, color, metallic, alpha);
-
-        float pdfGGX = pdfGGXVNDF(worldNormal, viewDir, halfDir, alpha);
-        float pdfCos = cos_p / PI;
-        float pdfBRDF = probGGX * pdfGGX + probCos * pdfCos;
-
-        float w = powerHeuristic(pdfLight, pdfBRDF);
-
-        tempRadianceD += brdf * lightEmittance * visibility * cos_p * w / pdfLight;
-	}
-	tempRadianceD *= (1 / float(numSampleByDepth)); // average
-
-	//////////////////////////////////////////////////////////////// Indirect Light
-
-	uint tempDepth = gPayload.depth;
-	vec3 tempRadianceI = vec3(0.0);
-
-	for (uint i=0; i < numSampleByDepth; ++i)
-	{
-        vec3 rayDir = vec3(0.0);
-        vec3 halfDir = vec3(0.0);
-
-        float pdfSel = 1.0;
-        float weight = 1.0;
-        vec3 brdf = vec3(0.0);
-
-        float a = random(gPayload.rngState);
-        float r3 = random(gPayload.rngState);
-        float r4 = random(gPayload.rngState);
-        vec2 seed = vec2(r3, r4);
-
-        bool isGGX = (a >= prob);
-        float pdfGGXVal = 0.0;
-        float pdfCosineVal = 0.0;
-
-        if (isGGX) {
-            mat3 TBN = computeTBN(worldNormal);
-            vec3 viewDirLocal = normalize(transpose(TBN) * viewDir); // viewDir -> world2local
-            vec3 halfDirLocal = sampleGGXVNDF(viewDirLocal, alpha, alpha, seed);
-            halfDir = normalize(TBN * halfDirLocal);  // halfDir local -> world
-            rayDir = reflect(-viewDir, halfDir);
-
-            pdfGGXVal = pdfGGXVNDF(worldNormal, viewDir, halfDir, alpha);
-            pdfCosineVal = max(dot(worldNormal, rayDir), 1e-6) / PI;
-        }
-        else {
-            rayDir = RandomCosineHemisphere(worldNormal, seed);
-            pdfCosineVal = max(dot(worldNormal, rayDir), 1e-6) / PI;
-
-            halfDir = normalize(viewDir + rayDir);
-            pdfGGXVal = pdfGGXVNDF(worldNormal, viewDir, halfDir, alpha);
+        if (gl_InstanceCustomIndexEXT == gLightBuffer.lightIndex[lightIndex]) {
+            if (gPayload.depth == 0)
+                gPayload.radiance = lightEmittance;
+            else
+                gPayload.radiance = vec3(0.0);
+            return;
         }
 
-        pdfGGXVal = probGGX * pdfGGXVal;
-        pdfCosineVal = probCos * pdfCosineVal;
+        const vec3 color = gCustomData.color;
+        const float metallic = clamp(gCustomData.metallic, 0.0, 1.0);
+        const float roughness = clamp(gCustomData.roughness, MIRROR_ROUGH, 1.0);
+        const float alpha = roughness * roughness;
 
-        weight = isGGX ? powerHeuristic(pdfGGXVal, pdfCosineVal)
-                        : powerHeuristic(pdfCosineVal, pdfGGXVal);
+        const float prob = mix(0.2, 0.8, roughness);
+        const float probGGX = (1 - prob);
+        const float probCos = prob;
 
-        pdfSel = isGGX ? pdfGGXVal : pdfCosineVal;
-        brdf = calculateBRDF(worldNormal, viewDir, rayDir, halfDir, color, metallic, alpha);
+        const vec3 viewDir = -gPayload.rayDirection;
 
-        gPayload.rayDirection = rayDir;
-        gPayload.depth++;
-        traceRayEXT(
-            topLevelAS,                         // topLevel
-            gl_RayFlagsOpaqueEXT, 0xff,         // rayFlags, cullMask
-            0, 1, SHADOW_MISS_IDX,              // sbtRecordOffset, sbtRecordStride, missIndex
-            worldPos, 0.0001, rayDir, 100.0,  	// origin, tmin, direction, tmax
-            0);                                 // payload
-        gPayload.depth = tempDepth;
+	    //////////////////////////////////////////////////////////////// Direct Light
 
-        const float cos_p = max(dot(worldNormal, rayDir), 1e-6);
-        tempRadianceI += brdf * gPayload.radiance * cos_p * weight / pdfSel;
-	}
-	tempRadianceI *= (1.0 / float(numSampleByDepth));
+	    vec3 tempRadianceD = vec3(0.0);
+	    const uint numSampleByDepth = (gPayload.depth == 0 ? gImguiParam.numSamples : 1);
+	    for (int i=0; i < numSampleByDepth; ++i) {
+            // NEE Sampling
+		    uint triangleIdx = binarySearchTriangleIdx(lightArea, lightIndex, gPayload.rngState);
 
-	gPayload.radiance = tempRadianceD + tempRadianceI;
+		    vec3 pointOnTriangle, normalOnTriangle, pointOnTriangleWorld, normalOnTriangleWorld;
+		    uniformSamplePointOnTriangle(triangleIdx,
+                                         lightIndex,
+									     pointOnTriangle,
+									     normalOnTriangle,
+									     pointOnTriangleWorld,
+									     normalOnTriangleWorld,
+                                         gPayload.rngState);
+
+		    vec3 shadowRayDir = normalize(pointOnTriangleWorld - worldPos);
+
+            gPayload.desiredPosition = vec3(0.0);
+            traceRayEXT(
+                topLevelAS,                          // topLevel
+                gl_RayFlagsNoOpaqueEXT | gl_RayFlagsSkipClosestHitShaderEXT, // rayFlags
+                0xff,                                // cullMask
+                0, 1, SHADOW_MISS_IDX,               // sbtRecordOffset, sbtRecordStride, missIndex
+                worldPos, 0.001f, shadowRayDir, 100.0,  // origin, tmin, direction, tmax
+                0);                                  // payload
+
+            float visibility = 0.0;
+            if (length(gPayload.desiredPosition - pointOnTriangleWorld) < 0.0001)
+                visibility = 1.0;
+
+		    const vec3 r = pointOnTriangleWorld - worldPos;
+		    const float cos_q = max(dot(normalOnTriangleWorld, -shadowRayDir), 1e-6);
+            const float cos_p = max(dot(worldNormal, shadowRayDir), 1e-6);
+            const float pdfLight = dot(r, r) / (cos_q * lightArea);
+
+            // Cook-Torrance BRDF
+            vec3 halfDir = normalize(viewDir + shadowRayDir);
+            vec3 brdf = calculateBRDF(worldNormal, viewDir, shadowRayDir, halfDir, color, metallic, alpha);
+
+            float pdfGGX = pdfGGXVNDF(worldNormal, viewDir, halfDir, alpha);
+            float pdfCos = cos_p / PI;
+            float pdfBRDF = probGGX * pdfGGX + probCos * pdfCos;
+
+            float w = powerHeuristic(pdfLight, pdfBRDF);
+
+            tempRadianceD += brdf * lightEmittance * visibility * cos_p * w / pdfLight;
+	    }
+	    tempRadianceD *= (1 / float(numSampleByDepth)); // average
+
+	    //////////////////////////////////////////////////////////////// Indirect Light
+
+	    uint tempDepth = gPayload.depth;
+	    vec3 tempRadianceI = vec3(0.0);
+
+	    for (uint i=0; i < numSampleByDepth; ++i)
+	    {
+            vec3 rayDir = vec3(0.0);
+            vec3 halfDir = vec3(0.0);
+
+            float pdfSel = 1.0;
+            float weight = 1.0;
+            vec3 brdf = vec3(0.0);
+
+            float a = random(gPayload.rngState);
+            float r3 = random(gPayload.rngState);
+            float r4 = random(gPayload.rngState);
+            vec2 seed = vec2(r3, r4);
+
+            bool isGGX = (a >= prob);
+            float pdfGGXVal = 0.0;
+            float pdfCosineVal = 0.0;
+
+            if (isGGX) {
+                mat3 TBN = computeTBN(worldNormal);
+                vec3 viewDirLocal = normalize(transpose(TBN) * viewDir); // viewDir -> world2local
+                vec3 halfDirLocal = sampleGGXVNDF(viewDirLocal, alpha, alpha, seed);
+                halfDir = normalize(TBN * halfDirLocal);  // halfDir local -> world
+                rayDir = reflect(-viewDir, halfDir);
+
+                pdfGGXVal = pdfGGXVNDF(worldNormal, viewDir, halfDir, alpha);
+                pdfCosineVal = max(dot(worldNormal, rayDir), 1e-6) / PI;
+            }
+            else {
+                rayDir = RandomCosineHemisphere(worldNormal, seed);
+                pdfCosineVal = max(dot(worldNormal, rayDir), 1e-6) / PI;
+
+                halfDir = normalize(viewDir + rayDir);
+                pdfGGXVal = pdfGGXVNDF(worldNormal, viewDir, halfDir, alpha);
+            }
+
+            pdfGGXVal = probGGX * pdfGGXVal;
+            pdfCosineVal = probCos * pdfCosineVal;
+
+            weight = isGGX ? powerHeuristic(pdfGGXVal, pdfCosineVal)
+                            : powerHeuristic(pdfCosineVal, pdfGGXVal);
+
+            pdfSel = isGGX ? pdfGGXVal : pdfCosineVal;
+            brdf = calculateBRDF(worldNormal, viewDir, rayDir, halfDir, color, metallic, alpha);
+
+            gPayload.rayDirection = rayDir;
+            gPayload.depth++;
+            traceRayEXT(
+                topLevelAS,                         // topLevel
+                gl_RayFlagsOpaqueEXT, 0xff,         // rayFlags, cullMask
+                0, 1, SHADOW_MISS_IDX,              // sbtRecordOffset, sbtRecordStride, missIndex
+                worldPos, 0.0001, rayDir, 100.0,  	// origin, tmin, direction, tmax
+                0);                                 // payload
+            gPayload.depth = tempDepth;
+
+            const float cos_p = max(dot(worldNormal, rayDir), 1e-6);
+            tempRadianceI += brdf * gPayload.radiance * cos_p * weight / pdfSel;
+	    }
+	    tempRadianceI *= (1.0 / float(numSampleByDepth));
+
+        radianceD += tempRadianceD;
+        radianceI += tempRadianceI;
+    }
+
+	gPayload.radiance = radianceD + radianceI;
 }
 #endif
 

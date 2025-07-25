@@ -185,11 +185,12 @@ void changeSceneObjectMaterials(Scene* scene, Material& material) {
     std::vector<std::unique_ptr<SceneObject>>& objects = scene->getSceneObjects();
 
     for (int i = 0; i < objects.size(); i++) {
-        if (objects[i].get()->getMaterialName().compare(material._name) == 0) {
-            objects[i].get()->setMetallic(material._parameter._metallicFactor);
-            objects[i].get()->setRoughness(material._parameter._roughnessFactor);
-            objects[i].get()->setEmittance(material._emittanceFactor);
-            objects[i].get()->setBaseColor(material._parameter._baseColorFactor);
+        if (objects[i]->getMaterialName().compare(material._name) == 0) {
+            objects[i]->setMetallic(material._parameter._metallicFactor);
+            objects[i]->setRoughness(material._parameter._roughnessFactor);
+            objects[i]->setEmittance(material._emittanceFactor);
+            objects[i]->setBaseColor(material._parameter._baseColorFactor);
+            //material.uploadMaterialParameter()
         }
     }
 }
@@ -349,12 +350,20 @@ void Addon_imgui::renderFrame( GLFWwindow* window, VulkanRenderBackend* vulkan, 
             }
         }
 
+        static bool isMaterialUpdated = false;
+
+        if (isMaterialUpdated) {
+            scene->markPosUpdated();
+            isMaterialUpdated = false;
+        }
+
         ImGui::SeparatorText("Material");
         {
             // @TODO: get material array and show name & each params
             // BUT, should we have to use imguiParams struct for all of these UI things?
 
             // Material Selection
+            //std::vector<std::unique_ptr<SceneObject>>& objects = scene->getSceneObjects();
             std::vector<Material>& materials = scene->getMaterialArrForObj();// GetMaterialArr();
             static uint32 selectedMaterialIndex = 0;
             if (ImGui::BeginCombo("Materials", materials[selectedMaterialIndex]._name.c_str())) {
@@ -375,6 +384,7 @@ void Addon_imgui::renderFrame( GLFWwindow* window, VulkanRenderBackend* vulkan, 
             if (ImGui::SliderFloat("Material metallic", &metallic, 0, 1)) {
                 materials[selectedMaterialIndex]._parameter._metallicFactor = metallic;
                 changeSceneObjectMaterials(scene, materials[selectedMaterialIndex]);
+                isMaterialUpdated = true;
                 //scene->markBufferUpdated();
                 //scene->markPosUpdated();
             }
@@ -384,6 +394,7 @@ void Addon_imgui::renderFrame( GLFWwindow* window, VulkanRenderBackend* vulkan, 
             if (ImGui::SliderFloat("Material roughness", &roughness, 0, 1)) {
                 materials[selectedMaterialIndex]._parameter._roughnessFactor = roughness;
                 changeSceneObjectMaterials(scene, materials[selectedMaterialIndex]);
+                isMaterialUpdated = true;
                 //scene->markBufferUpdated();
                 //scene->markPosUpdated();
             }
@@ -393,6 +404,7 @@ void Addon_imgui::renderFrame( GLFWwindow* window, VulkanRenderBackend* vulkan, 
             if (ImGui::SliderFloat("Material emittance", &emittance, 0, 100)) {
                 materials[selectedMaterialIndex]._emittanceFactor = emittance;
                 changeSceneObjectMaterials(scene, materials[selectedMaterialIndex]);
+                isMaterialUpdated = true;
                 //scene->markBufferUpdated();
                 //scene->markPosUpdated();
             }
@@ -403,6 +415,7 @@ void Addon_imgui::renderFrame( GLFWwindow* window, VulkanRenderBackend* vulkan, 
             if (ImGui::InputFloat3("Material baseColor", baseColor)) {
                 materials[selectedMaterialIndex]._parameter._baseColorFactor = Vec4(baseColor[0], baseColor[1], baseColor[2], baseColorFactor.w);
                 changeSceneObjectMaterials(scene, materials[selectedMaterialIndex]);
+                isMaterialUpdated = true;
                 //scene->markBufferUpdated();
                 //scene->markPosUpdated();
             }

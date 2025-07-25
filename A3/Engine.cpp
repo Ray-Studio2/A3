@@ -127,6 +127,11 @@ void Engine::Run()
             renderer.render( scene );
             imgui.renderFrame( window, &gfxBackend, &scene );
 
+            std::vector<Material> materialArrForObj = scene.getMaterialArrForObj();
+            for (int i = 0; i < materialArrForObj.size(); i++) {
+                materialArrForObj[i].uploadMaterialParameter(gfxBackend);
+            }
+
             renderer.endFrame();
 
             scene.endFrame();

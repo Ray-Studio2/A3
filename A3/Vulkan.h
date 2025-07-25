@@ -9,6 +9,7 @@
 #include <bitset>
 #include <span>
 #include <memory>
+#include <string>
 #include "EngineTypes.h"
 #include "RenderSettings.h"
 #include "RenderBackend.h"
@@ -79,12 +80,13 @@ struct MaterialParameter
 };
 struct Material
 {
-    std::string materialName;     ////////// Juhwan
-
     MaterialParameter _parameter;
 
     // innerdata
     A3Buffer _buffer;
+    std::string _name;
+
+    float _emittanceFactor; ///////////////// Juhwan
 
     void uploadMaterialParameter(VulkanRenderBackend& vulkanBackend);
 };

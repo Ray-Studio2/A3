@@ -8,6 +8,7 @@
 #include "MeshObject.h"
 
 #include "CameraObject.h"
+#include "SceneObject.h"
 
 using namespace A3;
 
@@ -180,6 +181,19 @@ Addon_imgui::Addon_imgui( GLFWwindow* window, VulkanRenderBackend* vulkan, int32
     ImGui_ImplVulkan_Init( &init_info );
 }
 
+void changeSceneObjectMaterials(Scene* scene, Material& material) {
+    std::vector<std::unique_ptr<SceneObject>>& objects = scene->getSceneObjects();
+
+    for (int i = 0; i < objects.size(); i++) {
+        if (objects[i].get()->getMaterialName().compare(material._name) == 0) {
+            objects[i].get()->setMetallic(material._parameter._metallicFactor);
+            objects[i].get()->setRoughness(material._parameter._roughnessFactor);
+            objects[i].get()->setEmittance(material._emittanceFactor);
+            objects[i].get()->setBaseColor(material._parameter._baseColorFactor);
+        }
+    }
+}
+
 void Addon_imgui::renderFrame( GLFWwindow* window, VulkanRenderBackend* vulkan, Scene* scene )
 {
     // Our state
@@ -216,8 +230,8 @@ void Addon_imgui::renderFrame( GLFWwindow* window, VulkanRenderBackend* vulkan, 
         {
             CameraObject* camera = scene->getCamera();
 
-             // Camera position
-            Vec3 cameraPos = camera->getPosition();
+            // Camera position
+            Vec3 cameraPos = camera->getLocalPosition();
             float p[3] = { cameraPos.x, cameraPos.y, cameraPos.z };
             if (ImGui::InputFloat3("Camera Position", p)) {
                 camera->setPosition(Vec3(p[0], p[1], p[2]));
@@ -241,18 +255,21 @@ void Addon_imgui::renderFrame( GLFWwindow* window, VulkanRenderBackend* vulkan, 
 
             // Camera Max Depth
             int depth = static_cast<int>(scene->getImguiParam()->maxDepth);
+            // @TODO: think about where should we place this min/max data
+            constexpr int minDepth = 0;
+            constexpr int maxDepth = 5;
             if (ImGui::InputInt("Max depth", &depth)) {
-                if (depth < 0) depth = 0;
-                if (depth > 5) depth = 5;
+                depth = std::min(maxDepth, std::max(minDepth, depth));
                 scene->getImguiParam()->maxDepth = static_cast<uint32>(depth);
                 scene->markBufferUpdated();
             }
 
             // Camera SPP
             int numSamples = static_cast<int>(scene->getImguiParam()->numSamples);
+            constexpr int minNumSamples = 0;
+            constexpr int maxNumSamples = 64;
             if (ImGui::InputInt("Number of samples", &numSamples)) {
-                if (numSamples < 0) numSamples = 0;
-                if (numSamples > 64) numSamples = 64;
+                numSamples = std::min(maxNumSamples, std::max(minNumSamples, numSamples));
                 scene->getImguiParam()->numSamples = static_cast<uint32>(numSamples);
                 scene->markBufferUpdated();
             }
@@ -265,27 +282,6 @@ void Addon_imgui::renderFrame( GLFWwindow* window, VulkanRenderBackend* vulkan, 
             }
         }
 
-        ImGui::SeparatorText("Material");
-        {
-            std::vector<Material>& materials = scene->GetMaterialArr();
-            uint32 selectedMaterialIndex = 0;
-            if (ImGui::BeginCombo("Materials", materials[0].materialName.c_str())) {
-                 for (int n = 0; n < materials.size(); ++n)
-                {
-                    const bool is_selected = (selectedMaterialIndex == n);
-                    if (ImGui::Selectable(materials[n].materialName.c_str(), is_selected))
-                    {
-                        selectedMaterialIndex = n;
-                    }
-                    /*if (is_selected)
-                        selectedMaterialIndex = n;*/
-                }
-
-                ImGui::EndCombo();
-            }
-        }
-
-        /*
         ImGui::SeparatorText("Scene");
         {
             auto& items = RenderSettings::sceneFiles;
@@ -308,41 +304,109 @@ void Addon_imgui::renderFrame( GLFWwindow* window, VulkanRenderBackend* vulkan, 
             }
         }
 
-        bool lightExists = scene->getLightIndex().size();
-        ImGui::BeginDisabled(!lightExists);
-        ImGui::SeparatorText("Light");
+        static bool showObjectsUI = true;
+            
+        ImGui::SeparatorText("Objects");
         {
-            static MeshObject* light = nullptr;
-            if (scene->isSceneDirty()) light = nullptr;
-            if (lightExists) {
-                auto& lightIndex = scene->getLightIndex()[0]; // Assuming 1 light
+            if (showObjectsUI) {
+                if (ImGui::Button("Disable Objects UI")) {
+                    showObjectsUI = false;
+                }
+                const auto& objects = scene->collectMeshObjects();
+                int objectIndex = 0;
+                for (auto& object : objects) {
+                    ImGui::Text(object->getName().data());
+                    const std::string label = "##" + std::to_string(objectIndex);
 
-                if (!light) {
-                    auto objects = scene->collectMeshObjects();
-                    if (objects.size() > lightIndex)
-                        light = objects[lightIndex];
+                    auto position = object->getLocalPosition();
+                    float p[3] = { position.x, position.y, position.z };
+                    const std::string positionLabel = "Position" + label;
+                    if (ImGui::SliderFloat3(positionLabel.data(), p, -3.0, 3.0)) {
+                        object->setPosition(Vec3(p[0], p[1], p[2]));
+                        scene->markPosUpdated();
+                    }
+
+                    auto scale = object->getLocalScale();
+                    float s[3] = { scale.x, scale.y, scale.z };
+                    const std::string scaleLabel = "Scale" + label;
+                    if (ImGui::SliderFloat3(scaleLabel.data(), s, -3.0, 3.0)) {
+                        object->setScale(Vec3(s[0], s[1], s[2]));
+                        scene->markPosUpdated();
+                    }
+
+                    // @TODO: add rotation
+
+                    auto material = object->getMaterial();
+                    const std::string materialLabel = "Material: " + material->_name;
+                    ImGui::Text(materialLabel.data());
+
+                    ++objectIndex;
+                }
+            } else {
+                if (ImGui::Button("Enable Objects UI")) {
+                    showObjectsUI = true;
                 }
             }
+        }
 
-            // light position
-            auto lightPos = Vec3(0.0);
-            if (light!=nullptr) lightPos = light->getLocalPosition();
-            float p[3] = { lightPos.x, lightPos.y, lightPos.z };
-            if (ImGui::SliderFloat3("Position", p, -3.0, 3.0)) {
-                light->setPosition(Vec3(p[0], p[1], p[2]));
-                scene->markPosUpdated();
+        ImGui::SeparatorText("Material");
+        {
+            // @TODO: get material array and show name & each params
+            // BUT, should we have to use imguiParams struct for all of these UI things?
+
+            // Material Selection
+            std::vector<Material>& materials = scene->getMaterialArrForObj();// GetMaterialArr();
+            static uint32 selectedMaterialIndex = 0;
+            if (ImGui::BeginCombo("Materials", materials[selectedMaterialIndex]._name.c_str())) {
+                 for (int n = 0; n < materials.size(); ++n)
+                {
+                    const bool is_selected = (selectedMaterialIndex == n);
+                    if (ImGui::Selectable(materials[n]._name.c_str(), is_selected))
+                    {
+                        selectedMaterialIndex = n;
+                    }
+                }
+        
+                ImGui::EndCombo();
             }
 
-            float emit = 0.0;
-            if (light!=nullptr) emit = light->getEmittance();
-            if (ImGui::InputFloat("Emittance per point", &emit, 1.0f, 10.0f)) {
-                if (emit < 0.0f) emit = 0.0f;
-                if (emit > 500.0f) emit = 500.0f;
-                light->setEmittance(emit);
-                scene->markBufferUpdated();
+            // Material metallicFactor
+            float metallic = materials[selectedMaterialIndex]._parameter._metallicFactor;
+            if (ImGui::SliderFloat("Material metallic", &metallic, 0, 1)) {
+                materials[selectedMaterialIndex]._parameter._metallicFactor = metallic;
+                changeSceneObjectMaterials(scene, materials[selectedMaterialIndex]);
+                //scene->markBufferUpdated();
+                //scene->markPosUpdated();
+            }
+
+            // Material roughnessFactor
+            float roughness = materials[selectedMaterialIndex]._parameter._roughnessFactor;
+            if (ImGui::SliderFloat("Material roughness", &roughness, 0, 1)) {
+                materials[selectedMaterialIndex]._parameter._roughnessFactor = roughness;
+                changeSceneObjectMaterials(scene, materials[selectedMaterialIndex]);
+                //scene->markBufferUpdated();
+                //scene->markPosUpdated();
+            }
+
+            // Material emissiveFactor
+            float emittance = materials[selectedMaterialIndex]._emittanceFactor;
+            if (ImGui::SliderFloat("Material emittance", &emittance, 0, 100)) {
+                materials[selectedMaterialIndex]._emittanceFactor = emittance;
+                changeSceneObjectMaterials(scene, materials[selectedMaterialIndex]);
+                //scene->markBufferUpdated();
+                //scene->markPosUpdated();
+            }
+
+            // Material baseColorFactor
+            Vec4 baseColorFactor = materials[selectedMaterialIndex]._parameter._baseColorFactor;
+            float baseColor[3] = { baseColorFactor.x, baseColorFactor.y, baseColorFactor.z };
+            if (ImGui::InputFloat3("Material baseColor", baseColor)) {
+                materials[selectedMaterialIndex]._parameter._baseColorFactor = Vec4(baseColor[0], baseColor[1], baseColor[2], baseColorFactor.w);
+                changeSceneObjectMaterials(scene, materials[selectedMaterialIndex]);
+                //scene->markBufferUpdated();
+                //scene->markPosUpdated();
             }
         }
-        ImGui::EndDisabled();
 
         ImGui::SeparatorText("Env Map");
         {
@@ -373,11 +437,7 @@ void Addon_imgui::renderFrame( GLFWwindow* window, VulkanRenderBackend* vulkan, 
                     vulkan->saveCurrentImage("frame_" + std::to_string(frameCount) + ".png");
             }
             ImGui::EndDisabled();
-        }*/
-
-        //ImGui::SeparatorText("Performance");
-        //ImGui::Text("Application average: %.3f ms/frame (%.1f FPS)", 1000.0f / io.Framerate, io.Framerate);
-        //ImGui::Text("Current frame: %u", vulkan->currentFrameCount);
+        }
         ImGui::End();
     }
 

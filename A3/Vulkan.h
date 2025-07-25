@@ -79,6 +79,8 @@ struct MaterialParameter
 };
 struct Material
 {
+    std::string materialName;     ////////// Juhwan
+
     MaterialParameter _parameter;
 
     // innerdata

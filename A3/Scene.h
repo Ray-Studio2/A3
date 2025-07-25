@@ -78,6 +78,8 @@ public:
 	void cleanPosUpdated() { bPosUpdated = false; }
 	bool isPosUpdated() const { return bPosUpdated; }
 
+	std::vector<Material>& GetMaterialArr() { return materialArr; }		///////////////// Juhwan
+
 private:
 	void loadGLTF(const std::string& fileName, VulkanRenderBackend& vulkanBackend);
 

@@ -265,6 +265,26 @@ void Addon_imgui::renderFrame( GLFWwindow* window, VulkanRenderBackend* vulkan, 
             }
         }
 
+        ImGui::SeparatorText("Material");
+        {
+            std::vector<Material>& materials = scene->GetMaterialArr();
+            uint32 selectedMaterialIndex = 0;
+            if (ImGui::BeginCombo("Materials", materials[0].materialName.c_str())) {
+                 for (int n = 0; n < materials.size(); ++n)
+                {
+                    const bool is_selected = (selectedMaterialIndex == n);
+                    if (ImGui::Selectable(materials[n].materialName.c_str(), is_selected))
+                    {
+                        selectedMaterialIndex = n;
+                    }
+                    /*if (is_selected)
+                        selectedMaterialIndex = n;*/
+                }
+
+                ImGui::EndCombo();
+            }
+        }
+
         /*
         ImGui::SeparatorText("Scene");
         {

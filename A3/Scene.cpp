@@ -644,6 +644,9 @@ void Scene::load(const std::string& path, VulkanRenderBackend& vulkanBackend) {
 			materialParameter._baseColorFactor = Vec4(baseColor[0], baseColor[1], baseColor[2], 1);
 
 			Material a3Material;
+
+			a3Material.materialName = materialName;		//////////// Juhwan
+
 			a3Material._parameter = materialParameter;
 			a3Material._buffer = vulkanBackend.createResourceBuffer(sizeof(a3Material._parameter), static_cast<const void*>(&a3Material._parameter));
 			materialArrForObj.push_back(a3Material);

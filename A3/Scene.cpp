@@ -743,7 +743,7 @@ void Scene::load(const std::string& path, VulkanRenderBackend& vulkanBackend) {
 		}
 	}
 #else
-	loadGLTF("../Assets/phoenix_bird/scene.gltf", vulkanBackend);
+	//loadGLTF("../Assets/phoenix_bird/scene.gltf", vulkanBackend);
 #endif
 }
 

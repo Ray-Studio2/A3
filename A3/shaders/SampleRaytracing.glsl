@@ -774,17 +774,18 @@ layout(location = 0) rayPayloadInEXT RayPayload gPayload;
 
 void main()
 {
-	if (gPayload.depth >= gImguiParam.maxDepth) {
+	if (gPayload.depth > gImguiParam.maxDepth) {
         gPayload.radiance = vec3(0.0);
 		return;
     }
 
-    const vec3 Le = getEmitFromEnvmap(gPayload.rayDirection);
+    vec3 Le = getEmitFromEnvmap(gPayload.rayDirection);
 
     float weight = 1.0;
     // get envmap pdf for MIS
     if (gPayload.depth > 0)
     {
+        // Le = clamp(Le, vec3(0.0), vec3(100.0));
         const vec2 uv = getUVfromRay(gPayload.rayDirection);
         const float pdfEnv = getEnvPdf(uv.x, uv.y);
         weight = powerHeuristic(gPayload.pdfBRDF, pdfEnv);

@@ -64,4 +64,9 @@ void uniformSamplePointOnTriangle(uint triangleIdx,
     mat4 localToWorld = transpose(gLightBuffer.lights[lightIndex].transform);
     pointOnTriangleWorld = (localToWorld * vec4(pointOnTriangle, 1.0f)).xyz;
 	normalOnTriangleWorld = normalize(localToWorld * vec4(normalOnTriangle, 0.0f)).xyz;
-}    
+}
+
+uint selectLight(inout uint rngState)
+{
+    return pcg_hash(rngState) % 4;
+}

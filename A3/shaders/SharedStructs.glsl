@@ -67,4 +67,4 @@ struct MaterialParameter
     TextureParameter _sheenColorTexture;
     TextureParameter _sheenRoughnessTexture;
     // ======================================
-};
+}; 

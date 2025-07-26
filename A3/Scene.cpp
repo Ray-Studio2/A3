@@ -815,7 +815,7 @@ void Scene::load(const std::string& path, VulkanRenderBackend& vulkanBackend) {
 	}
 #else
 	//loadGLTF("../Assets/phoenix_bird/scene.gltf", vulkanBackend);
-	loadGLTF("../Assets/glTF_sample_models/SheenChair/SheenChair/glTF/SheenChair.gltf", vulkanBackend);
+	loadGLTF("../Assets/glTF_sample_models/SheenChair/SheenChair/glTF/SheenChair.gltf", vulkanBackend); 
 #endif
 }
 

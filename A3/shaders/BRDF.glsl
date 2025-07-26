@@ -114,7 +114,7 @@ vec3 calculateBRDF(vec3 normal, vec3 viewDir, vec3 lightDir, vec3 halfDir, vec3 
     if(length(sheenColor) <= 0.0 || sheenRoughness <= 0)
             return baseBRDF;
     
-    float sheenBRDF = 0;
+    float sheenBRDF = 0; 
     float dotNH = max(dot(normal, halfDir), 1e-5); // half vector과 normal이 얼마나 가까운가?
     float alpha_g = sheenRoughness * sheenRoughness; // roughness의 선형적 제어를 위함
     float Ds = CharlieD(alpha_g, dotNH);

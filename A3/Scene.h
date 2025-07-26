@@ -16,7 +16,7 @@ struct MeshResource;
 class VulkanRenderBackend;
 struct Material;
 
-struct imguiParam // TODO: right for being part of scene?
+struct imguiParam // TODO: right for being part of scene? 
 {
 	uint32 maxDepth = 5;
 	uint32 numSamples = 1;

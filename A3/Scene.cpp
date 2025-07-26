@@ -664,8 +664,6 @@ void Scene::load(const std::string& path, VulkanRenderBackend& vulkanBackend) {
 			mo->setScale(Vec3(scale[0], scale[1], scale[2]));
 			mo->calculateTriangleArea();
 
-			mo->setMaterialName(a3Material->_name);
-
 			mo->setBaseColor(Vec3(baseColor[0], baseColor[1], baseColor[2]));
 			if (materialName == "light") {
 				lightIndex.push_back(index);

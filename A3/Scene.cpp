@@ -648,14 +648,7 @@ void Scene::load(const std::string& path, VulkanRenderBackend& vulkanBackend) {
 
 			a3Material->_parameter = materialParameter;
 			a3Material->_buffer = vulkanBackend.createResourceBuffer(sizeof(a3Material->_parameter), static_cast<const void*>(&a3Material->_parameter));
-			a3Material->_name = materialName;
-
-			
-			//if (material["emittance"] != nullptr)
-			//	a3Material->_emittanceFactor = material["emittance"];	///////////////// Juhwan
-			//else
-			//	a3Material->_emittanceFactor = 1;
-				
+			a3Material->_name = materialName;				
 
 			//bool isContained = false;
 			//for (auto i : materialArrForObj)

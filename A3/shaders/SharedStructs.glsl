@@ -4,6 +4,7 @@ struct RayPayload
     vec3 radiance;
     vec3 desiredPosition;
     uint depth;
+    uint transmissionDepth;
     uint rngState;
     float pdfBRDF;
     float visibility;

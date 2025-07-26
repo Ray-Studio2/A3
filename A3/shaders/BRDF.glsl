@@ -37,7 +37,6 @@ float GGX_D(vec3 normal, vec3 halfDir, float alpha)
     return a2 / (PI * denom * denom);
 }
 
-// Physics-based refraction direction calculation
 vec3 calculateRefractedDirection(vec3 incidentDir, vec3 normal, float ior)
 {
     float eta = 1.0 / ior; // Relative IOR (air to material)
@@ -58,7 +57,6 @@ vec3 calculateRefractedDirection(vec3 incidentDir, vec3 normal, float ior)
     return refracted;
 }
 
-// Calculate Fresnel reflectance using Schlick's approximation with IOR
 float calculateFresnelReflectance(vec3 viewDir, vec3 normal, float ior)
 {
     float cosTheta = abs(dot(viewDir, normal));
@@ -66,7 +64,6 @@ float calculateFresnelReflectance(vec3 viewDir, vec3 normal, float ior)
     return F0 + (1.0 - F0) * pow(1.0 - cosTheta, 5.0);
 }
 
-// Calculate transmission coefficient (1 - Fresnel reflectance)
 float calculateTransmissionCoeff(vec3 viewDir, vec3 normal, float ior)
 {
     return 1.0 - calculateFresnelReflectance(viewDir, normal, ior);

@@ -819,7 +819,7 @@ A3::MaterialParameter::MaterialParameter()
 	_metallicRoughnessTexture = TextureManager::gWhiteParameter;
 	_transmissionFactor = 0.0f;
     _transmissionTexture = TextureManager::gWhiteParameter;
-    _ior = 1.5f; // Default glass IOR
+    _ior = 1.5f;
 
 	_emissiveFactor = Vec3(0);
 	_emissiveTexture = TextureManager::gWhiteParameter;

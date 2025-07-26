@@ -351,7 +351,7 @@ void Addon_imgui::renderFrame( GLFWwindow* window, VulkanRenderBackend* vulkan, 
         {
             err = vkWaitForFences(vulkan->device, 1, &fd->Fence, VK_TRUE, UINT64_MAX);
             check_vk_result(err);
-            err = vkResetFences(vulkan->device, 1, &fd->Fence);    // 다음 프레임 준비
+            err = vkResetFences(vulkan->device, 1, &fd->Fence);    // ?ㅼ쓬 ?꾨젅??以鍮?
             check_vk_result(err);
             err = vkResetCommandPool( vulkan->device, fd->CommandPool, 0 );
             check_vk_result( err );

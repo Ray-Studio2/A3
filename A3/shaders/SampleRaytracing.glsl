@@ -168,7 +168,6 @@ void main()
     if (gl_InstanceCustomIndexEXT == gLightBuffer.lightIndex[0])
         emit = lightEmittance;
 
-    uint tempDepth = gPayload.depth;
     uint numSampleByDepth = (gPayload.depth == 0 ? gImguiParam.numSamples : 1);
 
     vec3 temp = vec3(0.0);
@@ -214,9 +213,8 @@ void main()
             weight = isGGX ? powerHeuristic(pdfGGXVal, pdfCosineVal)
                             : powerHeuristic(pdfCosineVal, pdfGGXVal);
             pdfSel = isGGX ? pdfGGXVal : pdfCosineVal;
-            // Cook-Torrance BRDF
             brdf = calculateBRDF(worldNormal, viewDir, rayDir, halfDir, color, metallic, alpha);
-
+            
             gPayload.rayDirection = rayDir;
             gPayload.depth++;
             traceRayEXT(
@@ -225,10 +223,52 @@ void main()
                 0, 1, SHADOW_MISS_IDX,              // sbtRecordOffset, sbtRecordStride, missIndex
                 worldPos, 0.0001, rayDir, 100.0,  	// origin, tmin, direction, tmax
                 0);                                 // payload
-            gPayload.depth = tempDepth;
+            gPayload.depth--;
+            
+            vec3 reflectedRadiance = gPayload.radiance;
+
+            // Add transmission ray if transmission factor > 0
+            float transmissionFactor = getTransmissionFactor(material, uv, gImguiParam.transmissionFactor);
+            vec3 transmittedRadiance = vec3(0.0);
+            
+            if (transmissionFactor > 0.0) {
+                // Get material IOR (default to glass if not specified)
+                float ior = material._ior;
+                if (ior <= 0.0) ior = 1.5; // Default glass IOR
+                
+                // Calculate physics-based refracted direction
+                vec3 refractedDir = calculateRefractedDirection(-viewDir, worldNormal, ior);
+                
+                // Calculate Fresnel coefficients for energy conservation
+                float fresnelReflectance = calculateFresnelReflectance(viewDir, worldNormal, ior);
+                float transmissionCoeff = calculateTransmissionCoeff(viewDir, worldNormal, ior);
+                
+                // Shoot transmission ray in the refracted direction
+                gPayload.rayDirection = refractedDir;
+                gPayload.depth++;
+                traceRayEXT(
+                    topLevelAS,
+                    gl_RayFlagsOpaqueEXT, 0xff,
+                    0, 1, SHADOW_MISS_IDX,
+                    worldPos, 0.0001, refractedDir, 100.0,
+                    0);
+                gPayload.depth--;
+                
+                // Apply Beer's law-like attenuation with material color
+                transmittedRadiance = gPayload.radiance * color * transmissionFactor * transmissionCoeff;
+            }
 
             const float cos_p = max(dot(worldNormal, rayDir), 1e-6);
-            temp += brdf * gPayload.radiance * cos_p * weight / pdfSel;
+            // Apply Fresnel-based energy conservation
+            if (transmissionFactor > 0.0) {
+                float ior = material._ior;
+                if (ior <= 0.0) ior = 1.5;
+                float fresnelReflectance = calculateFresnelReflectance(viewDir, worldNormal, ior);
+                temp += brdf * reflectedRadiance * cos_p * weight / pdfSel * fresnelReflectance;
+            } else {
+                temp += brdf * reflectedRadiance * cos_p * weight / pdfSel;
+            }
+            temp += transmittedRadiance;
         }
         temp *= 1.0 / float(numSampleByDepth);
     }
@@ -313,6 +353,8 @@ void main()
 
 	//////////////////////////////////////////////////////////////// Direct Light
 
+    MaterialParameter material = MaterialBuffer(objDesc.materialAddress).mat;
+
 	vec3 tempRadianceD = vec3(0.0);
 	const uint numSampleByDepth = (gPayload.depth == 0 ? gImguiParam.numSamples : 1);
 	for (int i=0; i < numSampleByDepth; ++i) {
@@ -347,9 +389,18 @@ void main()
         const float cos_p = max(dot(worldNormal, shadowRayDir), 1e-6);
         const float pdfLight = dot(r, r) / (cos_q * lightArea);
 
-        // Cook-Torrance BRDF
         vec3 halfDir = normalize(viewDir + shadowRayDir);
         vec3 brdf = calculateBRDF(worldNormal, viewDir, shadowRayDir, halfDir, color, metallic, alpha);
+        
+        float transmissionFactor = getTransmissionFactor(material, gImguiParam.transmissionFactor);
+        if (transmissionFactor > 0.0) {
+            // Reduce surface reflection for transmission
+            brdf *= (1.0 - transmissionFactor * 0.8);
+            
+            // Add transmitted background contribution (simplified)
+            vec3 transmissionBRDF = calculateTransmissionBRDF(worldNormal, viewDir, color, transmissionFactor);
+            brdf += transmissionBRDF;
+        }
 
         float pdfGGX = pdfGGXVNDF(worldNormal, viewDir, halfDir, alpha);
         float pdfCos = cos_p / PI;
@@ -363,7 +414,6 @@ void main()
 
 	//////////////////////////////////////////////////////////////// Indirect Light
 
-	uint tempDepth = gPayload.depth;
 	vec3 tempRadianceI = vec3(0.0);
 
 	for (uint i=0; i < numSampleByDepth; ++i)
@@ -410,7 +460,7 @@ void main()
 
         pdfSel = isGGX ? pdfGGXVal : pdfCosineVal;
         brdf = calculateBRDF(worldNormal, viewDir, rayDir, halfDir, color, metallic, alpha);
-
+        
         gPayload.rayDirection = rayDir;
         gPayload.depth++;
         traceRayEXT(
@@ -419,10 +469,51 @@ void main()
             0, 1, SHADOW_MISS_IDX,              // sbtRecordOffset, sbtRecordStride, missIndex
             worldPos, 0.0001, rayDir, 100.0,  	// origin, tmin, direction, tmax
             0);                                 // payload
-        gPayload.depth = tempDepth;
+        gPayload.depth--;
+        
+        vec3 reflectedRadiance = gPayload.radiance;
+
+        // Add transmission ray if transmission factor > 0
+        float transmissionFactor = getTransmissionFactor(material, gImguiParam.transmissionFactor);
+        vec3 transmittedRadiance = vec3(0.0);
+        
+        if (transmissionFactor > 0.0) {
+            // Get material IOR (default to glass if not specified)
+            float ior = material._ior;
+            if (ior <= 0.0) ior = 1.5; // Default glass IOR
+            
+            // Calculate physics-based refracted direction
+            vec3 refractedDir = calculateRefractedDirection(-viewDir, worldNormal, ior);
+            
+            // Calculate transmission coefficient
+            float transmissionCoeff = calculateTransmissionCoeff(viewDir, worldNormal, ior);
+            
+            // Shoot transmission ray in the refracted direction
+            gPayload.rayDirection = refractedDir;
+            gPayload.depth++;
+            traceRayEXT(
+                topLevelAS,
+                gl_RayFlagsOpaqueEXT, 0xff,
+                0, 1, SHADOW_MISS_IDX,
+                worldPos, 0.0001, refractedDir, 100.0,
+                0);
+            gPayload.depth--;
+            
+            // Apply Beer's law-like attenuation with material color
+            transmittedRadiance = gPayload.radiance * color * transmissionFactor * transmissionCoeff;
+        }
 
         const float cos_p = max(dot(worldNormal, rayDir), 1e-6);
-        tempRadianceI += brdf * gPayload.radiance * cos_p * weight / pdfSel;
+        // Apply Fresnel-based energy conservation
+        if (transmissionFactor > 0.0) {
+            float ior = material._ior;
+            if (ior <= 0.0) ior = 1.5;
+            float fresnelReflectance = calculateFresnelReflectance(viewDir, worldNormal, ior);
+            tempRadianceI += brdf * reflectedRadiance * cos_p * weight / pdfSel * fresnelReflectance;
+        } else {
+            tempRadianceI += brdf * reflectedRadiance * cos_p * weight / pdfSel;
+        }
+        tempRadianceI += transmittedRadiance;
 	}
 	tempRadianceI *= (1.0 / float(numSampleByDepth));
 
@@ -485,6 +576,8 @@ void main()
     const float probGGX = (1 - prob);
     const float probCos = prob;
 
+    MaterialParameter material = MaterialBuffer(objDesc.materialAddress).mat;
+
     vec3 temp = vec3(0.0);
     uint numSampleByDepth = (gPayload.depth == 0 ? gImguiParam.numSamples : 1);
     if (gPayload.depth < gImguiParam.maxDepth) {
@@ -520,7 +613,8 @@ void main()
             }
 
             const float pdfBRDF = probGGX * pdfGGXVal + probCos * pdfCosineVal;
-            const vec3 brdf = calculateBRDF(worldNormal, viewDir, rayDir, halfDir, color, metallic, alpha);
+            vec3 brdf = calculateBRDF(worldNormal, viewDir, rayDir, halfDir, color, metallic, alpha);
+            
 
             gPayload.rayDirection = rayDir;
             gPayload.pdfBRDF = pdfBRDF;
@@ -532,9 +626,50 @@ void main()
                 worldPos, 0.0001, rayDir, 100.0,  	// origin, tmin, direction, tmax
                 0);                                 // payload
             gPayload.depth--;
+            
+            vec3 reflectedRadiance = gPayload.radiance;
+
+            // Add transmission ray if transmission factor > 0
+            float transmissionFactor = getTransmissionFactor(material, uv, gImguiParam.transmissionFactor);
+            vec3 transmittedRadiance = vec3(0.0);
+            
+            if (transmissionFactor > 0.0) {
+                // Get material IOR (default to glass if not specified)
+                float ior = material._ior;
+                if (ior <= 0.0) ior = 1.5; // Default glass IOR
+                
+                // Calculate physics-based refracted direction
+                vec3 refractedDir = calculateRefractedDirection(-viewDir, worldNormal, ior);
+                
+                // Calculate transmission coefficient
+                float transmissionCoeff = calculateTransmissionCoeff(viewDir, worldNormal, ior);
+                
+                // Shoot transmission ray in the refracted direction
+                gPayload.rayDirection = refractedDir;
+                gPayload.depth++;
+                traceRayEXT(
+                    topLevelAS,
+                    gl_RayFlagsOpaqueEXT, 0xff,
+                    0, 1, ENV_MISS_IDX,
+                    worldPos, 0.0001, refractedDir, 100.0,
+                    0);
+                gPayload.depth--;
+                
+                // Apply Beer's law-like attenuation with material color
+                transmittedRadiance = gPayload.radiance * color * transmissionFactor * transmissionCoeff;
+            }
 
             const float cos_p = max(dot(worldNormal, rayDir), 1e-6);
-            temp += brdf * gPayload.radiance * cos_p / pdfBRDF;
+            // Apply Fresnel-based energy conservation
+            if (transmissionFactor > 0.0) {
+                float ior = material._ior;
+                if (ior <= 0.0) ior = 1.5;
+                float fresnelReflectance = calculateFresnelReflectance(viewDir, worldNormal, ior);
+                temp += brdf * reflectedRadiance * cos_p / pdfBRDF * fresnelReflectance;
+            } else {
+                temp += brdf * reflectedRadiance * cos_p / pdfBRDF;
+            }
+            temp += transmittedRadiance;
         }
         temp *= 1.0 / float(numSampleByDepth);
     }
@@ -641,10 +776,9 @@ void main()
         const vec3 emit = getEmitFromEnvmap(rayDir);
 
         float cos_p = max(dot(worldNormal, rayDir), 1e-6);
-        // Cook-Torrance BRDF
         vec3 halfDir = normalize(viewDir + rayDir);
         vec3 brdf = calculateBRDF(worldNormal, viewDir, rayDir, halfDir, color, metallic, alpha);
-
+        
         float pdfGGX = pdfGGXVNDF(worldNormal, viewDir, halfDir, alpha);
         float pdfCos = cos_p / PI;
         float pdfBRDF = probGGX * pdfGGX + probCos * pdfCos;
@@ -653,6 +787,19 @@ void main()
 
         float charFunc = 0.0;
         if (dot(viewDir, worldNormal) > 0.0) charFunc = 1.0;
+        
+        // Add transmission contribution for environment map
+        float transmissionFactor = getTransmissionFactor(material, gImguiParam.transmissionFactor);
+        if (transmissionFactor > 0.0) {
+            // For transmission, sample environment in view direction
+            vec3 transmissionDir = -viewDir;
+            vec3 transmittedEnvColor = getEmitFromEnvmap(transmissionDir);
+            vec3 transmittedRadiance = transmittedEnvColor * color * transmissionFactor;
+            
+            // Blend reflection and transmission
+            brdf = mix(brdf, vec3(0.1), transmissionFactor); // Reduce reflection
+            tempRadianceD += transmittedRadiance * gPayload.visibility * charFunc * w / pdfEnv;
+        }
 
         tempRadianceD += brdf * emit * cos_p * gPayload.visibility * charFunc * w / pdfEnv;
 	}
@@ -704,8 +851,8 @@ void main()
                                    : powerHeuristic(pdfCosineVal, pdfGGXVal);
 
         const float pdfBRDF = isGGX ? pdfGGXVal : pdfCosineVal;
-        const vec3 brdf = calculateBRDF(worldNormal, viewDir, rayDir, halfDir, color, metallic, alpha);
-
+        vec3 brdf = calculateBRDF(worldNormal, viewDir, rayDir, halfDir, color, metallic, alpha);
+        
 		gPayload.rayDirection = rayDir;
         gPayload.pdfBRDF = pdfBRDF;
 		gPayload.depth++;
@@ -716,8 +863,49 @@ void main()
 			worldPos, eps, rayDir, 100.0,  		// origin, tmin, direction, tmax
 			0);                                 // gPayload
 		gPayload.depth--;
+		
+		vec3 reflectedRadiance = gPayload.radiance;
 
-        tempRadianceI += brdf * gPayload.radiance * cos_p * weight / pdfBRDF; // radiance weighted for the last bounce
+        // Add transmission ray if transmission factor > 0
+        float transmissionFactor = getTransmissionFactor(material, gImguiParam.transmissionFactor);
+        vec3 transmittedRadiance = vec3(0.0);
+        
+        if (transmissionFactor > 0.0) {
+            // Get material IOR (default to glass if not specified)
+            float ior = material._ior;
+            if (ior <= 0.0) ior = 1.5; // Default glass IOR
+            
+            // Calculate physics-based refracted direction
+            vec3 refractedDir = calculateRefractedDirection(-viewDir, worldNormal, ior);
+            
+            // Calculate transmission coefficient
+            float transmissionCoeff = calculateTransmissionCoeff(viewDir, worldNormal, ior);
+            
+            // Shoot transmission ray in the refracted direction
+            gPayload.rayDirection = refractedDir;
+            gPayload.depth++;
+            traceRayEXT(
+                topLevelAS,
+                gl_RayFlagsOpaqueEXT, 0xff,
+                0, 1, ENV_MISS_IDX,
+                worldPos, eps, refractedDir, 100.0,
+                0);
+            gPayload.depth--;
+            
+            // Apply Beer's law-like attenuation with material color
+            transmittedRadiance = gPayload.radiance * color * transmissionFactor * transmissionCoeff;
+        }
+
+        // Apply Fresnel-based energy conservation
+        if (transmissionFactor > 0.0) {
+            float ior = material._ior;
+            if (ior <= 0.0) ior = 1.5;
+            float fresnelReflectance = calculateFresnelReflectance(viewDir, worldNormal, ior);
+            tempRadianceI += brdf * reflectedRadiance * cos_p * weight / pdfBRDF * fresnelReflectance;
+        } else {
+            tempRadianceI += brdf * reflectedRadiance * cos_p * weight / pdfBRDF;
+        }
+        tempRadianceI += transmittedRadiance; // radiance weighted for the last bounce
 	}
 	tempRadianceI *= (1.0 / float(numSampleByDepth));
 

@@ -295,6 +295,12 @@ void Addon_imgui::renderFrame( GLFWwindow* window, VulkanRenderBackend* vulkan, 
                 scene->markBufferUpdated();
         }
 
+        ImGui::SeparatorText("Material");
+        {
+            if (ImGui::SliderFloat("Transmission", &scene->getImguiParam()->transmissionFactor, 0.0f, 1.0f))
+                scene->markBufferUpdated();
+        }
+
         ImGui::SeparatorText("Image Capture");
         {
             if (ImGui::Button("Save Current Frame")) {

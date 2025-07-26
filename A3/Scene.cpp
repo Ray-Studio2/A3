@@ -30,7 +30,7 @@ Scene::~Scene() {
 	}
 }
 
-// 노드의 로컬 변환 행렬 얻기 (glm 사용)
+// ?몃뱶??濡쒖뺄 蹂???됰젹 ?산린 (glm ?ъ슜)
 Mat4x4 getNodeLocalTransform(const tinygltf::Node& node) {
 	Mat4x4 local = Mat4x4::identity;
 	if (!node.matrix.empty()) {
@@ -109,7 +109,7 @@ Mat4x4 getNodeLocalTransform(const tinygltf::Node& node) {
 	}
 	return local;
 }
-// 템플릿 함수 (glm::vec 기반으로 수정)
+// ?쒗뵆由??⑥닔 (glm::vec 湲곕컲?쇰줈 ?섏젙)
 template <typename T>
 std::vector<T> getBufferData(const tinygltf::Model& model, int accessorIndex) {
 	std::vector<T> data;
@@ -310,7 +310,7 @@ void Scene::loadGLTF(const std::string& fileName, VulkanRenderBackend& vulkanBac
 		std::cout << "\n--- Material [" << i << "] ---" << std::endl;
 		std::cout << "Name: " << (material.name.empty() ? "(No Name)" : material.name) << std::endl;
 
-		// PBR Metallic-Roughness 워크플로우 정보 추출
+		// PBR Metallic-Roughness ?뚰겕?뚮줈???뺣낫 異붿텧
 		const auto& pbr = material.pbrMetallicRoughness;
 
 		// 1. Base Color
@@ -390,14 +390,48 @@ void Scene::loadGLTF(const std::string& fileName, VulkanRenderBackend& vulkanBac
 			materialParameter._emissiveTexture = TextureManager::createTexture(vulkanBackend, image.name, static_cast<uint32>(VK_FORMAT_R32G32B32A32_SFLOAT), image.width, image.height, ConvertUcharToFloat(image).data());
 		}
 
-		//// 6. Alpha Mode
+		// Transmission (KHR_materials_transmission)
+		if (material.extensions.count("KHR_materials_transmission") > 0) 
+		{
+			const auto& transmission = material.extensions.find("KHR_materials_transmission")->second;
+			if (transmission.Has("transmissionFactor")) 
+			{
+				materialParameter._transmissionFactor = static_cast<float>(transmission.Get("transmissionFactor").GetNumberAsDouble());
+				std::cout << "  Transmission Factor: " << materialParameter._transmissionFactor << std::endl;
+			}
+			if (transmission.Has("transmissionTexture")) 
+			{
+				const auto& transmissionTextureInfo = transmission.Get("transmissionTexture");
+				int textureIndex = transmissionTextureInfo.Get("index").GetNumberAsInt();
+				if (textureIndex >= 0 && textureIndex < model.textures.size()) 
+				{
+					const auto& texture = model.textures[textureIndex];
+					const auto& image = model.images[texture.source];
+					std::cout << "  Transmission Texture: " << image.uri << std::endl;
+					materialParameter._transmissionTexture = TextureManager::createTexture(vulkanBackend, image.name, static_cast<uint32>(VK_FORMAT_R32G32B32A32_SFLOAT), image.width, image.height, ConvertUcharToFloat(image).data());
+				}
+			}
+		}
+
+		// IOR (KHR_materials_ior)
+		if (material.extensions.count("KHR_materials_ior") > 0) 
+		{
+			const auto& ior = material.extensions.find("KHR_materials_ior")->second;
+			if (ior.Has("ior")) 
+			{
+				materialParameter._ior = static_cast<float>(ior.Get("ior").GetNumberAsDouble());
+				std::cout << "  IOR: " << materialParameter._ior << std::endl;
+			}
+		}
+
+		//// 7. Alpha Mode
 		//std::cout << "  Alpha Mode: " << material.alphaMode << std::endl;
 		//if (material.alphaMode == "MASK") 
 		//{
 		//	std::cout << "  Alpha Cutoff: " << material.alphaCutoff << std::endl;
 		//}
 
-		//// 7. Double Sided
+		//// 8. Double Sided
 		//std::cout << "  Double Sided: " << (material.doubleSided ? "True" : "False") << std::endl;
 
 		Material a3Material;
@@ -734,11 +768,11 @@ void Scene::load(const std::string& path, VulkanRenderBackend& vulkanBackend) {
 					const tinygltf::BufferView& indexBufferView = model.bufferViews[indexAccessor.bufferView];
 					const tinygltf::Buffer& indexBuffer = model.buffers[indexBufferView.buffer];
 
-					// 인덱스 데이터 시작 위치
+					// ?몃뜳???곗씠???쒖옉 ?꾩튂
 					const unsigned char* data_start = &indexBuffer.data[indexBufferView.byteOffset + indexAccessor.byteOffset];
 
-					// 인덱스 타입(unsigned short, unsigned int 등)에 따라 적절히 캐스팅해야 합니다.
-					// indexAccessor.componentType을 확인하여 처리합니다.
+					// ?몃뜳?????unsigned short, unsigned int ?????곕씪 ?곸젅??罹먯뒪?낇빐???⑸땲??
+					// indexAccessor.componentType???뺤씤?섏뿬 泥섎━?⑸땲??
 				}
 			}
 		}
@@ -783,6 +817,9 @@ A3::MaterialParameter::MaterialParameter()
 	_metallicFactor = 0;
 	_roughnessFactor = 1;
 	_metallicRoughnessTexture = TextureManager::gWhiteParameter;
+	_transmissionFactor = 0.0f;
+    _transmissionTexture = TextureManager::gWhiteParameter;
+    _ior = 1.5f; // Default glass IOR
 
 	_emissiveFactor = Vec3(0);
 	_emissiveTexture = TextureManager::gWhiteParameter;

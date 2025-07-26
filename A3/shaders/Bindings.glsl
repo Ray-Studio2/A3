@@ -38,6 +38,7 @@ layout( binding = 7 ) uniform imguiParam {
 	uint numSamples;
     uint isProgressive;
     float envmapRotDeg;
+    float transmissionFactor;
 } gImguiParam;
 
 layout(binding = 8) uniform sampler2D envImportanceData;

@@ -5,6 +5,22 @@
 
 namespace A3
 {
+struct DisneyMaterial
+{
+	Vec3 baseColor			= Vec3(0.0f);
+	float metallic			= 0.0f;
+	float roughness			= 0.0f;
+
+	float subsurface		= 0.0f;
+	float specular			= 0.0f;
+	float specularTint		= 0.0f;
+	float anisotropic		= 0.0f;
+	float sheen				= 0.0f;
+	float sheenTint			= 0.0f;
+	float clearcoat			= 0.0f;
+	float clearcoatGloss	= 0.0f;
+};
+
 class SceneObject
 {
 public:
@@ -13,7 +29,6 @@ public:
 		  scale(1.0f),
 		  rotation(Mat3x3::identity),
 		  localToWorld( Mat4x4::identity ),
-		  baseColor(0.0f),
 		  emittance(0.0f)
 	{
 		updateLocalToWorld();
@@ -24,9 +39,10 @@ public:
 	const Mat4x4& getLocalToWorld() { return localToWorld; }
 	const Vec3& getLocalPosition() { return position; }
 	const Vec3& getWorldPosition() { return Vec3( localToWorld.m03, localToWorld.m13, localToWorld.m23 ); }
-	const Vec3& getBaseColor() { return baseColor; }
-	const float getMetallic() const { return metallic; }
-	const float getRoughness() const { return roughness; }
+	const Vec3& getBaseColor() { return mat.baseColor; }
+	const float getMetallic() const { return mat.metallic; }
+	const float getRoughness() const { return mat.roughness; }
+	const DisneyMaterial& getMaterial() const { return mat; }
 	const float getEmittance() const { return emittance; }
 
 	void setPosition( const Vec3& position )
@@ -76,10 +92,13 @@ public:
 		updateLocalToWorld();
 	}
 
-	void setBaseColor(const Vec3& baseColor) { this->baseColor = baseColor; }
-	void setMetallic(const float& metallic) { this->metallic = metallic; }
-	void setRoughness(const float& roughness) { this->roughness = roughness; }
+	void setBaseColor(const Vec3& baseColor) { this->mat.baseColor = baseColor; }
+	void setMetallic(const float& metallic) { this->mat.metallic = metallic; }
+	void setRoughness(const float& roughness) { this->mat.roughness = roughness; }
+	void setMaterial(const DisneyMaterial& mat) { this->mat = mat; }
+	
 	void setEmittance(float emittance) { this->emittance = emittance; }
+
 
 	bool isLight()
 	{
@@ -119,9 +138,7 @@ protected:
 
 	Mat4x4 localToWorld;
 
-	Vec3 baseColor;
-	float metallic;
-	float roughness;
+	DisneyMaterial mat;
 	// for light objects
 	float emittance; 
 };

@@ -624,7 +624,15 @@ void Scene::load(const std::string& path, VulkanRenderBackend& vulkanBackend) {
 			auto& material = materials[materialName];
 			auto& baseColor = material["baseColor"];
 			auto& metallic = material["metallic"];
+			auto& subsurface = material["subsurface"];
+			auto& specular = material["specular"];
 			auto& roughness = material["roughness"];
+			auto& specularTint = material["specularTint"];
+			auto& anisotropic = material["anisotropic"];
+			auto& sheen = material["sheen"];
+			auto& sheenTint = material["sheenTint"];
+			auto& clearcoat = material["clearcoat"];
+			auto& clearcoatGloss = material["clearcoatGloss"];
 
 			if (resources.find(mesh) == resources.end()) {
 				MeshResource resource;
@@ -655,15 +663,27 @@ void Scene::load(const std::string& path, VulkanRenderBackend& vulkanBackend) {
 			mo->setScale(Vec3(scale[0], scale[1], scale[2]));
 			mo->calculateTriangleArea();
 
-			mo->setBaseColor(Vec3(baseColor[0], baseColor[1], baseColor[2]));
 			if (materialName == "light") {
+				mo->setBaseColor(Vec3(baseColor[0], baseColor[1], baseColor[2]));
 				lightIndex.push_back(index);
 				auto& emittance = material["emittance"];
 				mo->setEmittance(emittance);
 			}
 			else {
-				mo->setMetallic(metallic.get<float>());
-				mo->setRoughness(roughness.get<float>());
+				DisneyMaterial mat;
+				mat.baseColor = Vec3(baseColor[0], baseColor[1], baseColor[2]);
+				mat.metallic = metallic;
+				mat.roughness = roughness;
+				mat.subsurface = subsurface;
+				mat.specular = specular;
+				mat.specularTint = specularTint;
+				mat.anisotropic = anisotropic;
+				mat.sheen = sheen;
+				mat.sheenTint = sheenTint;
+				mat.clearcoat = clearcoat;
+				mat.clearcoatGloss = clearcoatGloss;
+
+				mo->setMaterial(mat);
 			}
 
 			this->objects.emplace_back(mo);
@@ -744,7 +764,7 @@ void Scene::load(const std::string& path, VulkanRenderBackend& vulkanBackend) {
 		}
 	}
 #else
-	loadGLTF("../Assets/phoenix_bird/scene.gltf", vulkanBackend);
+	//loadGLTF("../Assets/phoenix_bird/scene.gltf", vulkanBackend);
 #endif
 }
 

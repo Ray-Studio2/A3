@@ -2506,13 +2506,6 @@ IRenderPipelineRef VulkanRenderBackend::createRayTracingPipeline( const Raytraci
         uint8 data[ RenderSettings::shaderGroupHandleSize ];
     };
 
-    struct HitgCustomData
-    {
-        float color[ 3 ];
-        float metallic;
-        float roughness;
-    };
-
     auto alignTo = []( auto value, auto alignment ) -> decltype( value )
         {
             return ( value + ( decltype( value ) )alignment - 1 ) & ~( ( decltype( value ) )alignment - 1 );
@@ -2537,7 +2530,7 @@ IRenderPipelineRef VulkanRenderBackend::createRayTracingPipeline( const Raytraci
     missSbt = { 0, missStride, missStride * 2 };
 
     std::vector<MeshObject*> objects = tempScenePointer->collectMeshObjects();
-    const uint32 hitgCustomDataSize = sizeof( HitgCustomData );
+    const uint32 hitgCustomDataSize = sizeof( DisneyMaterial );
     const uint32 geometryCount = objects.size();
     const uint64 hitgOffset = alignTo( missOffset + missSbt.size, rtProperties.shaderGroupBaseAlignment );
     const uint32 hitgStride = alignTo( handleSize + hitgCustomDataSize, rtProperties.shaderGroupHandleAlignment );
@@ -2567,13 +2560,9 @@ IRenderPipelineRef VulkanRenderBackend::createRayTracingPipeline( const Raytraci
 
         for (size_t i = 0; i < geometryCount; ++i)
         {
-            HitgCustomData mat;
-            const auto& objectColor = objects[i]->getBaseColor();
-            const auto& objectMetallic = objects[i]->getMetallic();
-            const auto& objectRoughness = objects[i]->getRoughness();
-            mat = { objectColor.x, objectColor.y, objectColor.z, objectMetallic, objectRoughness };
+            const DisneyMaterial& mat = objects[i]->getMaterial();
             *(ShaderGroupHandle*)(dst + hitgOffset + i * hitgStride) = hitgHandle;
-            *(HitgCustomData*)(dst + hitgOffset + i * hitgStride + handleSize) = mat;
+            *(DisneyMaterial*)(dst + hitgOffset + i * hitgStride + handleSize) = mat;
         }
     }
     vkUnmapMemory( device, sbtBufferMem );

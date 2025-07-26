@@ -20,6 +20,7 @@
 #include "shaders/Sampler.glsl"
 #include "shaders/NEELightSampling.glsl"
 #include "shaders/BRDF.glsl"
+#include "shaders/DisneyBRDF.glsl"
 
 #if RAY_GENERATION_SHADER
 //=========================
@@ -550,9 +551,18 @@ void main()
 
 layout( shaderRecordEXT ) buffer CustomData
 {
-   vec3 color;
-   float metallic;
-   float roughness;
+    vec3 baseColor;
+    float metallic;
+    float roughness;
+
+    float subsurface;
+    float specular;
+    float specularTint;
+    float anisotropic;
+    float sheen;
+    float sheenTint;
+    float clearcoat;
+    float clearcoatGloss;
 } gCustomData;
 
 layout(location = 0) rayPayloadInEXT RayPayload gPayload;
@@ -600,17 +610,33 @@ void main()
 
     vec3 worldPos = (gl_ObjectToWorldEXT * vec4(position, 1.0)).xyz;
     vec3 worldNormal = normalize(transpose(inverse(mat3(gl_ObjectToWorldEXT))) * normal);
+    mat3 tbn = computeTBN(worldNormal);
+    vec3 tangent = tbn[0]; 
+    vec3 bitangent = tbn[1];
 
     const float eps = 1e-4;
 
     MaterialParameter material = MaterialBuffer(objDesc.materialAddress).mat;
     const TextureParameter baseColorTexture = material._baseColorTexture;
     const vec4 baseColor = texture(sampler2D(textures[nonuniformEXT(baseColorTexture)], linearSampler), uv);
-
     const vec3 color = material._baseColorFactor.xyz * baseColor.xyz;
     const float metallic = clamp(gCustomData.metallic, 0.0, 1.0);
     const float roughness = clamp(gCustomData.roughness, MIRROR_ROUGH, 1.0);
     const float alpha = roughness * roughness;
+
+    // for Disney BRDF
+    DisneyMaterial disMat;
+    disMat.baseColor = color;
+    disMat.metallic = metallic;
+    disMat.roughness = roughness;
+    disMat.subsurface = clamp(gCustomData.subsurface, 0.0, 1.0);
+    disMat.specular = clamp(gCustomData.specular, 0.0, 1.0);
+    disMat.specularTint = clamp(gCustomData.specularTint, 0.0, 1.0);
+    disMat.anisotropic = clamp(gCustomData.anisotropic, 0.0, 1.0);
+    disMat.sheen = clamp(gCustomData.roughness, 0.0, 1.0);
+    disMat.sheenTint = clamp(gCustomData.sheenTint, 0.0, 1.0);
+    disMat.clearcoat = clamp(gCustomData.clearcoat, 0.0, 1.0);
+    disMat.clearcoatGloss = clamp(gCustomData.clearcoatGloss, 0.0, 1.0);
 
     const float prob = mix(0.2, 0.8, roughness);
     const float probGGX = (1 - prob);
@@ -643,7 +669,8 @@ void main()
         float cos_p = max(dot(worldNormal, rayDir), 1e-6);
         // Cook-Torrance BRDF
         vec3 halfDir = normalize(viewDir + rayDir);
-        vec3 brdf = calculateBRDF(worldNormal, viewDir, rayDir, halfDir, color, metallic, alpha);
+        vec3 brdf = disneyBRDF(rayDir, viewDir, worldNormal, tangent, bitangent, disMat);
+        // vec3 brdf = calculateBRDF(worldNormal, viewDir, rayDir, halfDir, color, metallic, alpha);
 
         float pdfGGX = pdfGGXVNDF(worldNormal, viewDir, halfDir, alpha);
         float pdfCos = cos_p / PI;
@@ -652,7 +679,7 @@ void main()
         float w = powerHeuristic(pdfEnv, pdfBRDF);
 
         float charFunc = 0.0;
-        if (dot(viewDir, worldNormal) > 0.0) charFunc = 1.0;
+        if (dot(rayDir, worldNormal) > 0.0) charFunc = 1.0;
 
         tempRadianceD += brdf * emit * cos_p * gPayload.visibility * charFunc * w / pdfEnv;
 	}
@@ -696,15 +723,11 @@ void main()
             halfDir = normalize(viewDir + rayDir);
             pdfGGXVal = pdfGGXVNDF(worldNormal, viewDir, halfDir, alpha);
         }
+        if (dot(rayDir, worldNormal) <= 0.0) continue;
 
-        pdfGGXVal = probGGX * pdfGGXVal;
-        pdfCosineVal = probCos * pdfCosineVal;
-
-        const float weight = isGGX ? powerHeuristic(pdfGGXVal, pdfCosineVal)
-                                   : powerHeuristic(pdfCosineVal, pdfGGXVal);
-
-        const float pdfBRDF = isGGX ? pdfGGXVal : pdfCosineVal;
-        const vec3 brdf = calculateBRDF(worldNormal, viewDir, rayDir, halfDir, color, metallic, alpha);
+        const float pdfBRDF = probGGX * pdfGGXVal + probCos * pdfCosineVal;
+        const vec3 brdf = disneyBRDF(rayDir, viewDir, worldNormal, tangent, bitangent, disMat);
+        // const vec3 brdf = calculateBRDF(worldNormal, viewDir, rayDir, halfDir, color, metallic, alpha);
 
 		gPayload.rayDirection = rayDir;
         gPayload.pdfBRDF = pdfBRDF;
@@ -717,7 +740,7 @@ void main()
 			0);                                 // gPayload
 		gPayload.depth--;
 
-        tempRadianceI += brdf * gPayload.radiance * cos_p * weight / pdfBRDF; // radiance weighted for the last bounce
+        tempRadianceI += brdf * gPayload.radiance * cos_p / pdfBRDF; // radiance weighted for the last bounce
 	}
 	tempRadianceI *= (1.0 / float(numSampleByDepth));
 
@@ -774,13 +797,12 @@ layout(location = 0) rayPayloadInEXT RayPayload gPayload;
 
 void main()
 {
-	if (gPayload.depth >= gImguiParam.maxDepth) {
+	if (gPayload.depth > gImguiParam.maxDepth) {
         gPayload.radiance = vec3(0.0);
 		return;
     }
 
-    const vec3 Le = getEmitFromEnvmap(gPayload.rayDirection);
-
+    vec3 Le = getEmitFromEnvmap(gPayload.rayDirection);
     float weight = 1.0;
     // get envmap pdf for MIS
     if (gPayload.depth > 0)

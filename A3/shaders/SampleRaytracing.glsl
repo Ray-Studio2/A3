@@ -147,10 +147,6 @@ void main()
     vec3 worldPos = (gl_ObjectToWorldEXT * vec4(position, 1.0)).xyz;
     vec3 worldNormal = normalize(transpose(inverse(mat3(gl_ObjectToWorldEXT))) * normal);
 
-    LightData light = gLightBuffer.lights[0];
-
-    const vec3 lightEmittance = vec3(light.emittance); // emittance per point
-
     MaterialParameter material = MaterialBuffer(objDesc.materialAddress).mat;
     const TextureParameter baseColorTexture = material._baseColorTexture;
     const vec4 baseColor = texture(sampler2D(textures[nonuniformEXT(baseColorTexture)], linearSampler), uv);
@@ -165,8 +161,19 @@ void main()
     const float probCos = prob;
 
     vec3 emit = vec3(0.0);
-    if (gl_InstanceCustomIndexEXT == gLightBuffer.lightIndex[0])
-        emit = lightEmittance;
+
+    for (uint lightIndex = 0; lightIndex < 16; ++lightIndex)
+    {
+        LightData light = gLightBuffer.lights[lightIndex];
+
+        const vec3 lightEmittance = vec3(light.emittance); // emittance per point
+
+        if (gl_InstanceCustomIndexEXT == gLightBuffer.lightIndex[lightIndex])
+        {
+            emit = lightEmittance;
+            break;
+        }
+    }
 
     uint tempDepth = gPayload.depth;
     uint numSampleByDepth = (gPayload.depth == 0 ? gImguiParam.numSamples : 1);
@@ -288,7 +295,7 @@ void main()
     
     const float eps = 1e-4;
     
-    uint lightIndex = selectLight(gPayload.rngState);
+    uint lightIndex = selectLight(worldPos, gPayload.rngState);
 
     LightData light = gLightBuffer.lights[lightIndex];
 

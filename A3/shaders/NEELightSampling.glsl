@@ -66,7 +66,21 @@ void uniformSamplePointOnTriangle(uint triangleIdx,
 	normalOnTriangleWorld = normalize(localToWorld * vec4(normalOnTriangle, 0.0f)).xyz;
 }
 
-uint selectLight(inout uint rngState)
+uint selectLight(vec3 worldPos, inout uint rngState)
 {
-    return pcg_hash(rngState) % 4;
+	uint gridDimension = 8;
+	float cellExtent = 0.2f;
+	float cellSize = cellExtent * 2;
+	float gridExtent = -cellSize * gridDimension / 2;
+	vec3 gridPosMin = vec3(gridExtent, gridExtent, gridExtent) / cellSize;
+	vec3 gridPosMax = -gridPosMin;
+	vec3 gridPos = clamp(worldPos / cellSize, gridPosMin, gridPosMax) - gridPosMin;
+	ivec3 gridCoords = ivec3(floor(gridPos));
+	vec3 cellFrac = fract(gridPos);
+
+	uint gridIndex = gridCoords.x + gridCoords.y * gridDimension + gridCoords.z * gridDimension * gridDimension;
+	LightGrid grid = gLightBuffer.grid[gridIndex];
+
+	uint randomIndex = pcg_hash(rngState) % 256;
+    return grid.lightIndex[randomIndex];
 }

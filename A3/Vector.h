@@ -145,6 +145,8 @@ inline Vec3 operator*(const Vec3& lhs, float rhs)
 
 float lengthSquared(const Vec3& v);
 float length(const Vec3& v);
+float distanceSquared(const Vec3& v0, const Vec3& v1);
+float distance(const Vec3& v0, const Vec3& v1);
 Vec3 normalize(const Vec3& v);
 Vec3 cross(const Vec3& lhs, const Vec3& rhs);
 }

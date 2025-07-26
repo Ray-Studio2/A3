@@ -21,6 +21,11 @@ struct LightData
     uint triangleCount;
 };
 
+struct LightGrid
+{
+    uint lightIndex[256];
+};
+
 struct VertexAttributes
 {
    vec4 norm;

@@ -12,6 +12,16 @@ float length(const Vec3& v)
 	return std::sqrt(lengthSquared(v));
 }
 
+float distanceSquared(const Vec3& v0, const Vec3& v1)
+{
+	return lengthSquared(v1 - v0);
+}
+
+float distance(const Vec3& v0, const Vec3& v1)
+{
+	return std::sqrt(distanceSquared(v1, v0));
+}
+
 Vec3 normalize(const Vec3& v)
 {
 	float lenSq = lengthSquared(v);

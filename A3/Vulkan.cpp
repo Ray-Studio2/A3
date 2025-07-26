@@ -2082,10 +2082,22 @@ void VulkanRenderBackend::createLightBuffer()
         // LightData array follows
     };
 
+    const uint32 lightProbResolution = 256;
+
+    struct LightGridData
+    {
+        uint32 lightIndex[lightProbResolution];
+    };
+
+    const uint32 gridDimension = 8;
+    static_assert(gridDimension % 2 == 0);
+    const uint32 numlightGrids = gridDimension * gridDimension * gridDimension;
+
     // Create an initial light buffer with space for up to 16 lights
     const size_t maxLights = RenderSettings::maxLightCounts;
     const size_t lightDataSize = sizeof(LightData);
-    const size_t bufferSize = sizeof(LightHeaderData) + lightDataSize * maxLights; // header + lights
+    const size_t lightGridDataSize = sizeof(LightGridData) * numlightGrids;
+    const size_t bufferSize = sizeof(LightHeaderData) + lightDataSize * maxLights + lightGridDataSize; // header + lights
 
     std::tie( lightBuffer, lightBufferMem ) = createBuffer(
         bufferSize,
@@ -2113,9 +2125,21 @@ void VulkanRenderBackend::updateLightBuffer( const std::vector<LightData>& light
         // LightData array follows
     };
 
-    const size_t headerSize = sizeof(LightHeaderData);
-    const size_t lightSize = sizeof(LightData) * lights.size();
-    const size_t bufferSize = headerSize + lightSize;
+    constexpr uint32 gridDimension = 8;
+    static_assert(gridDimension % 2 == 0);
+    const uint32 numlightGrids = gridDimension * gridDimension * gridDimension;
+    const uint32 lightProbResolution = 256;
+    const uint32 numLightPerCell = 16;
+
+    struct LightGridData
+    {
+        uint32 lightIndex[lightProbResolution];
+    };
+
+    const size_t headerDataSize = sizeof(LightHeaderData);
+    const size_t lightDataSize = sizeof(LightData) * lights.size();
+    const size_t lightGridDataSize = sizeof(LightGridData) * numlightGrids;
+    const size_t bufferSize = headerDataSize + lightDataSize + lightGridDataSize;
 
     void* dst;
     vkMapMemory( device, lightBufferMem, 0, bufferSize, 0, &dst );
@@ -2130,9 +2154,96 @@ void VulkanRenderBackend::updateLightBuffer( const std::vector<LightData>& light
     header->pad3 = 0;
 
     // Write light data
-    LightData* dstLights = (LightData*)(static_cast<uint8_t*>(dst) + headerSize);
+    LightData* dstLights = (LightData*)(static_cast<uint8_t*>(dst) + headerDataSize);
 
-    std::memcpy(dstLights, lights.data(), lightSize);
+    std::memcpy(dstLights, lights.data(), lightDataSize);
+
+    // Write light grid data
+    {
+        struct LightSelectionInfo
+        {
+            uint32 lightIndex;
+            float intensity;
+
+            bool operator < (const LightSelectionInfo& other) const
+            {
+                return this->intensity > other.intensity;
+            }
+        };
+
+        const float cellExtent = 0.2f;
+        const float cellSize = cellExtent * 2.0f;
+        const Vec3 cellCenterBase = Vec3(-cellSize * (gridDimension / 2) + cellExtent);
+
+        std::vector<LightGridData> lightGridData(numlightGrids);
+        std::vector<LightSelectionInfo> lightSelectionInfo(numLightPerCell);
+        for (uint32 depth = 0; depth < gridDimension; ++depth)
+        {
+            for (uint32 height = 0; height < gridDimension; ++height)
+            {
+                for (uint32 width = 0; width < gridDimension; ++width)
+                {
+                    const uint32 cellIndex = width + height * gridDimension + depth * gridDimension * gridDimension;
+                    LightGridData& cellData = lightGridData[cellIndex];
+
+                    const Vec3 cellCenter = cellCenterBase + Vec3(width, height, depth) * cellSize;
+
+                    for (uint32 lightIndex = 0; lightIndex < lights.size(); ++lightIndex)
+                    {
+                        const LightData& light = lights[lightIndex];
+
+                        const Vec3 lightLocation = Vec3(light.transform.m03, light.transform.m13, light.transform.m23);
+                        const float sqrDistance = distanceSquared(lightLocation, cellCenter);
+                        const float intensity = light.emission / sqrDistance;
+
+                        if (lightSelectionInfo.back().intensity < intensity)
+                        {
+                            lightSelectionInfo.back().intensity = intensity;
+                            lightSelectionInfo.back().lightIndex = lightIndex;
+
+                            std::sort(lightSelectionInfo.begin(), lightSelectionInfo.end());
+                        }
+                    }
+
+                    float intensitySum = 0;
+                    for (const auto& elem : lightSelectionInfo)
+                    {
+                        intensitySum += elem.intensity;
+                    }
+
+                    uint32 probIndex = 0;
+                    for (auto& elem : lightSelectionInfo)
+                    {
+                        const uint32 probIndexNew = probIndex + (elem.intensity / intensitySum * lightProbResolution);
+
+                        for (uint32 index = probIndex; index < probIndexNew; ++index)
+                        {
+                            cellData.lightIndex[index] = elem.lightIndex;
+                        }
+
+                        probIndex = probIndexNew;
+                    }
+
+                    if (probIndex != 0)
+                    {
+                        while (probIndex < lightProbResolution)
+                        {
+                            cellData.lightIndex[probIndex] = cellData.lightIndex[probIndex - 1];
+                            ++probIndex;
+                        }
+                    }
+
+                    assert(probIndex == lightProbResolution);
+
+                    memset(lightSelectionInfo.data(), 0, sizeof(LightSelectionInfo) * lightSelectionInfo.size());
+                }
+            }
+        }
+
+        uint8* dstLightGridData = static_cast<uint8*>(dst) + headerDataSize + sizeof(LightData) * RenderSettings::maxLightCounts;
+
+        std::memcpy(dstLightGridData, lightGridData.data(), lightGridDataSize);
+    }
 
     vkUnmapMemory( device, lightBufferMem );
 }

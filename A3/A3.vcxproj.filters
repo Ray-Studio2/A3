@@ -225,5 +225,6 @@
     <None Include="shaders\BRDF.glsl" />
     <None Include="shaders\NEELightSampling.glsl" />
     <None Include="..\Assets\nee-local2.json" />
+    <None Include="..\Assets\bruteforce-local2.json" />
   </ItemGroup>
 </Project>

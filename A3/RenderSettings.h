@@ -14,6 +14,7 @@ struct RenderSettings
 	static constexpr uint32 maxLightCounts = 16;
 
 	static constexpr const char* sceneFiles[] = { "../Assets/bruteforce-local.json",
+												 "../Assets/bruteforce-local2.json",
 												 "../Assets/nee-local.json",
 												 "../Assets/nee-local2.json",
 												 "../Assets/bruteforce-env.json",

@@ -28,7 +28,9 @@ layout(binding = 4, std430) readonly buffer LightBuffer
     uint pad1;
     uint pad2;
     uint pad3;
-    LightData lights[];
+    LightData lights[16];
+    LightGrid grid[512];
+
 } gLightBuffer;
 
 layout( binding = 5, rgba32f ) uniform image2D accumulationImage;

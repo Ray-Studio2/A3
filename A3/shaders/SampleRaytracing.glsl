@@ -675,9 +675,12 @@ void main()
     const vec4 baseColor = texture(sampler2D(textures[nonuniformEXT(baseColorTexture)], linearSampler), uv);
 
     const vec3 color = material._baseColorFactor.xyz * baseColor.xyz;
-    const float metallic = clamp(gCustomData.metallic, 0.0, 1.0);
-    const float roughness = clamp(gCustomData.roughness, MIRROR_ROUGH, 1.0);
-    const float alpha = roughness * roughness;
+
+    const TextureParameter mrTexture = material._metallicRoughnessTexture;
+    const vec4 mrSample = texture(sampler2D(textures[nonuniformEXT(mrTexture)], linearSampler), uv);
+    const float metallic = mrSample.r * material._metallicFactor;
+    const float roughness = mrSample.b * material._roughnessFactor;
+    const float alpha = roughness * roughness; // for microfacet models
 
     const float prob = mix(0.2, 0.8, roughness);
     const float probGGX = (1 - prob);
@@ -853,12 +856,13 @@ void main()
 		return;
     }
 
-    const vec3 Le = getEmitFromEnvmap(gPayload.rayDirection);
+    vec3 Le = getEmitFromEnvmap(gPayload.rayDirection);
 
     float weight = 1.0;
     // get envmap pdf for MIS
     if (gPayload.depth > 0)
     {
+        Le = clamp(Le, vec3(0.0), vec3(100.0));
         const vec2 uv = getUVfromRay(gPayload.rayDirection);
         const float pdfEnv = getEnvPdf(uv.x, uv.y);
         weight = powerHeuristic(gPayload.pdfBRDF, pdfEnv);

@@ -678,6 +678,7 @@ void Scene::load(const std::string& path, VulkanRenderBackend& vulkanBackend) {
 		this->imgui_param->envmapRotDeg = envmapRotation;
 	}
 
+#if 0
 	auto& materials = data["materials"];
 
 	auto& objects = data["sceneComponets"];
@@ -740,7 +741,7 @@ void Scene::load(const std::string& path, VulkanRenderBackend& vulkanBackend) {
 			index++;
 		}
 	}
-#if 0
+
 	tinygltf::Model model;
 	tinygltf::TinyGLTF loader;
 	std::string err;

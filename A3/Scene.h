@@ -74,7 +74,7 @@ struct Animation
 		if (_currentTime >= _totalTime)
 			_currentTime -= _totalTime;
 
-		_currentTime = 1.0f;
+		//_currentTime = 1.0f;
 	}
 
 	void sample(const float deltaTime, const std::string& boneName, Vec3& outTranslation, Vec4& outRotation, Vec3& outScale)
@@ -122,24 +122,21 @@ struct Animation
 			const Vec4& curr = animData._rotation._data[i];
 
 			// 쿼터니언 정규화
-			auto Normalize = [](Vec4& qua) -> Vec4 {
+			auto Normalize = [](const Vec4& qua) -> Vec4 {
 				float magSq = qua.w * qua.w + qua.x * qua.x + qua.y * qua.y + qua.z * qua.z;
 				if (magSq > 0.0f) {
 					float invMag = 1.0f / std::sqrt(magSq);
-					return Vec4(qua.w * invMag, qua.x * invMag, qua.y * invMag, qua.z * invMag);
+					return Vec4(qua.x * invMag, qua.y * invMag, qua.z * invMag, qua.w * invMag);
 				}
-				return Vec4(1.0f, 0.0f, 0.0f, 0.0f); // 단위 쿼터니언 반환 (0 벡터는 정규화 불가)
+				return Vec4(qua.x, qua.y, qua.z, qua.w); // 단위 쿼터니언 반환 (0 벡터는 정규화 불가)
 				};
 			auto Slerp = [&](const Vec4& q1, const Vec4& q2, float t)->Vec4 {
 				// 1. 쿼터니언 정규화 (입력 쿼터니언이 이미 정규화되어 있다고 가정해도 안전을 위해 다시 합니다.)
-				Vec4 startQ = q1;
-				Vec4 endQ = q2;
+				Vec4 startQ = Normalize(q1);
+				Vec4 endQ = Normalize(q2);
 
 				// 2. 두 쿼터니언의 내적 계산 (코사인 값)
-				float dot = startQ.x * endQ.x
-					+ startQ.y * endQ.y
-					+ startQ.z * endQ.z
-					+ startQ.w * endQ.w;
+				float dot = startQ.x * endQ.x + startQ.y * endQ.y + startQ.z * endQ.z + startQ.w * endQ.w;
 
 				// 3. 내적값이 음수이면 한 쿼터니언의 부호를 반전시켜 가장 짧은 경로를 따르도록 합니다.
 				//    (q와 -q는 같은 회전을 나타내지만 다른 경로를 가집니다.)
@@ -158,20 +155,14 @@ struct Animation
 					return Normalize(result);
 				}
 
-				// 5. Slerp 공식 적용
-				// 각도 계산
-				float theta = std::acos(dot);
-				float sinTheta = std::sin(theta);
+				float theta_0 = std::acos(dot);        // angle between input quaternions
+				float theta = theta_0 * t;             // angle between q1 and result
+				float sin_theta = std::sin(theta);     // compute this value only once
+				float sin_theta_0 = std::sin(theta_0); // compute this value only once
 
-				// sinTheta가 0에 가까우면 예외 처리 (이미 DOT_THRESHOLD에서 처리되었어야 함)
-				// 안전을 위해 다시 확인
-				if (std::abs(sinTheta) < 0.00001f) {
-					return startQ; // 두 쿼터니언이 거의 동일
-				}
-
-				float s0 = std::sin((1.0f - t) * theta) / sinTheta;
-				float s1 = std::sin(t * theta) / sinTheta;
-
+				float s0 = std::cos(theta) - dot * sin_theta / sin_theta_0;  // == sin(theta_0 - theta) / sin(theta_0)
+				float s1 = sin_theta / sin_theta_0;
+				
 				return (startQ * s0) + (endQ * s1);
 				};
 

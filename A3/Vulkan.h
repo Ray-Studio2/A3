@@ -110,6 +110,7 @@ public:
     virtual void createTLAS( const std::vector<BLASBatch*>& batches ) override;
     virtual IShaderModuleRef createShaderModule( const ShaderDesc& desc ) override;
     virtual IRenderPipelineRef createRayTracingPipeline( const RaytracingPSODesc& psoDesc, RaytracingPSO* pso ) override;
+    virtual void updateDescriptorSet(VulkanPipeline* outPipeline) override;
     virtual void updateLightBuffer( const std::vector<LightData>& lights ) override;
     TextureManager::TextureView createResourceImage(const uint32 imageFormat, const uint32 width, const uint32 height, const float* pixelData);
     void createOutImage();
@@ -251,6 +252,7 @@ private:
     VkDeviceMemory imguiBufferMem;
 
     VkDescriptorPool descriptorPool;
+    VkDeviceMemory objectBufferMem;
     VkBuffer objectBuffer;
 
     VkBuffer sbtBuffer;
@@ -269,6 +271,8 @@ private:
     };
 
     VkRenderPass imguiRenderPass;
+
+    std::vector<VkDescriptorSetLayoutBinding> bindings;
 
     friend class Addon_imgui;
 };

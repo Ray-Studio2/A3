@@ -244,6 +244,7 @@ void VulkanRenderBackend::endFrame()
     semaphoreIndex = (semaphoreIndex + 1) % 3;
 
     vkQueueWaitIdle(graphicsQueue);
+    vkDeviceWaitIdle(device);
 }
 
 void VulkanRenderBackend::beginRaytracingPipeline( IRenderPipeline* inPipeline )
@@ -1788,10 +1789,14 @@ struct ObjectDesc
 // @TODO: Support more than 1 instance
 void VulkanRenderBackend::createTLAS( const std::vector<BLASBatch*>& batches )
 {
-    vkDestroyBuffer(device, objectBuffer, nullptr);
-    vkFreeMemory(device, tlasBufferMem, nullptr);
-    vkDestroyBuffer(device, tlasBuffer, nullptr);
-    vkDestroyAccelerationStructureKHR(device, tlas, nullptr);
+    //vkFreeMemory(device, objectBufferMem, nullptr);
+    //vkDestroyBuffer(device, objectBuffer, nullptr);
+    //if (tlasBufferMem != nullptr)
+    //{
+    //    vkFreeMemory(device, tlasBufferMem, nullptr);
+    //    vkDestroyBuffer(device, tlasBuffer, nullptr);
+    //}
+    //vkDestroyAccelerationStructureKHR(device, tlas, nullptr);
 
     std::vector<VkAccelerationStructureInstanceKHR> instanceData;
     void* dst;
@@ -1803,7 +1808,6 @@ void VulkanRenderBackend::createTLAS( const std::vector<BLASBatch*>& batches )
         objectBufferCount += batch->transforms.size();
     }
     const uint64 objectDescBufferSize = objectBufferCount * sizeof(ObjectDesc);
-    VkDeviceMemory objectBufferMem;
     std::tie(objectBuffer, objectBufferMem) = createBuffer(
         objectDescBufferSize,
         VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
@@ -2251,7 +2255,7 @@ IRenderPipelineRef VulkanRenderBackend::createRayTracingPipeline( const Raytraci
     //==========================================================
     // Pipeline layout
     //==========================================================
-    std::vector<VkDescriptorSetLayoutBinding> bindings( 12 );
+    bindings.resize(12);
     for( const ShaderDesc& shaderDesc : psoDesc.shaders )
     {
         for( const ShaderResourceDescriptor& descriptor : shaderDesc.descriptors )
@@ -2369,148 +2373,6 @@ IRenderPipelineRef VulkanRenderBackend::createRayTracingPipeline( const Raytraci
 	};
     result = vkAllocateDescriptorSets( device, &allocateInfo, &outPipeline->descriptorSet );
 
-    {
-        struct ScopedWriteDescriptorSets
-        {
-            std::vector<VkWriteDescriptorSet> descriptors;
-
-            std::vector<VkWriteDescriptorSetAccelerationStructureKHR> accelerationStructures;
-            std::vector<VkDescriptorImageInfo> images;
-            std::vector<VkDescriptorBufferInfo> buffers;
-
-            std::vector<VkDescriptorImageInfo> texture_image_infos;
-            std::vector<VkDescriptorImageInfo> sampler_infos;
-        };
-
-        ScopedWriteDescriptorSets writeDescriptorSets;
-
-        { // @TODO: Deterministic resize
-            writeDescriptorSets.descriptors.resize( bindings.size() );
-            writeDescriptorSets.accelerationStructures.reserve( bindings.size() );
-            writeDescriptorSets.images.reserve( bindings.size() );
-            writeDescriptorSets.buffers.reserve( bindings.size() );
-            writeDescriptorSets.texture_image_infos.reserve(TextureManager::gTextureArray.size());
-            writeDescriptorSets.sampler_infos.reserve(bindings.size());
-        }
-
-        // @TODO: Move to scene level
-        std::vector<VkBuffer> storageBuffers =
-        {
-            nullptr, nullptr,
-            cameraBuffer, objectBuffer,
-            lightBuffer, nullptr, nullptr, imguiBuffer
-        };
-
-        std::vector<VkWriteDescriptorSet> validDescriptors;
-
-        for( int32 index = 0; index < bindings.size(); ++index )
-        {
-            const VkDescriptorSetLayoutBinding& binding = bindings[ index ];
-
-            VkWriteDescriptorSet descriptor{};
-            descriptor.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            descriptor.dstSet = outPipeline->descriptorSet;
-            descriptor.descriptorCount = 1;
-            descriptor.dstBinding = index;
-            descriptor.descriptorType = binding.descriptorType;
-
-            if( binding.descriptorType == VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR )
-            {
-                writeDescriptorSets.accelerationStructures.emplace_back(
-                    VkWriteDescriptorSetAccelerationStructureKHR
-                    {
-                        .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR,
-                        .accelerationStructureCount = 1,
-                        .pAccelerationStructures = &tlas
-                    }
-                );
-
-                descriptor.pNext = &writeDescriptorSets.accelerationStructures.back();
-            }
-            else if( binding.descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE )
-            {
-                // binding 1 is output image, binding 5 is accumulation image
-                VkImageView imageView = (index == 1) ? outImageView : accumulationImageView;
-
-                writeDescriptorSets.images.emplace_back(
-                    VkDescriptorImageInfo
-                    {
-                        .imageView = imageView,
-                        .imageLayout = VK_IMAGE_LAYOUT_GENERAL
-                    }
-                );
-
-                descriptor.pImageInfo = &writeDescriptorSets.images.back();
-            }
-            else if( binding.descriptorType == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER || binding.descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER )
-            {
-                VkBuffer buffer = storageBuffers[ index ];
-                if (buffer == nullptr) {
-                    printf("WARNING: Storage buffer at index %d is null (binding %d)\n", index, binding.binding);
-                    // Skip this descriptor for now
-                    continue;
-                }
-
-                writeDescriptorSets.buffers.emplace_back(
-                    VkDescriptorBufferInfo
-                    {
-                        .buffer = buffer,
-                        .offset = 0,
-                        .range = VK_WHOLE_SIZE
-                    }
-                );
-
-                descriptor.pBufferInfo = &writeDescriptorSets.buffers.back();
-            }
-            else if (binding.descriptorType == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
-            {
-                writeDescriptorSets.images.emplace_back(
-                    VkDescriptorImageInfo{
-                        .sampler = envSampler,
-                        .imageView = index == 6 ? envImageView : index == 8 ? envImportanceView : envHitView, // @TODO: decouple index based logic
-                        .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
-                    }
-                );
-
-                descriptor.pImageInfo = &writeDescriptorSets.images.back();
-            }
-            else if (binding.descriptorType == VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE)
-            {
-                for (uint32 i = 0; i < TextureManager::gTextureArray.size(); ++i)
-                {
-                    const TextureManager::TextureView& view = TextureManager::gTextureArray[i];
-                    writeDescriptorSets.texture_image_infos.emplace_back(
-                        VkDescriptorImageInfo{
-                            .sampler = VK_NULL_HANDLE,
-                            .imageView = view._view,
-                            .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                        }
-                        );
-                }
-
-                descriptor.dstBinding = TEXTUREBINDLESS_BINDING_LOCATION;
-                descriptor.descriptorCount = writeDescriptorSets.texture_image_infos.size();
-                descriptor.pImageInfo = writeDescriptorSets.texture_image_infos.data();
-            }
-            else if (binding.descriptorType == VK_DESCRIPTOR_TYPE_SAMPLER)
-            {
-                VkDescriptorImageInfo sampler_infos;
-                sampler_infos.sampler = TextureManager::gLinearSampler;
-                sampler_infos.imageView = VK_NULL_HANDLE;
-                writeDescriptorSets.sampler_infos.push_back(std::move(sampler_infos));
-
-                descriptor.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-                descriptor.pImageInfo = writeDescriptorSets.sampler_infos.data();
-            }
-            
-            validDescriptors.push_back(descriptor);
-        }
-
-        if (!validDescriptors.empty()) {
-            vkUpdateDescriptorSets( device, validDescriptors.size(), validDescriptors.data(), 0, VK_NULL_HANDLE );
-        }
-    }
-
     //==========================================================
     // Shader binding table
     //==========================================================
@@ -2592,6 +2454,149 @@ IRenderPipelineRef VulkanRenderBackend::createRayTracingPipeline( const Raytraci
     vkUnmapMemory( device, sbtBufferMem );
 
     return IRenderPipelineRef( outPipeline );
+}
+
+void A3::VulkanRenderBackend::updateDescriptorSet(VulkanPipeline* outPipeline)
+{
+    struct ScopedWriteDescriptorSets
+    {
+        std::vector<VkWriteDescriptorSet> descriptors;
+
+        std::vector<VkWriteDescriptorSetAccelerationStructureKHR> accelerationStructures;
+        std::vector<VkDescriptorImageInfo> images;
+        std::vector<VkDescriptorBufferInfo> buffers;
+
+        std::vector<VkDescriptorImageInfo> texture_image_infos;
+        std::vector<VkDescriptorImageInfo> sampler_infos;
+    };
+
+    ScopedWriteDescriptorSets writeDescriptorSets;
+
+    { // @TODO: Deterministic resize
+        writeDescriptorSets.descriptors.resize(bindings.size());
+        writeDescriptorSets.accelerationStructures.reserve(bindings.size());
+        writeDescriptorSets.images.reserve(bindings.size());
+        writeDescriptorSets.buffers.reserve(bindings.size());
+        writeDescriptorSets.texture_image_infos.reserve(TextureManager::gTextureArray.size());
+        writeDescriptorSets.sampler_infos.reserve(bindings.size());
+    }
+
+    // @TODO: Move to scene level
+    std::vector<VkBuffer> storageBuffers =
+    {
+        nullptr, nullptr,
+        cameraBuffer, objectBuffer,
+        lightBuffer, nullptr, nullptr, imguiBuffer
+    };
+
+    std::vector<VkWriteDescriptorSet> validDescriptors;
+
+    for (int32 index = 0; index < bindings.size(); ++index)
+    {
+        const VkDescriptorSetLayoutBinding& binding = bindings[index];
+
+        VkWriteDescriptorSet descriptor{};
+        descriptor.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptor.dstSet = outPipeline->descriptorSet;
+        descriptor.descriptorCount = 1;
+        descriptor.dstBinding = index;
+        descriptor.descriptorType = binding.descriptorType;
+
+        if (binding.descriptorType == VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR)
+        {
+            writeDescriptorSets.accelerationStructures.emplace_back(
+                VkWriteDescriptorSetAccelerationStructureKHR
+                {
+                    .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR,
+                    .accelerationStructureCount = 1,
+                    .pAccelerationStructures = &tlas
+                }
+            );
+
+            descriptor.pNext = &writeDescriptorSets.accelerationStructures.back();
+        }
+        else if (binding.descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
+        {
+            // binding 1 is output image, binding 5 is accumulation image
+            VkImageView imageView = (index == 1) ? outImageView : accumulationImageView;
+
+            writeDescriptorSets.images.emplace_back(
+                VkDescriptorImageInfo
+                {
+                    .imageView = imageView,
+                    .imageLayout = VK_IMAGE_LAYOUT_GENERAL
+                }
+            );
+
+            descriptor.pImageInfo = &writeDescriptorSets.images.back();
+        }
+        else if (binding.descriptorType == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER || binding.descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+        {
+            VkBuffer buffer = storageBuffers[index];
+            if (buffer == nullptr) {
+                printf("WARNING: Storage buffer at index %d is null (binding %d)\n", index, binding.binding);
+                // Skip this descriptor for now
+                continue;
+            }
+
+            writeDescriptorSets.buffers.emplace_back(
+                VkDescriptorBufferInfo
+                {
+                    .buffer = buffer,
+                    .offset = 0,
+                    .range = VK_WHOLE_SIZE
+                }
+            );
+
+            descriptor.pBufferInfo = &writeDescriptorSets.buffers.back();
+        }
+        else if (binding.descriptorType == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
+        {
+            writeDescriptorSets.images.emplace_back(
+                VkDescriptorImageInfo{
+                    .sampler = envSampler,
+                    .imageView = index == 6 ? envImageView : index == 8 ? envImportanceView : envHitView, // @TODO: decouple index based logic
+                    .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+                }
+            );
+
+            descriptor.pImageInfo = &writeDescriptorSets.images.back();
+        }
+        else if (binding.descriptorType == VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE)
+        {
+            for (uint32 i = 0; i < TextureManager::gTextureArray.size(); ++i)
+            {
+                const TextureManager::TextureView& view = TextureManager::gTextureArray[i];
+                writeDescriptorSets.texture_image_infos.emplace_back(
+                    VkDescriptorImageInfo{
+                        .sampler = VK_NULL_HANDLE,
+                        .imageView = view._view,
+                        .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                    }
+                    );
+            }
+
+            descriptor.dstBinding = TEXTUREBINDLESS_BINDING_LOCATION;
+            descriptor.descriptorCount = writeDescriptorSets.texture_image_infos.size();
+            descriptor.pImageInfo = writeDescriptorSets.texture_image_infos.data();
+        }
+        else if (binding.descriptorType == VK_DESCRIPTOR_TYPE_SAMPLER)
+        {
+            VkDescriptorImageInfo sampler_infos;
+            sampler_infos.sampler = TextureManager::gLinearSampler;
+            sampler_infos.imageView = VK_NULL_HANDLE;
+            writeDescriptorSets.sampler_infos.push_back(std::move(sampler_infos));
+
+            descriptor.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            descriptor.pImageInfo = writeDescriptorSets.sampler_infos.data();
+        }
+
+        validDescriptors.push_back(descriptor);
+    }
+
+    if (!validDescriptors.empty()) {
+        vkUpdateDescriptorSets(device, validDescriptors.size(), validDescriptors.data(), 0, VK_NULL_HANDLE);
+    }
 }
 
 /*

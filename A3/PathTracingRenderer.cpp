@@ -7,6 +7,7 @@
 #include "MeshResource.h"
 #include "AccelerationStructure.h"
 #include "PipelineStateObject.h"
+#include "VulkanResource.h"
 
 using namespace A3;
 
@@ -45,6 +46,8 @@ void PathTracingRenderer::render( Scene& scene )
 
         scene.cleanBufferUpdated();
     }
+
+    backend->updateDescriptorSet(static_cast<VulkanPipeline*>(samplePSO->pipeline.get()));
 
     // Increment frame count
     frameCount++;

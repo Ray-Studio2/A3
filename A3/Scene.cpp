@@ -1046,8 +1046,6 @@ void Scene::beginFrame(const float fixedDeltaTime)
 				Vec4 rotation;
 				animation.sample(fixedDeltaTime, bone._bonaName, translation, rotation, scale);
 
-				Vec4 test = Vec4(0, 0.707f, 0, 0.707f);
-
 				auto makeMat3x3 = [&](Vec4& qua)->Mat3x3
 					{
 						float x = qua.x;
@@ -1067,15 +1065,15 @@ void Scene::beginFrame(const float fixedDeltaTime)
 
 						Mat3x3 mat;
 						mat.m00 = 1.0f - 2.0f * (yy + zz); // m00
-						mat.m01 = 2.0f * (xy + wz);        // m10
-						mat.m02 = 2.0f * (xz - wy);        // m20
+						mat.m10 = 2.0f * (xy + wz);        // m10
+						mat.m20 = 2.0f * (xz - wy);        // m20
 
-						mat.m10 = 2.0f * (xy - wz);        // m01
+						mat.m01 = 2.0f * (xy - wz);        // m01
 						mat.m11 = 1.0f - 2.0f * (xx + zz); // m11
-						mat.m12 = 2.0f * (yz + wx);        // m21
+						mat.m21 = 2.0f * (yz + wx);        // m21
 
-						mat.m20 = 2.0f * (xz + wy);        // m02
-						mat.m21 = 2.0f * (yz - wx);        // m12
+						mat.m02 = 2.0f * (xz + wy);        // m02
+						mat.m12 = 2.0f * (yz - wx);        // m12
 						mat.m22 = 1.0f - 2.0f * (xx + yy);// m22
 
 						return mat;
@@ -1111,8 +1109,9 @@ void Scene::beginFrame(const float fixedDeltaTime)
 						return mat;
 					};
 
+				Vec4 test = Vec4(0, 0.707f, 0, 0.707f);
 				Mat3x3 tttt = makeMat3x3(test);
-				Vec3 temp(1, 0, std::sqrt(3));
+				Vec3 temp(1, 1, 3);
 				temp.normalize();
 				Vec3 final = tttt * temp;
 

@@ -41,6 +41,22 @@ public:
 	std::string_view getName() const { return name; }
 	std::string getMaterialName() const { return materialName; }	///////////////// Juhwan
 
+	Vec3 getLocalRotation()
+	{
+		return getRotation(rotation);
+	}
+
+	Vec3 getWorldRotation()
+	{
+		Vec3 wRx = normalize(Vec3(localToWorld.m00, localToWorld.m01, localToWorld.m02));
+		Vec3 wRy = normalize(Vec3(localToWorld.m10, localToWorld.m11, localToWorld.m12));
+		Vec3 wRz = normalize(Vec3(localToWorld.m20, localToWorld.m21, localToWorld.m22));
+
+		Mat3x3 worldRotation(wRx.x, wRx.y, wRx.z, wRy.x, wRy.y, wRy.z, wRz.x, wRz.y, wRz.z);
+
+		return getRotation(worldRotation);
+	}
+
 	void setPosition( const Vec3& position )
 	{
 		this->position = position;
@@ -125,6 +141,34 @@ protected:
 		localToWorld.m31 = 0.0f;
 		localToWorld.m32 = 0.0f;
 		localToWorld.m33 = 1.0f;
+	}
+
+	Vec3 getRotation(const Mat3x3& R)
+	{
+		Vec3 angles;
+
+		// Clamp to [-1, 1] to avoid invalid input to asin due to floating-point error
+		//float sy = std::clamp(rotation.m02, -1.0f, 1.0f);
+		float sy = (((R.m02 < -1.0f) ? -1.0f : R.m02) > 1.0f) ? 1.0f : R.m02;
+
+		// yaw (y-axis rotation)
+		angles.y = std::asin(sy);
+
+		// check for gimbal lock
+		if (std::abs(sy) < 0.9999f) {
+			// pitch (x-axis rotation)
+			angles.x = std::atan2(-R.m12, R.m22);
+			// roll (z-axis rotation)
+			angles.z = std::atan2(-R.m01, R.m00);
+		}
+		else {
+			// Gimbal lock occurs
+			angles.x = 0.0f;
+			// Combine yaw and roll into a single angle
+			angles.z = std::atan2(R.m10, R.m11);
+		}
+
+		return angles;
 	}
 
 	Vec3 position;

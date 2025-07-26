@@ -331,10 +331,17 @@ void Addon_imgui::renderFrame( GLFWwindow* window, VulkanRenderBackend* vulkan, 
                     const std::string scaleLabel = "Scale" + label;
                     if (ImGui::SliderFloat3(scaleLabel.data(), s, -3.0, 3.0)) {
                         object->setScale(Vec3(s[0], s[1], s[2]));
-                        scene->markPosUpdated();
-                    }
+						scene->markPosUpdated();
+					}
 
-                    // @TODO: add rotation
+					// @TODO: add rotation
+                    Vec3 rotationEulerAngles = object->getLocalRotation();
+					float r[3] = { rotationEulerAngles.x, rotationEulerAngles.y, rotationEulerAngles.z };
+                    const std::string rotationLabel = "Rotation" + label;
+					if (ImGui::SliderFloat3(rotationLabel.data(), r, -3.1415926535, 3.1415926535)) {
+                        object->setRotation(Vec3(r[0], r[1], r[2]));
+                        scene->markPosUpdated();
+					}
 
                     auto material = object->getMaterial();
                     const std::string materialLabel = "Material: " + material->_name;

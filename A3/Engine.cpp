@@ -14,6 +14,8 @@
 #include "Scene.h"
 #include "CameraObject.h"
 
+#include "MeshObject.h"
+
 namespace A3
 {
 static void glfw_error_callback( int error, const char* description )
@@ -127,9 +129,9 @@ void Engine::Run()
             renderer.render( scene );
             imgui.renderFrame( window, &gfxBackend, &scene );
 
-            std::vector<Material> materialArrForObj = scene.getMaterialArrForObj();
-            for (int i = 0; i < materialArrForObj.size(); i++) {
-                materialArrForObj[i].uploadMaterialParameter(gfxBackend);
+            std::vector<MeshObject*> meshObjects = scene.collectMeshObjects();
+            for (int i = 0; i < meshObjects.size(); i++) {
+                meshObjects[i]->getMaterial()->uploadMaterialParameter(gfxBackend);
             }
 
             renderer.endFrame();

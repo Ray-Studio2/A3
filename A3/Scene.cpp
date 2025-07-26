@@ -657,11 +657,11 @@ void Scene::load(const std::string& path, VulkanRenderBackend& vulkanBackend) {
 			//	a3Material->_emittanceFactor = 1;
 				
 
-			bool isContained = false;
-			for (auto i : materialArrForObj)
-				if (i._name.compare(a3Material->_name) == 0)	isContained = true;	///////////////// Juhwan
+			//bool isContained = false;
+			//for (auto i : materialArrForObj)
+			//	if (i._name.compare(a3Material->_name) == 0)	isContained = true;	///////////////// Juhwan
 
-			if(!isContained)
+			//if(!isContained)
 				materialArrForObj.push_back(*a3Material);	///////////////// Juhwan
 
 			MeshObject* mo = new MeshObject(resources[mesh], a3Material);// &materialArrForObj[materialArrForObj.size() - 1]);

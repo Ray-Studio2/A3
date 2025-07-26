@@ -305,7 +305,9 @@ void Addon_imgui::renderFrame( GLFWwindow* window, VulkanRenderBackend* vulkan, 
         }
 
         static bool showObjectsUI = true;
-            
+
+        static bool isMaterialUpdated = false;
+
         ImGui::SeparatorText("Objects");
         {
             if (showObjectsUI) {
@@ -314,7 +316,10 @@ void Addon_imgui::renderFrame( GLFWwindow* window, VulkanRenderBackend* vulkan, 
                 }
                 const auto& objects = scene->collectMeshObjects();
                 int objectIndex = 0;
-                for (auto& object : objects) {
+                static bool objectMaterialShowing[100] = { false };
+                for (int i = 0; i < objects.size(); i++) {
+                    MeshObject* object = objects[i];
+
                     ImGui::Text(object->getName().data());
                     const std::string label = "##" + std::to_string(objectIndex);
 
@@ -344,11 +349,52 @@ void Addon_imgui::renderFrame( GLFWwindow* window, VulkanRenderBackend* vulkan, 
 					}
 
                     auto material = object->getMaterial();
-                    const std::string materialLabel = "Material: " + material->_name;
+                    const std::string materialLabel = "Material: " + material->_name + label;
                     ImGui::Text(materialLabel.data());
 
-                    ++objectIndex;
-                }
+                    const std::string showMaterialLabel = "Show " + materialLabel;
+					if (ImGui::Checkbox(showMaterialLabel.data(), &objectMaterialShowing[i])) {
+						//
+					}
+
+					if (objectMaterialShowing[i]) {
+						// Material metallicFactor
+						float metallic = material->_parameter._metallicFactor;
+                        const std::string showMetallicLabel = "Material metallic " + label;
+						if (ImGui::SliderFloat(showMetallicLabel.data(), &metallic, 0, 1)) {
+							material->_parameter._metallicFactor = metallic;
+							changeSceneObjectMaterials(scene, *material);
+							isMaterialUpdated = true;
+							//scene->markBufferUpdated();
+							//scene->markPosUpdated();
+						}
+
+						// Material roughnessFactor
+						float roughness = material->_parameter._roughnessFactor;
+                        const std::string showRoughnessLabel = "Material roughness " + label;
+						if (ImGui::SliderFloat(showRoughnessLabel.data(), &roughness, 0, 1)) {
+							material->_parameter._roughnessFactor = roughness;
+							changeSceneObjectMaterials(scene, *material);
+							isMaterialUpdated = true;
+							//scene->markBufferUpdated();
+							//scene->markPosUpdated();
+						}
+
+						// Material baseColorFactor
+						Vec4 baseColorFactor = material->_parameter._baseColorFactor;
+						float baseColor[3] = { baseColorFactor.x, baseColorFactor.y, baseColorFactor.z };
+                        const std::string showBaseColorLabel = "Material baseColor " + label;
+						if (ImGui::SliderFloat3(showBaseColorLabel.data(), baseColor, 0, 1)) {
+							material->_parameter._baseColorFactor = Vec4(baseColor[0], baseColor[1], baseColor[2], baseColorFactor.w);
+							changeSceneObjectMaterials(scene, *material);
+							isMaterialUpdated = true;
+							//scene->markBufferUpdated();
+							//scene->markPosUpdated();
+						}
+					}
+
+					++objectIndex;
+				}
             } else {
                 if (ImGui::Button("Enable Objects UI")) {
                     showObjectsUI = true;
@@ -356,75 +402,9 @@ void Addon_imgui::renderFrame( GLFWwindow* window, VulkanRenderBackend* vulkan, 
             }
         }
 
-        static bool isMaterialUpdated = false;
-
         if (isMaterialUpdated) {
             scene->markPosUpdated();
             isMaterialUpdated = false;
-        }
-
-        ImGui::SeparatorText("Material");
-        {
-            // @TODO: get material array and show name & each params
-            // BUT, should we have to use imguiParams struct for all of these UI things?
-
-            // Material Selection
-            //std::vector<std::unique_ptr<SceneObject>>& objects = scene->getSceneObjects();
-            std::vector<Material>& materials = scene->getMaterialArrForObj();// GetMaterialArr();
-            static uint32 selectedMaterialIndex = 0;
-            if (ImGui::BeginCombo("Materials", materials[selectedMaterialIndex]._name.c_str())) {
-                 for (int n = 0; n < materials.size(); ++n)
-                {
-                    const bool is_selected = (selectedMaterialIndex == n);
-                    if (ImGui::Selectable(materials[n]._name.c_str(), is_selected))
-                    {
-                        selectedMaterialIndex = n;
-                    }
-                }
-        
-                ImGui::EndCombo();
-            }
-
-            // Material metallicFactor
-            float metallic = materials[selectedMaterialIndex]._parameter._metallicFactor;
-            if (ImGui::SliderFloat("Material metallic", &metallic, 0, 1)) {
-                materials[selectedMaterialIndex]._parameter._metallicFactor = metallic;
-                changeSceneObjectMaterials(scene, materials[selectedMaterialIndex]);
-                isMaterialUpdated = true;
-                //scene->markBufferUpdated();
-                //scene->markPosUpdated();
-            }
-
-            // Material roughnessFactor
-            float roughness = materials[selectedMaterialIndex]._parameter._roughnessFactor;
-            if (ImGui::SliderFloat("Material roughness", &roughness, 0, 1)) {
-                materials[selectedMaterialIndex]._parameter._roughnessFactor = roughness;
-                changeSceneObjectMaterials(scene, materials[selectedMaterialIndex]);
-                isMaterialUpdated = true;
-                //scene->markBufferUpdated();
-                //scene->markPosUpdated();
-            }
-
-            //// Material emissiveFactor
-            //float emittance = materials[selectedMaterialIndex]._emittanceFactor;
-            //if (ImGui::SliderFloat("Material emittance", &emittance, 0, 100)) {
-            //    materials[selectedMaterialIndex]._emittanceFactor = emittance;
-            //    changeSceneObjectMaterials(scene, materials[selectedMaterialIndex]);
-            //    isMaterialUpdated = true;
-            //    //scene->markBufferUpdated();
-            //    //scene->markPosUpdated();
-            //}
-
-            // Material baseColorFactor
-            Vec4 baseColorFactor = materials[selectedMaterialIndex]._parameter._baseColorFactor;
-            float baseColor[3] = { baseColorFactor.x, baseColorFactor.y, baseColorFactor.z };
-            if (ImGui::SliderFloat3("Material baseColor", baseColor, 0, 1)) {
-                materials[selectedMaterialIndex]._parameter._baseColorFactor = Vec4(baseColor[0], baseColor[1], baseColor[2], baseColorFactor.w);
-                changeSceneObjectMaterials(scene, materials[selectedMaterialIndex]);
-                isMaterialUpdated = true;
-                //scene->markBufferUpdated();
-                //scene->markPosUpdated();
-            }
         }
 
         ImGui::SeparatorText("Env Map");

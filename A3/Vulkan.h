@@ -86,8 +86,6 @@ struct Material
     A3Buffer _buffer;
     std::string _name;
 
-    //float _emittanceFactor; ///////////////// Juhwan
-
     void uploadMaterialParameter(VulkanRenderBackend& vulkanBackend);
 };
 

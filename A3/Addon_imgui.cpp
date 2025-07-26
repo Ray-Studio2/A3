@@ -390,6 +390,15 @@ void Addon_imgui::renderFrame( GLFWwindow* window, VulkanRenderBackend* vulkan, 
 							changeSceneObjectMaterials(scene, *material, *object);
 							isMaterialUpdated = true;
 						}
+
+                        if (object->isLight()) {
+                        float light = object->getEmittance();
+                        const std::string lightLabel = "Light" + label;
+                        if (ImGui::SliderFloat(lightLabel.data(), &light, 0, 100)) {
+                            object->setEmittance(light);
+                            scene->markPosUpdated();
+						}
+                    }
 					}
 
 					++objectIndex;

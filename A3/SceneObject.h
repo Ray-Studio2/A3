@@ -145,24 +145,15 @@ protected:
 	{
 		Vec3 angles;
 
-		// Clamp to [-1, 1] to avoid invalid input to asin due to floating-point error
-		//float sy = std::clamp(rotation.m02, -1.0f, 1.0f);
 		float sy = (((R.m02 < -1.0f) ? -1.0f : R.m02) > 1.0f) ? 1.0f : R.m02;
-
-		// yaw (y-axis rotation)
 		angles.y = std::asin(sy);
 
-		// check for gimbal lock
 		if (std::abs(sy) < 0.9999f) {
-			// pitch (x-axis rotation)
 			angles.x = std::atan2(-R.m12, R.m22);
-			// roll (z-axis rotation)
 			angles.z = std::atan2(-R.m01, R.m00);
 		}
 		else {
-			// Gimbal lock occurs
 			angles.x = 0.0f;
-			// Combine yaw and roll into a single angle
 			angles.z = std::atan2(R.m10, R.m11);
 		}
 

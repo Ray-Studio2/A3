@@ -21,13 +21,16 @@ public:
 
 	void createRenderResources( IRenderBackend* backend )
 	{
+		if(blasBatch.blas.get() != nullptr)
+			blasBatch.blas->destroy();
+
 		BLASBuildParams params = {
 			.positionData = resource->_jointIndicesData.empty() || resource->_weightsData.empty() ? resource->positions : _skinnedPositions,
 			.attributeData = resource->_jointIndicesData.empty() || resource->_weightsData.empty() ? resource->attributes : _skinnedAttributes,
 			.indexData = resource->indices,
 			.cumulativeTriangleAreaData = resource->cumulativeTriangleArea,
 			.material = *_material,
-			.transformData = Mat3x4::identity
+			.transformData = resource->_jointIndicesData.empty() || resource->_weightsData.empty() ? Mat3x4::identity : Mat3x4{0.2f, 0, 0, 0, 0, 0.2f, 0, 0, 0, 0, 0.2f, 0 }, 
 		};
 		blasBatch.blas = backend->createBLAS( params );
 		blasBatch.transforms = { localToWorld };

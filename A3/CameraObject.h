@@ -24,6 +24,8 @@ public:
 		if (key == GLFW_KEY_A) position -= (normalize(cross(front, upVector)) * camSpeed);
 		if (key == GLFW_KEY_S) position -= (front * camSpeed);
 		if (key == GLFW_KEY_D) position += (normalize(cross(front, upVector)) * camSpeed);
+		if (key == GLFW_KEY_Q) position -= (upVector * camSpeed);
+		if (key == GLFW_KEY_E) position += (upVector * camSpeed);
 
 		updateLocalToWorld();
 	}

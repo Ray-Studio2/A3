@@ -22,7 +22,7 @@ struct imguiParam // TODO: right for being part of scene?
 {
 	uint32 maxDepth = 5;
 	uint32 numSamples = 1;
-	uint32 isProgressive = 1;
+	uint32 isProgressive = 0;
 	float envmapRotDeg = 0.0f; // ???깃꼍???嶺?GPU?????삳낵繞?
 	// TODO: separate CPU side and GPU side
 
@@ -68,12 +68,17 @@ struct Animation
 	float _totalTime = 0.0f;
 	float _currentTime = 0.0f;
 
-	void sample(const float deltaTime, const std::string& boneName, Vec3& outTranslation, Vec4& outRotation, Vec3& outScale)
+	void update(const float deltaTime)
 	{
 		_currentTime += deltaTime;
 		if (_currentTime >= _totalTime)
 			_currentTime -= _totalTime;
 
+		_currentTime = 1.0f;
+	}
+
+	void sample(const float deltaTime, const std::string& boneName, Vec3& outTranslation, Vec4& outRotation, Vec3& outScale)
+	{
 		const auto& iter = _animData.find(boneName);
 		if (iter == _animData.end())
 			return;
@@ -116,7 +121,62 @@ struct Animation
 			const Vec4& prev = i != 0 ? animData._rotation._data[i - 1] : kTemp;
 			const Vec4& curr = animData._rotation._data[i];
 
-			rotation = prev * (1 - lerpValue) + curr * lerpValue;
+			// 쿼터니언 정규화
+			auto Normalize = [](Vec4& qua) -> Vec4 {
+				float magSq = qua.w * qua.w + qua.x * qua.x + qua.y * qua.y + qua.z * qua.z;
+				if (magSq > 0.0f) {
+					float invMag = 1.0f / std::sqrt(magSq);
+					return Vec4(qua.w * invMag, qua.x * invMag, qua.y * invMag, qua.z * invMag);
+				}
+				return Vec4(1.0f, 0.0f, 0.0f, 0.0f); // 단위 쿼터니언 반환 (0 벡터는 정규화 불가)
+				};
+			auto Slerp = [&](const Vec4& q1, const Vec4& q2, float t)->Vec4 {
+				// 1. 쿼터니언 정규화 (입력 쿼터니언이 이미 정규화되어 있다고 가정해도 안전을 위해 다시 합니다.)
+				Vec4 startQ = q1;
+				Vec4 endQ = q2;
+
+				// 2. 두 쿼터니언의 내적 계산 (코사인 값)
+				float dot = startQ.x * endQ.x
+					+ startQ.y * endQ.y
+					+ startQ.z * endQ.z
+					+ startQ.w * endQ.w;
+
+				// 3. 내적값이 음수이면 한 쿼터니언의 부호를 반전시켜 가장 짧은 경로를 따르도록 합니다.
+				//    (q와 -q는 같은 회전을 나타내지만 다른 경로를 가집니다.)
+				if (dot < 0.0f) {
+					endQ = endQ * -1.0f; // 부호 반전
+					dot = -dot;          // 내적값도 반전
+				}
+
+				// 4. 두 쿼터니언이 매우 가까우면 선형 보간(Lerp)으로 대체합니다.
+				//    이는 작은 각도에서 나눗셈 오류를 피하고 성능을 향상시킵니다.
+				const float DOT_THRESHOLD = 0.9995f; // 임계값, 필요에 따라 조정 가능
+				if (dot > DOT_THRESHOLD) {
+					// 선형 보간 (Lerp)
+					// Lerp는 정규화되지 않은 쿼터니언을 반환하므로 마지막에 정규화해야 합니다.
+					Vec4 result = startQ + ((endQ - startQ) * t); // (q2 - q1) * t + q1
+					return Normalize(result);
+				}
+
+				// 5. Slerp 공식 적용
+				// 각도 계산
+				float theta = std::acos(dot);
+				float sinTheta = std::sin(theta);
+
+				// sinTheta가 0에 가까우면 예외 처리 (이미 DOT_THRESHOLD에서 처리되었어야 함)
+				// 안전을 위해 다시 확인
+				if (std::abs(sinTheta) < 0.00001f) {
+					return startQ; // 두 쿼터니언이 거의 동일
+				}
+
+				float s0 = std::sin((1.0f - t) * theta) / sinTheta;
+				float s1 = std::sin(t * theta) / sinTheta;
+
+				return (startQ * s0) + (endQ * s1);
+				};
+
+			rotation = Slerp(prev, curr, lerpValue);
+			//rotation = prev * (1 - lerpValue) + curr * lerpValue;
 			break;
 		}
 

@@ -162,6 +162,7 @@
     <ClCompile Include="ThirdParty\imgui\imgui_widgets.cpp" />
     <ClCompile Include="Vector.cpp" />
     <ClCompile Include="Vulkan.cpp" />
+    <ClCompile Include="VulkanResource.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="AccelerationStructure.h" />
@@ -212,6 +213,9 @@
     <None Include="shaders\Sampler.glsl" />
     <None Include="shaders\SampleRaytracing.glsl" />
     <None Include="shaders\SharedStructs.glsl" />
+  </ItemGroup>
+  <ItemGroup>
+    <Natvis Include="DebugVisualize.natvis" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

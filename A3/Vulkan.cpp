@@ -242,6 +242,8 @@ void VulkanRenderBackend::endFrame()
     vkQueuePresentKHR(graphicsQueue, &presentInfo);
 
     semaphoreIndex = (semaphoreIndex + 1) % 3;
+
+    vkQueueWaitIdle(graphicsQueue);
 }
 
 void VulkanRenderBackend::beginRaytracingPipeline( IRenderPipeline* inPipeline )
@@ -352,6 +354,7 @@ void VulkanRenderBackend::rebuildAccelerationStructure()
     createEnvironmentMap(RenderSettings::envMapPath);
 }
 
+PFN_vkDestroyAccelerationStructureKHR gvkDestroyAccelerationStructureKHR = nullptr;
 void VulkanRenderBackend::loadDeviceExtensionFunctions( VkDevice device )
 {
     vkGetBufferDeviceAddressKHR = ( PFN_vkGetBufferDeviceAddressKHR )( vkGetDeviceProcAddr( device, "vkGetBufferDeviceAddressKHR" ) );
@@ -363,6 +366,8 @@ void VulkanRenderBackend::loadDeviceExtensionFunctions( VkDevice device )
     vkCreateRayTracingPipelinesKHR = ( PFN_vkCreateRayTracingPipelinesKHR )( vkGetDeviceProcAddr( device, "vkCreateRayTracingPipelinesKHR" ) );
     vkGetRayTracingShaderGroupHandlesKHR = ( PFN_vkGetRayTracingShaderGroupHandlesKHR )( vkGetDeviceProcAddr( device, "vkGetRayTracingShaderGroupHandlesKHR" ) );
     vkCmdTraceRaysKHR = ( PFN_vkCmdTraceRaysKHR )( vkGetDeviceProcAddr( device, "vkCmdTraceRaysKHR" ) );
+
+    gvkDestroyAccelerationStructureKHR = vkDestroyAccelerationStructureKHR;
 
     VkPhysicalDeviceProperties2 deviceProperties2{
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
@@ -632,6 +637,7 @@ void VulkanRenderBackend::createVkPhysicalDevice()
     }
 }
 
+VkDevice gDevice = nullptr;
 void VulkanRenderBackend::createVkQueueFamily()
 {
     uint32_t queueFamilyCount = 0;
@@ -736,6 +742,8 @@ void VulkanRenderBackend::createVkQueueFamily()
     {
         throw std::runtime_error("failed to create logical device!");
     }
+
+    gDevice = device;
 
     vkGetDeviceQueue(device, queueFamilyIndex, 0, &graphicsQueue);
 
@@ -1780,6 +1788,11 @@ struct ObjectDesc
 // @TODO: Support more than 1 instance
 void VulkanRenderBackend::createTLAS( const std::vector<BLASBatch*>& batches )
 {
+    vkDestroyBuffer(device, objectBuffer, nullptr);
+    vkFreeMemory(device, tlasBufferMem, nullptr);
+    vkDestroyBuffer(device, tlasBuffer, nullptr);
+    vkDestroyAccelerationStructureKHR(device, tlas, nullptr);
+
     std::vector<VkAccelerationStructureInstanceKHR> instanceData;
     void* dst;
 
@@ -1817,7 +1830,7 @@ void VulkanRenderBackend::createTLAS( const std::vector<BLASBatch*>& batches )
             instance.instanceCustomIndex = objectIndex;
             instance.instanceShaderBindingTableRecordOffset = instanceData.size();
 
-            instanceData.push_back( instance );
+            instanceData.push_back( std::move(instance) );
             ObjectDesc objectDesc
             {
 				.vertexPositionDeviceAddress = getDeviceAddressOf(blas->vertexPositionBuffer),

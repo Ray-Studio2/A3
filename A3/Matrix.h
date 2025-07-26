@@ -104,6 +104,15 @@ inline Mat3x3& operator*=(Mat3x3& lhs, const Mat3x3& rhs)
 	lhs = lhs * rhs;
 	return lhs;
 }
+inline Vec3 operator*(const Mat3x3& rhs, const Vec3& vec)
+{
+	Vec3 t;
+	t.x = rhs.m00 * vec.x + rhs.m01 * vec.y + rhs.m02 * vec.z;
+	t.y = rhs.m10 * vec.x + rhs.m11 * vec.y + rhs.m12 * vec.z;
+	t.z = rhs.m20 * vec.x + rhs.m21 * vec.y + rhs.m22 * vec.z;
+
+	return t;
+}
 
 inline Mat4x4 mul(const Mat4x4& A, const Mat4x4& B)
 {

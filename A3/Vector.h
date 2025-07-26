@@ -64,6 +64,18 @@ struct Vec3 : public Vec2
 	bool operator==(const Vec3& other) const {
 		return Vec2::operator==(other) && floatEqual(z, other.z);
 	}
+
+	float length()
+	{
+		return std::sqrt(x * x + y * y + z * z);
+	}
+	void normalize()
+	{
+		float len = length();
+		x /= len;
+		y /= len;
+		z /= len;
+	}
 };
 
 struct Vec4 : public Vec3
@@ -150,6 +162,15 @@ inline Vec4 operator+(const Vec4& lhs, const Vec4& rhs)
 		lhs.y + rhs.y,
 		lhs.z + rhs.z,
 		lhs.w + rhs.w,
+	};
+}
+inline Vec4 operator-(const Vec4& lhs, const Vec4& rhs)
+{
+	return {
+		lhs.x - rhs.x,
+		lhs.y - rhs.y,
+		lhs.z - rhs.z,
+		lhs.w - rhs.w,
 	};
 }
 inline Vec4 operator*(const Vec4& lhs, float rhs)

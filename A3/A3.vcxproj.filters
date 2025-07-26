@@ -93,6 +93,12 @@
     <ClCompile Include="FileUtility.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="Vector.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="VulkanResource.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Engine.h">
@@ -221,5 +227,8 @@
     <None Include="..\Assets\nee-local.json" />
     <None Include="shaders\BRDF.glsl" />
     <None Include="shaders\NEELightSampling.glsl" />
+  </ItemGroup>
+  <ItemGroup>
+    <Natvis Include="DebugVisualize.natvis" />
   </ItemGroup>
 </Project>

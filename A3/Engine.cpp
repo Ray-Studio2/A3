@@ -8,6 +8,7 @@
 #include <tuple>
 #include <bitset>
 #include <span>
+#include <Windows.h>
 #include "Vulkan.h"
 #include "PathTracingRenderer.h"
 #include "Addon_imgui.h"
@@ -58,6 +59,14 @@ void updateInput(GLFWwindow* window, Scene& scene) {
             camera->move(GLFW_KEY_D);
             scene.markBufferUpdated();
         }
+        if (glfwGetKey(window, GLFW_KEY_Q)) {
+            camera->move(GLFW_KEY_Q);
+            scene.markBufferUpdated();
+        }
+        if (glfwGetKey(window, GLFW_KEY_E)) {
+            camera->move(GLFW_KEY_E);
+            scene.markBufferUpdated();
+        }
 
         static const float camSens = 0.1f;
         static const float RAD = 0.017453f;
@@ -79,6 +88,7 @@ void updateInput(GLFWwindow* window, Scene& scene) {
     }
 }
 
+static int gFrameIndex = 0;
 void Engine::Run()
 {
     glfwSetErrorCallback( glfw_error_callback );
@@ -115,9 +125,12 @@ void Engine::Run()
 
         Addon_imgui imgui( window, &gfxBackend, screenWidth, screenHeight );
 
-        static const float fixedDeltaTime = 0.0166f;
+        static const float fixedDeltaTime = 0.016f;
         while( !glfwWindowShouldClose( window ) )
         {
+            Sleep(50);
+            ++gFrameIndex;
+
             glfwPollEvents();
             updateInput(window, scene);
 

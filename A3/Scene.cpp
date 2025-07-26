@@ -644,29 +644,34 @@ void Scene::load(const std::string& path, VulkanRenderBackend& vulkanBackend) {
 			}
 			materialParameter._baseColorFactor = Vec4(baseColor[0], baseColor[1], baseColor[2], 1);
 
-			Material a3Material;
+			Material* a3Material = new Material();	///////////////// Juhwan
 
-			a3Material._parameter = materialParameter;
-			a3Material._buffer = vulkanBackend.createResourceBuffer(sizeof(a3Material._parameter), static_cast<const void*>(&a3Material._parameter));
-			a3Material._name = materialName;
-			if (material["emittance"] != nullptr)
-				a3Material._emittanceFactor = material["emittance"];	///////////////// Juhwan
-			else
-				a3Material._emittanceFactor = 0;
+			a3Material->_parameter = materialParameter;
+			a3Material->_buffer = vulkanBackend.createResourceBuffer(sizeof(a3Material->_parameter), static_cast<const void*>(&a3Material->_parameter));
+			a3Material->_name = materialName;
+
+			
+			//if (material["emittance"] != nullptr)
+			//	a3Material->_emittanceFactor = material["emittance"];	///////////////// Juhwan
+			//else
+			//	a3Material->_emittanceFactor = 1;
+				
 
 			bool isContained = false;
 			for (auto i : materialArrForObj)
-				if (i._name.compare(a3Material._name) == 0)	isContained = true;
+				if (i._name.compare(a3Material->_name) == 0)	isContained = true;	///////////////// Juhwan
 
 			if(!isContained)
-				materialArrForObj.push_back(a3Material);
+				materialArrForObj.push_back(*a3Material);	///////////////// Juhwan
 
-			MeshObject* mo = new MeshObject(resources[mesh], &materialArrForObj[materialArrForObj.size() - 1]);
-			mo->setName(name);
+			MeshObject* mo = new MeshObject(resources[mesh], a3Material);// &materialArrForObj[materialArrForObj.size() - 1]);
+			mo->setName(name);													///////////////// Juhwan
 			mo->setPosition(Vec3(position[0], position[1], position[2]));
 			mo->setRotation(Vec3(rotation[0], rotation[1], rotation[2]));
 			mo->setScale(Vec3(scale[0], scale[1], scale[2]));
 			mo->calculateTriangleArea();
+
+			mo->setMaterialName(a3Material->_name);
 
 			mo->setBaseColor(Vec3(baseColor[0], baseColor[1], baseColor[2]));
 			if (materialName == "light") {

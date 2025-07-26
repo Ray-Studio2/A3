@@ -188,9 +188,8 @@ void changeSceneObjectMaterials(Scene* scene, Material& material) {
         if (objects[i]->getMaterialName().compare(material._name) == 0) {
             objects[i]->setMetallic(material._parameter._metallicFactor);
             objects[i]->setRoughness(material._parameter._roughnessFactor);
-            objects[i]->setEmittance(material._emittanceFactor);
+            //objects[i]->setEmittance(material._emittanceFactor);
             objects[i]->setBaseColor(material._parameter._baseColorFactor);
-            //material.uploadMaterialParameter()
         }
     }
 }
@@ -399,20 +398,20 @@ void Addon_imgui::renderFrame( GLFWwindow* window, VulkanRenderBackend* vulkan, 
                 //scene->markPosUpdated();
             }
 
-            // Material emissiveFactor
-            float emittance = materials[selectedMaterialIndex]._emittanceFactor;
-            if (ImGui::SliderFloat("Material emittance", &emittance, 0, 100)) {
-                materials[selectedMaterialIndex]._emittanceFactor = emittance;
-                changeSceneObjectMaterials(scene, materials[selectedMaterialIndex]);
-                isMaterialUpdated = true;
-                //scene->markBufferUpdated();
-                //scene->markPosUpdated();
-            }
+            //// Material emissiveFactor
+            //float emittance = materials[selectedMaterialIndex]._emittanceFactor;
+            //if (ImGui::SliderFloat("Material emittance", &emittance, 0, 100)) {
+            //    materials[selectedMaterialIndex]._emittanceFactor = emittance;
+            //    changeSceneObjectMaterials(scene, materials[selectedMaterialIndex]);
+            //    isMaterialUpdated = true;
+            //    //scene->markBufferUpdated();
+            //    //scene->markPosUpdated();
+            //}
 
             // Material baseColorFactor
             Vec4 baseColorFactor = materials[selectedMaterialIndex]._parameter._baseColorFactor;
             float baseColor[3] = { baseColorFactor.x, baseColorFactor.y, baseColorFactor.z };
-            if (ImGui::InputFloat3("Material baseColor", baseColor)) {
+            if (ImGui::SliderFloat3("Material baseColor", baseColor, 0, 1)) {
                 materials[selectedMaterialIndex]._parameter._baseColorFactor = Vec4(baseColor[0], baseColor[1], baseColor[2], baseColorFactor.w);
                 changeSceneObjectMaterials(scene, materials[selectedMaterialIndex]);
                 isMaterialUpdated = true;

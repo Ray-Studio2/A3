@@ -39,7 +39,6 @@ public:
 	const float getRoughness() const { return roughness; }
 	const float getEmittance() const { return emittance; }
 	std::string_view getName() const { return name; }
-	std::string getMaterialName() const { return materialName; }	///////////////// Juhwan
 
 	Vec3 getLocalRotation()
 	{
@@ -109,7 +108,6 @@ public:
 	void setRoughness(const float& roughness) { this->roughness = roughness; }
 	void setEmittance(float emittance) { this->emittance = emittance; }
 	void setName(std::string_view name) { this->name = name; }
-	void setMaterialName(std::string materialName) { this->materialName = materialName; }	///////////////// Juhwan
 
 	bool isLight()
 	{
@@ -184,6 +182,5 @@ protected:
 	float emittance;
 
 	std::string name;
-	std::string materialName;	///////////////// Juhwan
 };
 }

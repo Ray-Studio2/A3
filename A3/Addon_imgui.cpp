@@ -181,17 +181,22 @@ Addon_imgui::Addon_imgui( GLFWwindow* window, VulkanRenderBackend* vulkan, int32
     ImGui_ImplVulkan_Init( &init_info );
 }
 
-void changeSceneObjectMaterials(Scene* scene, Material& material) {
-    std::vector<std::unique_ptr<SceneObject>>& objects = scene->getSceneObjects();
+void changeSceneObjectMaterials(Scene* scene, const Material& material, MeshObject& object) {
+    // we assume that every object's material is independent. so we just change the exact object
+    //const auto& objects = scene->collectMeshObjects();
 
-    for (int i = 0; i < objects.size(); i++) {
-        if (objects[i]->getMaterialName().compare(material._name) == 0) {
-            objects[i]->setMetallic(material._parameter._metallicFactor);
-            objects[i]->setRoughness(material._parameter._roughnessFactor);
-            //objects[i]->setEmittance(material._emittanceFactor);
-            objects[i]->setBaseColor(material._parameter._baseColorFactor);
-        }
-    }
+    //for (int i = 0; i < objects.size(); i++) {
+    //    if (objects[i]->getMaterial()->_name.compare(material._name) == 0) {
+    //        objects[i]->setMetallic(material._parameter._metallicFactor);
+    //        objects[i]->setRoughness(material._parameter._roughnessFactor);
+    //        //objects[i]->setEmittance(material._emittanceFactor);
+    //        objects[i]->setBaseColor(material._parameter._baseColorFactor);
+    //    }
+    //}
+
+    object.setMetallic(material._parameter._metallicFactor);
+    object.setRoughness(material._parameter._roughnessFactor);
+    object.setBaseColor(material._parameter._baseColorFactor);
 }
 
 void Addon_imgui::renderFrame( GLFWwindow* window, VulkanRenderBackend* vulkan, Scene* scene )
@@ -349,10 +354,10 @@ void Addon_imgui::renderFrame( GLFWwindow* window, VulkanRenderBackend* vulkan, 
 					}
 
                     auto material = object->getMaterial();
-                    const std::string materialLabel = "Material: " + material->_name + label;
+                    const std::string materialLabel = "Material: " + material->_name;
                     ImGui::Text(materialLabel.data());
 
-                    const std::string showMaterialLabel = "Show " + materialLabel;
+                    const std::string showMaterialLabel = "Show " + materialLabel + label;
 					if (ImGui::Checkbox(showMaterialLabel.data(), &objectMaterialShowing[i])) {
 						//
 					}
@@ -363,10 +368,8 @@ void Addon_imgui::renderFrame( GLFWwindow* window, VulkanRenderBackend* vulkan, 
                         const std::string showMetallicLabel = "Material metallic " + label;
 						if (ImGui::SliderFloat(showMetallicLabel.data(), &metallic, 0, 1)) {
 							material->_parameter._metallicFactor = metallic;
-							changeSceneObjectMaterials(scene, *material);
+							changeSceneObjectMaterials(scene, *material, *object);
 							isMaterialUpdated = true;
-							//scene->markBufferUpdated();
-							//scene->markPosUpdated();
 						}
 
 						// Material roughnessFactor
@@ -374,10 +377,8 @@ void Addon_imgui::renderFrame( GLFWwindow* window, VulkanRenderBackend* vulkan, 
                         const std::string showRoughnessLabel = "Material roughness " + label;
 						if (ImGui::SliderFloat(showRoughnessLabel.data(), &roughness, 0, 1)) {
 							material->_parameter._roughnessFactor = roughness;
-							changeSceneObjectMaterials(scene, *material);
+							changeSceneObjectMaterials(scene, *material, *object);
 							isMaterialUpdated = true;
-							//scene->markBufferUpdated();
-							//scene->markPosUpdated();
 						}
 
 						// Material baseColorFactor
@@ -386,10 +387,8 @@ void Addon_imgui::renderFrame( GLFWwindow* window, VulkanRenderBackend* vulkan, 
                         const std::string showBaseColorLabel = "Material baseColor " + label;
 						if (ImGui::SliderFloat3(showBaseColorLabel.data(), baseColor, 0, 1)) {
 							material->_parameter._baseColorFactor = Vec4(baseColor[0], baseColor[1], baseColor[2], baseColorFactor.w);
-							changeSceneObjectMaterials(scene, *material);
+							changeSceneObjectMaterials(scene, *material, *object);
 							isMaterialUpdated = true;
-							//scene->markBufferUpdated();
-							//scene->markPosUpdated();
 						}
 					}
 

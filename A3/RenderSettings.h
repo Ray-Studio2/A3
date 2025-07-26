@@ -18,7 +18,7 @@ struct RenderSettings
 												 "../Assets/bruteforce-env.json",
 												 "../Assets/nee-env.json",
 												 "../Assets/nee-env2.json" };
-	static constexpr uint32 sceneIdx = 0;
+	static constexpr uint32 sceneIdx = 4;
 
 	// static constexpr const char* envMapDefault = "../Assets/reichstag_1_4k.hdr";
 	static constexpr const char* envMapDefault = "../Assets/rogland_sunset_4k.hdr";

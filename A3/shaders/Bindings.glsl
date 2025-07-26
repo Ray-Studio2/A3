@@ -17,7 +17,7 @@ layout( binding = 3, scalar) buffer ObjectDescBuffer
 
 layout(buffer_reference, scalar) buffer PositionBuffer { vec4 p[]; };
 layout(buffer_reference, scalar) buffer AttributeBuffer { VertexAttributes a[]; };
-layout(buffer_reference, scalar) buffer IndexBuffer { uint i[]; };
+layout(buffer_reference, scalar) buffer IndexBuffer { uint i[]; }; 
 layout(buffer_reference, scalar) buffer cumulativeTriangleAreaBuffer { float t[]; };
 layout(buffer_reference, scalar) buffer MaterialBuffer { MaterialParameter mat; };
 

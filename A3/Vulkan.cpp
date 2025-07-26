@@ -8,7 +8,7 @@
 #include "ThirdParty/imgui/imgui_impl_vulkan.h"
 #include "MeshResource.h"
 #include "MeshObject.h"
-#include "VulkanResource.h"
+#include "VulkanResource.h" 
 #include "AccelerationStructure.h"
 #include "Shader.h"
 #include "PipelineStateObject.h"
@@ -54,6 +54,11 @@ std::vector<TextureManager::TextureView> TextureManager::gTextureArray;
 TextureParameter TextureManager::gWhiteParameter;
 VkSampler TextureManager::gLinearSampler;
 
+// ======== using sheen material ========
+// ======================================
+TextureParameter TextureManager::sheenBRDFLUTParameter;
+// ======================================
+
 void TextureManager::initialize(VulkanRenderBackend& vulkanBackend)
 {
     std::string whiteTextureName = "NullTexture_White";
@@ -84,6 +89,12 @@ void TextureManager::initialize(VulkanRenderBackend& vulkanBackend)
         .maxLod = FLT_MAX,
     };
     vkCreateSampler(vulkanBackend.device, &samplerInfo, nullptr, &gLinearSampler);
+
+    
+    // ======== using sheen material ========
+    // ======================================
+    createSheenBRDFLUTTexture(vulkanBackend);
+    // ======================================
 }
 
 const TextureParameter TextureManager::createTexture(VulkanRenderBackend& vulkanBackend, const std::string path, const uint32 imageFormat, const uint32 width, const uint32 height, const float* pixelData)

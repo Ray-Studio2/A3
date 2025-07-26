@@ -58,4 +58,13 @@ struct MaterialParameter
 
 	vec3 _emissiveFactor;
 	TextureParameter _emissiveTexture;
+
+
+    // ======== using sheen material ========
+    // ======================================
+    vec3 _sheenColorFactor;
+    float _sheenRoughnessFactor;
+    TextureParameter _sheenColorTexture;
+    TextureParameter _sheenRoughnessTexture;
+    // ======================================
 };

@@ -37,10 +37,63 @@ float GGX_D(vec3 normal, vec3 halfDir, float alpha)
     return a2 / (PI * denom * denom);
 }
 
-vec3 calculateBRDF(vec3 normal, vec3 viewDir, vec3 lightDir, vec3 halfDir, vec3 color, float metallic, float alpha) // Cook-Torrence
+// ======== using sheen material ========
+// ======================================
+
+// imwageworks county and kulla(2017) sheen shadowing masking function...
+float ChalieShadowMaskingNumericallyFit(float x, float alpha_g)
 {
-    float dotNV = max(dot(normal, viewDir), 0.0);
-    float dotNL = max(dot(normal, lightDir), 0.0);
+    float one_minus_alpha_sq = (1.0 - alpha_g) * (1.0 - alpha_g);
+    float a = mix(21.5473, 25.3245, one_minus_alpha_sq);
+    float b = mix(3.82987, 3.32435, one_minus_alpha_sq);
+    float c = mix(0.19823, 0.16801, one_minus_alpha_sq);
+    float d = mix(-1.97760, -1.27393, one_minus_alpha_sq);
+    float e = mix(-4.32054, -4.85967, one_minus_alpha_sq);
+
+    return a / (1.0 + b * pow(x,c)) + d * x + e;
+}
+
+float LamdaSheen(float cos_theta, float alpha_g)
+{
+    return abs(cos_theta) < 0.5 ? exp(ChalieShadowMaskingNumericallyFit(cos_theta, alpha_g))
+                                : exp(2.0 * ChalieShadowMaskingNumericallyFit(0.5, alpha_g) - ChalieShadowMaskingNumericallyFit(1.0 - cos_theta, alpha_g));
+}
+
+float CharlieV(float dotNV, float dotNL, float alpha_g)
+{
+    return 1.0 / ((1.0 + LamdaSheen(dotNV, alpha_g) + LamdaSheen(dotNL, alpha_g)) * (4.0 * dotNV * dotNL));
+}
+
+float CharlieD(float alpha_g, float dotNH) { // imageworks의 sheen 분포
+                                             float inv_r = 1 / alpha_g;
+                                             float cos2h = dotNH * dotNH;
+                                             float sin2h = 1 - cos2h; // half vector가 normal에서 얼마나 떨어졌는가?
+
+                                             // sheen 재질의 실린더 크기를 정함
+                                             return (2 + inv_r) * pow(sin2h, inv_r * 0.5) / (2 * PI);
+}
+
+float Ashikhmin(float dotNV, float dotNL, float alpha_g)
+{
+    return 1.0 / (4 * (dotNL + dotNV - dotNL * dotNV));
+}
+
+float Max3(vec3 v)
+{
+    return max(max(v.x, v.y), v.z);
+}
+
+float E(float dotNV, float sheenRoughness)
+{
+    vec2 uv = vec2(clamp(dotNV, 0.0, 1.0), clamp(sheenRoughness, 0.0, 1.0));
+    return texture(sampler2D(textures[nonuniformEXT(1)], linearSampler), uv).b;
+}
+// ======================================
+
+vec3 calculateBRDF(vec3 normal, vec3 viewDir, vec3 lightDir, vec3 halfDir, vec3 color, float metallic, float alpha, vec3 sheenColor, float sheenRoughness) // Cook-Torrence
+{
+    float dotNV = max(dot(normal, viewDir), 1e-5);
+    float dotNL = max(dot(normal, lightDir), 1e-5);
 
     const vec3 F0 = mix(vec3(0.04), color, metallic);
 
@@ -53,8 +106,29 @@ vec3 calculateBRDF(vec3 normal, vec3 viewDir, vec3 lightDir, vec3 halfDir, vec3 
     vec3 f_spec = num / max(denom, 1e-6);
 
     vec3 f_diff = (1.0 - metallic) * color * (1/PI);
+    
+    vec3 baseBRDF = f_diff + f_spec; 
 
-    return f_diff + f_spec;
+    // ======== using sheen material ========
+    // ======================================
+    if(length(sheenColor) <= 0.0 || sheenRoughness <= 0)
+            return baseBRDF;
+    
+    float sheenBRDF = 0;
+    float dotNH = max(dot(normal, halfDir), 1e-5); // half vector과 normal이 얼마나 가까운가?
+    float alpha_g = sheenRoughness * sheenRoughness; // roughness의 선형적 제어를 위함
+    float Ds = CharlieD(alpha_g, dotNH);
+    float Vs = CharlieV(dotNV, dotNL, alpha_g);
+
+    sheenBRDF = Vs * Ds;
+
+    float sheenAldedoScaling = min(1.0 - Max3(sheenColor) * E(alpha_g, dotNV)
+                                , 1.0 - Max3(sheenColor) * E(alpha_g, dotNL));
+
+    //float sheenAldedoScaling = 1.0 - Max3(sheenColorFactor) * E(dotNV, alpha_g);
+
+    return sheenColor * sheenBRDF + baseBRDF * sheenAldedoScaling;
+    // ======================================
 }
 
 // vec3 calculateW(vec3 normal, vec3 viewDir, vec3 lightDir, vec3 halfDir, vec3 color, float metallic, float alpha)

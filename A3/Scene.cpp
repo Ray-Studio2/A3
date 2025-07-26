@@ -400,6 +400,72 @@ void Scene::loadGLTF(const std::string& fileName, VulkanRenderBackend& vulkanBac
 		//// 7. Double Sided
 		//std::cout << "  Double Sided: " << (material.doubleSided ? "True" : "False") << std::endl;
 
+		
+		// ======== using sheen material ========
+		// ======================================
+		materialParameter._sheenColorFactor = Vec3(0);
+		materialParameter._sheenRoughnessFactor = 0.f;
+		if (material.extensions.find("KHR_materials_sheen") != material.extensions.end())
+		{
+			// find sheen extension
+			const auto& sheen = material.extensions.at("KHR_materials_sheen");
+
+			// sheen color
+			if (sheen.Has("sheenColorFactor"))
+			{
+				const auto& sheenColor = sheen.Get("sheenColorFactor");
+				if (sheenColor.IsArray() && sheenColor.Size() >= 3)
+				{
+					float R = static_cast<float>(sheenColor.Get(0).GetNumberAsDouble());
+					float G = static_cast<float>(sheenColor.Get(1).GetNumberAsDouble());
+					float B = static_cast<float>(sheenColor.Get(2).GetNumberAsDouble());
+
+					std::cout << "  Sheen Color Factor: " << R << ", " << G << ", " << B << std::endl;
+					materialParameter._sheenColorFactor = Vec3(R, G, B);
+				}
+			}
+
+			// sheen Roughness
+			if (sheen.Has("sheenRoughnessFactor"))
+			{
+				const auto& sheenRoughness = static_cast<float>(sheen.Get("sheenRoughnessFactor").GetNumberAsDouble());
+				std::cout << "  sheen roughness Factor : " << sheenRoughness << std::endl;
+				materialParameter._sheenRoughnessFactor = sheenRoughness;
+			}
+
+			// sheen Color Texture
+			if (sheen.Has("sheenColorTexture"))
+			{
+				const auto& sheenColorTexture = sheen.Get("sheenColorTexture");
+				if (sheenColorTexture.Has("index"))
+				{
+					int index = sheenColorTexture.Get("index").Get<int>();
+					const auto& texture = model.textures[index];
+					const auto& image = model.images[texture.source];
+					std::cout << "  Sheen Color Texture: " << image.uri << std::endl;
+
+					materialParameter._sheenColorTexture = TextureManager::createTexture( vulkanBackend, image.uri, static_cast<uint32>(VK_FORMAT_R32G32B32A32_SFLOAT), image.width, image.height, ConvertUcharToFloat(image).data()
+					);
+				}
+			}
+
+			// sheen Roughness Texture
+			if (sheen.Has("sheenRoughnessTexture"))
+			{
+				const auto& sheenRoughnessTexture = sheen.Get("sheenRoughnessTexture");
+				if (sheenRoughnessTexture.Has("index"))
+				{
+					int index = sheenRoughnessTexture.Get("index").Get<int>();
+					const auto& texture = model.textures[index];
+					const auto& image = model.images[texture.source];
+					std::cout << "  Sheen Roughness Texture: " << image.uri << std::endl;
+
+					materialParameter._sheenRoughnessTexture = TextureManager::createTexture(vulkanBackend,image.uri,static_cast<uint32>(VK_FORMAT_R32G32B32A32_SFLOAT), image.width, image.height, ConvertUcharToFloat(image).data());
+				}
+			}
+		}
+		// ======================================
+		
 		Material a3Material;
 		a3Material._parameter = std::move(materialParameter);
 		a3Material._buffer = vulkanBackend.createResourceBuffer(sizeof(a3Material._parameter), static_cast<const void*>(&a3Material._parameter));
@@ -506,9 +572,13 @@ void Scene::loadGLTF(const std::string& fileName, VulkanRenderBackend& vulkanBac
 			std::vector<VertexAttributes> vAttributes;
 			vPositions.reserve(positions.size());
 			vAttributes.reserve(positions.size());
+
+			static float scale = 7.0f;
+			static Vec3 pos = Vec3(0, -5, 0);
+			
 			for (int i = 0; i < positions.size(); ++i)
 			{
-				vPositions.push_back(VertexPosition(positions[i].x * 0.02f, positions[i].y * 0.02f, positions[i].z * 0.02f, 1.0f));
+				vPositions.push_back(VertexPosition(positions[i].x * scale, positions[i].y * scale, positions[i].z * scale, 1.0f));
 				vAttributes.push_back(VertexAttributes({ normals[i].x, normals[i].y, normals[i].z, 0.0f }, { uvs[i].x, uvs[i].y, 0.0f, 0.0f }));
 			}
 
@@ -538,7 +608,7 @@ void Scene::loadGLTF(const std::string& fileName, VulkanRenderBackend& vulkanBac
 			}
 
 			MeshObject* mo = new MeshObject(resources[mesh.name], &materialArr[primitive.material]);
-			//mo->setPosition(Vec3(position[0], position[1], position[2]));
+			mo->setPosition(pos);
 			//mo->setRotation(Vec3(rotation[0], rotation[1], rotation[2]));
 			//mo->setScale(Vec3(scale[0], scale[1], scale[2]));
 
@@ -744,7 +814,8 @@ void Scene::load(const std::string& path, VulkanRenderBackend& vulkanBackend) {
 		}
 	}
 #else
-	loadGLTF("../Assets/phoenix_bird/scene.gltf", vulkanBackend);
+	//loadGLTF("../Assets/phoenix_bird/scene.gltf", vulkanBackend);
+	loadGLTF("../Assets/glTF_sample_models/SheenChair/SheenChair/glTF/SheenChair.gltf", vulkanBackend);
 #endif
 }
 
@@ -786,4 +857,13 @@ A3::MaterialParameter::MaterialParameter()
 
 	_emissiveFactor = Vec3(0);
 	_emissiveTexture = TextureManager::gWhiteParameter;
+
+	
+	// ======== using sheen material ========
+	// ======================================
+	_sheenColorFactor = Vec3(0);
+	_sheenRoughnessFactor = 0;
+	_sheenColorTexture = TextureManager::gWhiteParameter;
+	_sheenRoughnessTexture = TextureManager::gWhiteParameter;
+	// ======================================
 }

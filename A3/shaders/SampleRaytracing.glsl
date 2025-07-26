@@ -98,6 +98,37 @@ void main()
 }
 #endif
 
+// ======== using sheen material ========
+// ======================================
+void GetSheenMaterial(MaterialParameter material, vec2 uv, out vec3 sheenColor, out float sheenRoughness)
+{
+    if(length(material._sheenColorFactor) > 0.0 || material._sheenRoughnessFactor > 0.0)
+    {
+        const TextureParameter sheenColorTexture = material._sheenColorTexture;
+        const vec4 sheenColorTextureRGB = texture(sampler2D(textures[nonuniformEXT(sheenColorTexture)], linearSampler), uv);
+
+        if(length(sheenColorTextureRGB.rgb) <= 0)
+        sheenColor = material._sheenColorFactor;
+        else
+        sheenColor = material._sheenColorFactor * sheenColorTextureRGB.rgb;
+
+        const TextureParameter sheenRoughnessTexture = material._sheenRoughnessTexture;
+        const vec4 sheenRoughnsheenRoughnessTextureRGB = texture(sampler2D(textures[nonuniformEXT(sheenRoughnessTexture)], linearSampler), uv);
+
+
+        if(length(sheenRoughnsheenRoughnessTextureRGB.rgb) <= 0)
+        sheenRoughness = material._sheenRoughnessFactor;
+        else
+        sheenRoughness = material._sheenRoughnessFactor * sheenRoughnsheenRoughnessTextureRGB.a;
+    }
+    else
+    {
+        sheenColor = vec3(0);
+        sheenRoughness = 0;
+    }
+}
+// ======================================
+
 #if BRUTE_FORCE_LIGHT_ONLY_CLOSEST_HIT_SHADER
 //=========================
 //   BRUTE FORCE LIGHT ONLY CLOSEST HIT SHADER
@@ -139,10 +170,15 @@ void main()
     vec3 n2 = normalize(attrBuf.a[index.z].norm.xyz);
     vec3 normal = normalize(w * n0 + u * n1 + v * n2);
 
+    MaterialParameter material = MaterialBuffer(objDesc.materialAddress).mat;
+
     vec2 uv0 = attrBuf.a[index.x].uv.xy;
     vec2 uv1 = attrBuf.a[index.y].uv.xy;
     vec2 uv2 = attrBuf.a[index.z].uv.xy;
     vec2 uv = w * uv0 + u * uv1 + v * uv2;
+    
+    //const TextureParameter normalTexture = material._normalTexture;
+    //vec3 normal = texture(sampler2D(textures[nonuniformEXT(normalTexture)], linearSampler), uv).xyz;
 
     vec3 worldPos = (gl_ObjectToWorldEXT * vec4(position, 1.0)).xyz;
     vec3 worldNormal = normalize(transpose(inverse(mat3(gl_ObjectToWorldEXT))) * normal);
@@ -151,18 +187,34 @@ void main()
 
     const vec3 lightEmittance = vec3(light.emittance); // emittance per point
 
-    MaterialParameter material = MaterialBuffer(objDesc.materialAddress).mat;
     const TextureParameter baseColorTexture = material._baseColorTexture;
     const vec4 baseColor = texture(sampler2D(textures[nonuniformEXT(baseColorTexture)], linearSampler), uv);
 
     const vec3 color = material._baseColorFactor.xyz * baseColor.xyz;
-    const float metallic = clamp(gCustomData.metallic, 0.0, 1.0);
-    const float roughness = clamp(gCustomData.roughness, MIRROR_ROUGH, 1.0);
+    //const float metallic = clamp(gCustomData.metallic, 0.0, 1.0);
+    //const float roughness = clamp(gCustomData.roughness, MIRROR_ROUGH, 1.0);
+
+
+    const TextureParameter metallicTexture = material._metallicRoughnessTexture;
+    const vec4 metallicRougenessTexture = texture(sampler2D(textures[nonuniformEXT(metallicTexture)], linearSampler), uv);
+
+    const float metallic = metallicRougenessTexture.r * material._metallicFactor;
+    const float roughness = metallicRougenessTexture.g * material._roughnessFactor;
+
     const float alpha = roughness * roughness;
 
     const float prob = mix(0.2, 0.8, roughness);
     const float probGGX = (1 - prob);
     const float probCos = prob;
+
+
+    // ======== using sheen material ========
+    // ======================================
+
+    vec3 sheenColor = vec3(0);
+    float sheenRoughness = 0;
+    GetSheenMaterial(material, uv, sheenColor, sheenRoughness);
+    // ======================================
 
     vec3 emit = vec3(0.0);
     if (gl_InstanceCustomIndexEXT == gLightBuffer.lightIndex[0])
@@ -215,7 +267,7 @@ void main()
                             : powerHeuristic(pdfCosineVal, pdfGGXVal);
             pdfSel = isGGX ? pdfGGXVal : pdfCosineVal;
             // Cook-Torrance BRDF
-            brdf = calculateBRDF(worldNormal, viewDir, rayDir, halfDir, color, metallic, alpha);
+            brdf = calculateBRDF(worldNormal, viewDir, rayDir, halfDir, color, metallic, alpha, sheenColor, sheenRoughness);
 
             gPayload.rayDirection = rayDir;
             gPayload.depth++;
@@ -309,6 +361,14 @@ void main()
     const float probGGX = (1 - prob);
     const float probCos = prob;
 
+
+    // ======== using sheen material ========
+    // ======================================
+    vec3 sheenColor = vec3(0);
+    float sheenRoughness = 0;
+    //GetSheenMaterial(material, uv, sheenColor, sheenRoughness);
+    // ======================================
+
     const vec3 viewDir = -gPayload.rayDirection;
 
 	//////////////////////////////////////////////////////////////// Direct Light
@@ -349,7 +409,7 @@ void main()
 
         // Cook-Torrance BRDF
         vec3 halfDir = normalize(viewDir + shadowRayDir);
-        vec3 brdf = calculateBRDF(worldNormal, viewDir, shadowRayDir, halfDir, color, metallic, alpha);
+        vec3 brdf = calculateBRDF(worldNormal, viewDir, shadowRayDir, halfDir, color, metallic, alpha, sheenColor, sheenRoughness);
 
         float pdfGGX = pdfGGXVNDF(worldNormal, viewDir, halfDir, alpha);
         float pdfCos = cos_p / PI;
@@ -409,7 +469,7 @@ void main()
                         : powerHeuristic(pdfCosineVal, pdfGGXVal);
 
         pdfSel = isGGX ? pdfGGXVal : pdfCosineVal;
-        brdf = calculateBRDF(worldNormal, viewDir, rayDir, halfDir, color, metallic, alpha);
+        brdf = calculateBRDF(worldNormal, viewDir, rayDir, halfDir, color, metallic, alpha, sheenColor, sheenRoughness);
 
         gPayload.rayDirection = rayDir;
         gPayload.depth++;
@@ -485,6 +545,13 @@ void main()
     const float probGGX = (1 - prob);
     const float probCos = prob;
 
+    // ======== using sheen material ========
+    // ======================================
+    vec3 sheenColor = vec3(0);
+    float sheenRoughness = 0;
+    //GetSheenMaterial(material, uv, sheenColor, sheenRoughness);
+    // ======================================
+
     vec3 temp = vec3(0.0);
     uint numSampleByDepth = (gPayload.depth == 0 ? gImguiParam.numSamples : 1);
     if (gPayload.depth < gImguiParam.maxDepth) {
@@ -520,7 +587,7 @@ void main()
             }
 
             const float pdfBRDF = probGGX * pdfGGXVal + probCos * pdfCosineVal;
-            const vec3 brdf = calculateBRDF(worldNormal, viewDir, rayDir, halfDir, color, metallic, alpha);
+            const vec3 brdf = calculateBRDF(worldNormal, viewDir, rayDir, halfDir, color, metallic, alpha, sheenColor, sheenRoughness);
 
             gPayload.rayDirection = rayDir;
             gPayload.pdfBRDF = pdfBRDF;
@@ -616,6 +683,13 @@ void main()
     const float probGGX = (1 - prob);
     const float probCos = prob;
 
+    // ======== using sheen material ========
+    // ======================================
+    vec3 sheenColor = vec3(0);
+    float sheenRoughness = 0;
+    GetSheenMaterial(material, uv, sheenColor, sheenRoughness);
+    // ======================================
+
     const vec3 viewDir = -gPayload.rayDirection;
 
 	//////////////////////////////////////////////////////////////// Direct Light
@@ -643,7 +717,7 @@ void main()
         float cos_p = max(dot(worldNormal, rayDir), 1e-6);
         // Cook-Torrance BRDF
         vec3 halfDir = normalize(viewDir + rayDir);
-        vec3 brdf = calculateBRDF(worldNormal, viewDir, rayDir, halfDir, color, metallic, alpha);
+        vec3 brdf = calculateBRDF(worldNormal, viewDir, rayDir, halfDir, color, metallic, alpha, sheenColor, sheenRoughness);
 
         float pdfGGX = pdfGGXVNDF(worldNormal, viewDir, halfDir, alpha);
         float pdfCos = cos_p / PI;
@@ -704,7 +778,7 @@ void main()
                                    : powerHeuristic(pdfCosineVal, pdfGGXVal);
 
         const float pdfBRDF = isGGX ? pdfGGXVal : pdfCosineVal;
-        const vec3 brdf = calculateBRDF(worldNormal, viewDir, rayDir, halfDir, color, metallic, alpha);
+        const vec3 brdf = calculateBRDF(worldNormal, viewDir, rayDir, halfDir, color, metallic, alpha, sheenColor, sheenRoughness);
 
 		gPayload.rayDirection = rayDir;
         gPayload.pdfBRDF = pdfBRDF;

@@ -58,6 +58,14 @@ void updateInput(GLFWwindow* window, Scene& scene) {
             camera->move(GLFW_KEY_D);
             scene.markBufferUpdated();
         }
+        if (glfwGetKey(window, GLFW_KEY_Q)) {
+            camera->move(GLFW_KEY_Q);
+            scene.markBufferUpdated();
+        }
+        if (glfwGetKey(window, GLFW_KEY_E)) {
+            camera->move(GLFW_KEY_E);
+            scene.markBufferUpdated();
+        }
 
         static const float camSens = 0.1f;
         static const float RAD = 0.017453f;

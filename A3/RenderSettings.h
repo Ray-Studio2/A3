@@ -13,11 +13,12 @@ struct RenderSettings
 
 	static constexpr uint32 maxLightCounts = 16;
 
-	static constexpr const char* sceneFiles[] = { "../Assets/bruteforce-local.json",
-												 "../Assets/nee-local.json",
-												 "../Assets/bruteforce-env.json",
-												 "../Assets/nee-env.json",
-												 "../Assets/nee-env2.json" };
+	static constexpr const char* sceneFiles[] = {//"../Assets/bruteforce-local.json",
+												//  "../Assets/nee-local.json",
+												//  "../Assets/bruteforce-env.json",
+												//  "../Assets/nee-env.json",
+												//  "../Assets/nee-env2.json",
+												 "../Assets/nee-disney.json" };
 	static constexpr uint32 sceneIdx = 0;
 
 	// static constexpr const char* envMapDefault = "../Assets/reichstag_1_4k.hdr";

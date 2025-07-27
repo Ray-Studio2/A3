@@ -74,7 +74,7 @@ struct Animation
 		if (_currentTime >= _totalTime)
 			_currentTime -= _totalTime;
 
-		//_currentTime = 1.0f;
+		//_currentTime = 0.24f;
 	}
 
 	void sample(const float deltaTime, const std::string& boneName, Vec3& outTranslation, Vec4& outRotation, Vec3& outScale)
@@ -92,12 +92,12 @@ struct Animation
 		const uint32 translationCount = animData._translation._time.size();
 		for (uint32 i = 0; i < translationCount; ++i)
 		{
-			if (_currentTime > animData._translation._time[i] && i < translationCount - 1) // 筌띾뜆?筌??紐껊굡繹먮슣? 筌≪뼚? 筌륁궢釉?쭖?域밸챶源?筌띾뜆?筌??紐껊굡 ??源?
+			if (_currentTime > animData._translation._time[i]) // 筌띾뜆?筌??紐껊굡繹먮슣? 筌≪뼚? 筌륁궢釉?쭖?域밸챶源?筌띾뜆?筌??紐껊굡 ??源?
 				continue;
 
 			const float prevTime = i != 0 ? animData._translation._time[i - 1] : 0.0f;
 			const float time = animData._translation._time[i];
-			const float lerpValue = std::clamp((time - _currentTime) / (time - prevTime), 0.0f, 1.0f);
+			const float lerpValue = std::clamp((_currentTime - prevTime) / (time - prevTime), 0.0f, 1.0f);
 
 			static const Vec3& kTemp = Vec3(0, 0, 0);
 			const Vec3& prev = i != 0 ? animData._translation._data[i - 1] : kTemp;
@@ -110,12 +110,12 @@ struct Animation
 		const uint32 rotationCount = animData._rotation._time.size();
 		for (uint32 i = 0; i < rotationCount; ++i)
 		{
-			if (_currentTime > animData._rotation._time[i] && i < rotationCount - 1) // 筌띾뜆?筌??紐껊굡繹먮슣? 筌≪뼚? 筌륁궢釉?쭖?域밸챶源?筌띾뜆?筌??紐껊굡 ??源?
+			if (_currentTime > animData._rotation._time[i]) // 筌띾뜆?筌??紐껊굡繹먮슣? 筌≪뼚? 筌륁궢釉?쭖?域밸챶源?筌띾뜆?筌??紐껊굡 ??源?
 				continue;
 
 			const float prevTime = i != 0 ? animData._rotation._time[i - 1] : 0.0f;
 			const float time = animData._rotation._time[i];
-			const float lerpValue = std::clamp((_currentTime - time) / (time - prevTime), 0.0f, 1.0f);
+			const float lerpValue = std::clamp((_currentTime - prevTime) / (time - prevTime), 0.0f, 1.0f);
 
 			static const Vec4& kTemp = Vec4(0, 0, 0, 0);
 			const Vec4& prev = i != 0 ? animData._rotation._data[i - 1] : kTemp;
@@ -174,12 +174,12 @@ struct Animation
 		const uint32 scaleCount = animData._scale._time.size();
 		for (uint32 i = 0; i < scaleCount; ++i)
 		{
-			if (_currentTime > animData._scale._time[i] && i < scaleCount - 1) // 筌띾뜆?筌??紐껊굡繹먮슣? 筌≪뼚? 筌륁궢釉?쭖?域밸챶源?筌띾뜆?筌??紐껊굡 ??源?
+			if (_currentTime > animData._scale._time[i]) // 筌띾뜆?筌??紐껊굡繹먮슣? 筌≪뼚? 筌륁궢釉?쭖?域밸챶源?筌띾뜆?筌??紐껊굡 ??源?
 				continue;
 
 			const float prevTime = i != 0 ? animData._scale._time[i - 1] : 0.0f;
 			const float time = animData._scale._time[i];
-			const float lerpValue = std::clamp((_currentTime - time) / (time - prevTime), 0.0f, 1.0f);
+			const float lerpValue = std::clamp((_currentTime - prevTime) / (time - prevTime), 0.0f, 1.0f);
 
 			static const Vec3& kTemp = Vec3(0, 0, 0);
 			const Vec3& prev = i != 0 ? animData._scale._data[i - 1] : kTemp;

@@ -6,9 +6,27 @@ namespace A3
 {
 struct Mat3x3
 {
-	float m00, m01, m02;
-	float m10, m11, m12;
-	float m20, m21, m22;
+	union
+	{
+		struct
+		{
+			float m00, m01, m02;
+			float m10, m11, m12;
+			float m20, m21, m22;
+		};
+
+		float _m[3][3];
+	};
+
+	float* operator[](const int row)
+	{
+		return _m[row];
+	}
+
+	const float* operator[](const int row) const
+	{
+		return _m[row];
+	}
 
 	static Mat3x3 identity;
 };
@@ -26,6 +44,7 @@ struct Mat4x4
 		};
 
 		float _m[4][4];
+		float _arr[16];
 	};
 
 	float* operator[](const int row)

@@ -416,6 +416,10 @@ void Scene::loadGLTF(const std::string& fileName, VulkanRenderBackend& vulkanBac
 				else if (valueAccessor.type == TINYGLTF_TYPE_VEC3 && targetPath == "scale")
 				{
 					animData._scale._data = getBufferData<Vec3>(model, sampler.output);
+					for (auto& scale : animData._scale._data)
+					{
+						scale = Vec3(1, 1, 1);
+					}
 					animData._scale._time = times;
 					type = AnimationNodeType::SCALE;
 				}
@@ -1008,6 +1012,11 @@ void Scene::save(const std::string& path) const {}
 
 void Scene::beginFrame(const float fixedDeltaTime)
 {
+	for (Animation& anim : _animations)
+	{
+		anim.update(fixedDeltaTime);
+	}
+
 	const uint32 objectCount = objects.size();
 	for (uint32 objectIndex = 0; objectIndex < objectCount; ++objectIndex)
 	{
@@ -1027,8 +1036,6 @@ void Scene::beginFrame(const float fixedDeltaTime)
 			// skinned mesh
 			Skeleton& skeleton = _skeletons[mo->_skeletonIndex];
 			Animation& animation = _animations[mo->_animationIndex];
-
-			animation.update(fixedDeltaTime);
 
 			const uint32 boneCount = skeleton._boneArray.size();
 
@@ -1126,6 +1133,28 @@ void Scene::beginFrame(const float fixedDeltaTime)
 				//if (i == 28)
 				//	animationMatrixt = skeleton._boneDressPoseArray[28];
 
+				{
+					Vec4 asdasd(1, 0, 0, 0);
+					Vec4 aadd = animationMatrixt * asdasd;
+					float len = std::sqrt(aadd.x * aadd.x + aadd.y * aadd.y + aadd.z * aadd.z);
+
+					int a = 10;
+				}
+				{
+					Vec4 asdasd(0, 1, 0, 0);
+					Vec4 aadd = animationMatrixt * asdasd;
+					float len = std::sqrt(aadd.x * aadd.x + aadd.y * aadd.y + aadd.z * aadd.z);
+
+					int a = 10;
+				}
+				{
+					Vec4 asdasd(0, 0, 1, 0);
+					Vec4 aadd = animationMatrixt * asdasd;
+					float len = std::sqrt(aadd.x * aadd.x + aadd.y * aadd.y + aadd.z * aadd.z);
+
+					int a = 10;
+				}
+
 				animationMatrices[i] = animationMatrixt;
 
 				int a = 10;
@@ -1155,6 +1184,29 @@ void Scene::beginFrame(const float fixedDeltaTime)
 				const Mat4x4& animationMatrix = animationMatrices[i];
 				const Mat4x4& dressPoseInvMatrix = skeleton._boneDressPoseInverseArray[i];
 				const Mat4x4 skinningMatrix = mul(animationMatrix, dressPoseInvMatrix);
+
+				{
+					Vec4 asdasd(1, 0, 0, 0);
+					Vec4 aadd = skinningMatrix * asdasd;
+					float len = std::sqrt(aadd.x * aadd.x + aadd.y * aadd.y + aadd.z * aadd.z);
+
+					int a = 10;
+				}
+				{
+					Vec4 asdasd(0, 1, 0, 0);
+					Vec4 aadd = skinningMatrix * asdasd;
+					float len = std::sqrt(aadd.x * aadd.x + aadd.y * aadd.y + aadd.z * aadd.z);
+
+					int a = 10;
+				}
+				{
+					Vec4 asdasd(0.321633160f, -0.368517727f, -0.872207999f, 0);
+					Vec4 aadd = skinningMatrix * asdasd;
+					float len = std::sqrt(aadd.x * aadd.x + aadd.y * aadd.y + aadd.z * aadd.z);
+
+					int a = 10;
+				}
+
 				skinningMatrices[i] = skinningMatrix;
 			}
 
@@ -1167,12 +1219,13 @@ void Scene::beginFrame(const float fixedDeltaTime)
 
 			for (uint32 i = 0; i < vertexCount; ++i)
 			{
-				Mat4x4 skinningMatrix = Mat4x4::identity;
-				skinningMatrix.m00 = 0;
-				skinningMatrix.m11 = 0;
-				skinningMatrix.m22 = 0;
-				skinningMatrix.m33 = 0;
+				Mat4x4 tempSkinningMatrix = Mat4x4::identity;
+				tempSkinningMatrix.m00 = 0;
+				tempSkinningMatrix.m11 = 0;
+				tempSkinningMatrix.m22 = 0;
+				tempSkinningMatrix.m33 = 0;
 
+				float sumWeight = 0.0f;
 				A3_ASSERT_DEV("LongtimeProdigy", mo->getResource()->_jointIndicesData.size() == mo->getResource()->_weightsData.size(), "");
 				for (uint32 j = 0; j < 4; ++j)
 				{
@@ -1200,15 +1253,118 @@ void Scene::beginFrame(const float fixedDeltaTime)
 						break;
 					}
 
-					skinningMatrix += skinningMatrices[boneIndex] * weight;
+					tempSkinningMatrix += skinningMatrices[boneIndex] * weight;
+					sumWeight += weight;
+				}
+
+				auto inverseMatrix = [](const Mat3x3& mat, Mat3x3& inv) -> bool
+					{
+						// Calculate the determinant
+						float det = mat[0][0] * (mat[1][1] * mat[2][2] - mat[2][1] * mat[1][2]) -
+							mat[0][1] * (mat[1][0] * mat[2][2] - mat[1][2] * mat[2][0]) +
+							mat[0][2] * (mat[1][0] * mat[2][1] - mat[1][1] * mat[2][0]);
+
+						// Check if the determinant is non-zero
+						if (det == 0) {
+							std::cout << "Matrix is not invertible (determinant is 0)." << std::endl;
+							return false;
+						}
+
+						float invDet = 1.0f / det;
+
+						// Calculate the adjugate matrix and multiply by the inverse of the determinant
+						inv[0][0] = (mat[1][1] * mat[2][2] - mat[2][1] * mat[1][2]) * invDet;
+						inv[0][1] = (mat[0][2] * mat[2][1] - mat[0][1] * mat[2][2]) * invDet;
+						inv[0][2] = (mat[0][1] * mat[1][2] - mat[0][2] * mat[1][1]) * invDet;
+						inv[1][0] = (mat[1][2] * mat[2][0] - mat[1][0] * mat[2][2]) * invDet;
+						inv[1][1] = (mat[0][0] * mat[2][2] - mat[0][2] * mat[2][0]) * invDet;
+						inv[1][2] = (mat[1][0] * mat[0][2] - mat[0][0] * mat[1][2]) * invDet;
+						inv[2][0] = (mat[1][0] * mat[2][1] - mat[2][0] * mat[1][1]) * invDet;
+						inv[2][1] = (mat[2][0] * mat[0][1] - mat[0][0] * mat[2][1]) * invDet;
+						inv[2][2] = (mat[0][0] * mat[1][1] - mat[1][0] * mat[0][1]) * invDet;
+
+						return true;
+					};
+
+				Mat3x3 tempSkinningMatrix3x3;
+				tempSkinningMatrix3x3.m00 = tempSkinningMatrix.m00;
+				tempSkinningMatrix3x3.m01 = tempSkinningMatrix.m01;
+				tempSkinningMatrix3x3.m02 = tempSkinningMatrix.m02;
+
+				tempSkinningMatrix3x3.m10 = tempSkinningMatrix.m10;
+				tempSkinningMatrix3x3.m11 = tempSkinningMatrix.m11;
+				tempSkinningMatrix3x3.m12 = tempSkinningMatrix.m12;
+
+				tempSkinningMatrix3x3.m20 = tempSkinningMatrix.m20;
+				tempSkinningMatrix3x3.m21 = tempSkinningMatrix.m21;
+				tempSkinningMatrix3x3.m22 = tempSkinningMatrix.m22;
+
+				Mat3x3 skinningMatrixASD;
+				const bool testtt = inverseMatrix(tempSkinningMatrix3x3, skinningMatrixASD);
+				A3_ASSERT_DEV("LongtimeProdigy", testtt, "");
+
+				Mat4x4 skinningMatrix;
+				skinningMatrix.m00 = skinningMatrixASD.m00;
+				skinningMatrix.m01 = skinningMatrixASD.m01;
+				skinningMatrix.m02 = skinningMatrixASD.m02;
+
+				skinningMatrix.m10 = skinningMatrixASD.m10;
+				skinningMatrix.m11 = skinningMatrixASD.m11;
+				skinningMatrix.m12 = skinningMatrixASD.m12;
+
+				skinningMatrix.m20 = skinningMatrixASD.m20;
+				skinningMatrix.m21 = skinningMatrixASD.m21;
+				skinningMatrix.m22 = skinningMatrixASD.m22;
+
+				skinningMatrix.m03 = 0;
+				skinningMatrix.m13 = 0;
+				skinningMatrix.m23 = 0;
+				skinningMatrix.m30 = 0;
+				skinningMatrix.m31 = 0;
+				skinningMatrix.m32 = 0;
+				skinningMatrix.m33 = 1;
+
+				skinningMatrix.transpose();
+
+				skinningMatrix.m03 = tempSkinningMatrix.m03;
+				skinningMatrix.m13 = tempSkinningMatrix.m13;
+				skinningMatrix.m23 = tempSkinningMatrix.m23;
+				{
+					Vec4 asdasd(1, 0, 0, 0);
+					Vec4 aadd = skinningMatrix * asdasd;
+					float len = std::sqrt(aadd.x * aadd.x + aadd.y * aadd.y + aadd.z * aadd.z);
+
+					int a = 10;
+				}
+				{
+					Vec4 asdasd(0, 1, 0, 0);
+					Vec4 aadd = skinningMatrix * asdasd;
+					float len = std::sqrt(aadd.x * aadd.x + aadd.y * aadd.y + aadd.z * aadd.z);
+
+					int a = 10;
+				}
+				{
+					Vec4 asdasd(0, 0, 1, 0);
+					Vec4 aadd = skinningMatrix * asdasd;
+					float len = std::sqrt(aadd.x * aadd.x + aadd.y * aadd.y + aadd.z * aadd.z);
+
+					int a = 10;
 				}
 
 				const VertexPosition& position = mo->getResource()->positions[i];
 				const VertexAttributes& attr = mo->getResource()->attributes[i];
 				const float* normal = attr.normals;
 
-				skinnedPositions[i] = skinningMatrix * position;
-				Vec4 skinnedNormal = skinningMatrix * Vec4(normal[0], normal[1], normal[2], 0);
+				skinnedPositions[i] = tempSkinningMatrix * position;
+				Vec4 skinnedNormal = tempSkinningMatrix * Vec4(normal[0], normal[1], normal[2], 0);
+
+				float len2 = std::sqrt(normal[0] * normal[0] + normal[1] * normal[1] + normal[2] * normal[2]);
+				float len = std::sqrt(skinnedNormal.x * skinnedNormal.x + skinnedNormal.y * skinnedNormal.y + skinnedNormal.z * skinnedNormal.z);
+				//if (len <= 0.9999f || len > 1.0001f)
+				//{
+				//	DebugBreak();
+				//}
+
 				skinnedNormals[i].normals[0] = skinnedNormal.x;
 				skinnedNormals[i].normals[1] = skinnedNormal.y;
 				skinnedNormals[i].normals[2] = skinnedNormal.z;

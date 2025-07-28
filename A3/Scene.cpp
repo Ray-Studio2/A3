@@ -15,6 +15,32 @@
 //#define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "ThirdParty/tiny_gltf/tiny_gltf.h"
 
+#if defined(_DEBUG)
+#define MAX_LOG_BUFFER_LENGTH 2048
+#define A3_LOG(developer, fmt, ...)														\
+do {																					\
+    char buffer[MAX_LOG_BUFFER_LENGTH];													\
+    snprintf(buffer, sizeof(buffer), "[" developer "]" fmt, ##__VA_ARGS__);				\
+    OutputDebugStringA(buffer);															\
+    OutputDebugStringA("\n");															\
+} while(0)
+
+	// for assert
+#define A3_ASSERT_COMPILE(condition, msg) static_assert(condition, msg)
+#define A3_ASSERT_DEV(developer, condition, fmt, ...)									\
+do {																					\
+	if(!(condition))																	\
+	{																					\
+		A3_LOG(developer, fmt, __VA_ARGS__);											\
+		__debugbreak();																	\
+	}																					\
+} while(0)
+#else
+#define A3_LOG(developer, fmt, ...)
+#define A3_ASSERT_Compile(condition, msg)
+#define A3_Assert_DEV(developer, conditionm fmt, ...)
+#endif
+
 using namespace A3;
 using Json = nlohmann::json;
 
@@ -30,7 +56,6 @@ Scene::~Scene() {
 	}
 }
 
-// 노드의 로컬 변환 행렬 얻기 (glm 사용)
 Mat4x4 getNodeLocalTransform(const tinygltf::Node& node) {
 	Mat4x4 local = Mat4x4::identity;
 	if (!node.matrix.empty()) {
@@ -75,7 +100,8 @@ Mat4x4 getNodeLocalTransform(const tinygltf::Node& node) {
 				return mat;
 				};
 			Quaternion quat = { static_cast<float>(node.rotation[3]), static_cast<float>(node.rotation[0]), static_cast<float>(node.rotation[1]), static_cast<float>(node.rotation[2]) };
-			local = mul(local, quaternionToMatrix(quat));
+			Mat4x4 rotMat = quaternionToMatrix(quat);
+			local = mul(local, rotMat);
 
 			//float cx = std::cos(angleRad.x); float sx = std::sin(angleRad.x); // pitch
 			//float cy = std::cos(angleRad.y); float sy = std::sin(angleRad.y); // yaw
@@ -109,7 +135,7 @@ Mat4x4 getNodeLocalTransform(const tinygltf::Node& node) {
 	}
 	return local;
 }
-// 템플릿 함수 (glm::vec 기반으로 수정)
+// ???ロ깵????貫??(glm::vec ?リ옇?↑??怨쀬Ŧ ??瑜곸젧)
 template <typename T>
 std::vector<T> getBufferData(const tinygltf::Model& model, int accessorIndex) {
 	std::vector<T> data;
@@ -135,6 +161,11 @@ std::vector<T> getBufferData(const tinygltf::Model& model, int accessorIndex) {
 		}
 	}
 	return data;
+}
+
+bool AreSame(const float a, const float b, const float epsilon)
+{
+	return fabs(a - b) < epsilon;
 }
 void Scene::loadGLTF(const std::string& fileName, VulkanRenderBackend& vulkanBackend)
 {
@@ -163,15 +194,14 @@ void Scene::loadGLTF(const std::string& fileName, VulkanRenderBackend& vulkanBac
 
 	std::cout << "glTF file loaded successfully." << std::endl;
 
-	std::vector<Skeleton> skeletonArr;
+	std::map<int, int> nodeParents;
+	for (int i = 0; i < model.nodes.size(); ++i) {
+		for (int childIndex : model.nodes[i].children) {
+			nodeParents[childIndex] = i;
+		}
+	}
 
-	struct AnimationData
-	{
-
-	};
-	std::vector<AnimationData> animationArr;
-
-	skeletonArr.reserve(model.skins.size());
+	_skeletons.reserve(model.skins.size());
 	for (const auto& skin : model.skins) {
 		Skeleton skeleton;
 		skeleton._skinName = skin.name.empty() ? "(unnamed)" : skin.name;
@@ -187,6 +217,11 @@ void Scene::loadGLTF(const std::string& fileName, VulkanRenderBackend& vulkanBac
 			}
 		}
 
+		for (Mat4x4& inv : inverseBindMatrices)
+		{
+			inv.transpose();
+		}
+
 		std::unordered_map<int, size_t> nodeIndexToBoneIndexMap;
 		for (size_t i = 0; i < skin.joints.size(); ++i) {
 			int jointIndex = skin.joints[i];
@@ -195,6 +230,19 @@ void Scene::loadGLTF(const std::string& fileName, VulkanRenderBackend& vulkanBac
 				std::string boneName = jointNode.name.empty() ? ("joint_" + std::to_string(jointIndex)) : jointNode.name;
 				Mat4x4 bindPoseLocalMatrix = getNodeLocalTransform(jointNode);
 
+				bindPoseLocalMatrix.transpose();
+
+				Mat4x4 bindPoseWorldMatrix = bindPoseLocalMatrix;
+				int tempNodeIndex = jointIndex;
+				while (nodeParents.count(tempNodeIndex))
+				{
+					int parentNodeIndex = nodeParents.at(tempNodeIndex);
+					Mat4x4 parentLocalMatrix = getNodeLocalTransform(model.nodes[parentNodeIndex]);
+					parentLocalMatrix.transpose();
+					bindPoseWorldMatrix = mul(parentLocalMatrix, bindPoseWorldMatrix);
+					tempNodeIndex = parentNodeIndex;
+				}
+
 				Bone bone;
 				bone._bonaName = boneName;
 				bone._childBoneIndexArr = jointNode.children;
@@ -202,8 +250,9 @@ void Scene::loadGLTF(const std::string& fileName, VulkanRenderBackend& vulkanBac
 				skeleton._boneArray.push_back(std::move(bone));
 
 				nodeIndexToBoneIndexMap[jointIndex] = skeleton._boneArray.size() - 1;
+				skeleton._boneNameIndexMapper[boneName] = static_cast<uint32>(skeleton._boneArray.size() - 1);
 
-				skeleton._boneDressPoseArray.push_back(bindPoseLocalMatrix);
+				skeleton._boneDressPoseArray.push_back(bindPoseWorldMatrix);
 				if (i < inverseBindMatrices.size()) {
 					skeleton._boneDressPoseInverseArray.push_back(inverseBindMatrices[i]);
 				}
@@ -226,7 +275,11 @@ void Scene::loadGLTF(const std::string& fileName, VulkanRenderBackend& vulkanBac
 			{
 				const int childJointIndex = skeleton._boneArray[i]._childBoneIndexArr[j];
 				const int childBoneIndex = static_cast<int>(nodeIndexToBoneIndexMap.find(childJointIndex)->second);
+
+				A3_ASSERT_DEV("LongtimeProdigy", i < childBoneIndex, "遺紐?蹂??몃뜳??%d)??諛섎뱶???먯떇 蹂??몃뜳??%d)蹂대떎 ?묒븘???⑸땲??", i, childBoneIndex);
+
 				skeleton._boneArray[childBoneIndex]._parentBoneIndex = i;
+				skeleton._boneArray[i]._childBoneIndexArr[j] = childBoneIndex;
 			}
 		}
 
@@ -244,59 +297,120 @@ void Scene::loadGLTF(const std::string& fileName, VulkanRenderBackend& vulkanBac
 			std::cout << std::endl;
 		}
 
-		skeletonArr.push_back(std::move(skeleton));
+		_skeletons.push_back(std::move(skeleton));
 	}
 
-	//std::cout << "\n--- Animations ---" << std::endl;
-	//if (!model.animations.empty()) {
-	//	const auto& anim = model.animations[0];
-	//	std::cout << "\n--- Animation: " << (anim.name.empty() ? "(unnamed)" : anim.name) << " ---" << std::endl;
+	std::cout << "\n--- Animations ---" << std::endl;
+	if (!model.animations.empty()) {
+		for (uint32 i = 0; i < model.animations.size(); ++i)
+		{
+			Animation animation;
 
-	//	AnimationData animData;
+			const auto& anim = model.animations[i];
+			std::cout << "\n--- Animation: " << (anim.name.empty() ? "(unnamed)" : anim.name) << " ---" << std::endl;
 
-	//	for (const auto& channel : anim.channels) 
-	//	{
-	//		std::string boneName = model.nodes[channel.target_node].name.empty() ? ("joint_" + std::to_string(channel.target_node)) : model.nodes[channel.target_node].name;
-	//		AnimationData animData;
+			float maxTime = 0.0f;
+			for (const auto& channel : anim.channels)
+			{
+				std::string boneName = model.nodes[channel.target_node].name.empty() ? ("joint_" + std::to_string(channel.target_node)) : model.nodes[channel.target_node].name;
+				AnimationData animData;
 
-	//		std::string targetPath = channel.target_path;
-	//		int samplerIndex = channel.sampler;
+				std::string targetPath = channel.target_path;
+				int samplerIndex = channel.sampler;
 
-	//		if (samplerIndex >= 0 && samplerIndex < anim.samplers.size()) 
-	//		{
-	//			const auto& sampler = anim.samplers[samplerIndex];
-	//			if (sampler.input >= 0 && sampler.input < model.accessors.size() && sampler.output >= 0 && sampler.output < model.accessors.size()) 
-	//			{
-	//				const auto& timeAccessor = model.accessors[sampler.input];
-	//				const auto& valueAccessor = model.accessors[sampler.output];
+				if (samplerIndex < 0 || samplerIndex >= anim.samplers.size())
+					continue;
 
-	//				std::vector<float> times;
-	//				if (timeAccessor.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT && timeAccessor.type == TINYGLTF_TYPE_SCALAR) 
-	//				{
-	//					times = getBufferData<float>(model, sampler.input);
-	//				}
+				const auto& sampler = anim.samplers[samplerIndex];
+				if (sampler.input < 0 || sampler.input >= model.accessors.size() || sampler.output < 0 || sampler.output >= model.accessors.size())
+					continue;
 
-	//				//if (valueAccessor.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT) {
-	//				//	if (valueAccessor.type == TINYGLTF_TYPE_VEC3 && targetPath == "translation") {
-	//				//		animData._translation = getBufferData<Vec3>(model, sampler.output);
-	//				//		animData._times = times;
-	//				//	}
-	//				//	else if (valueAccessor.type == TINYGLTF_TYPE_VEC4 && targetPath == "rotation") {
-	//				//		animData._rotation = getBufferData<Vec4>(model, sampler.output);
-	//				//		if (animData._times.empty()) animData._times = times;
-	//				//	}
-	//				//	else if (valueAccessor.type == TINYGLTF_TYPE_VEC3 && targetPath == "scale") {
-	//				//		animData._scale = getBufferData<Vec3>(model, sampler.output);
-	//				//		if (animData._times.empty()) animData._times = times;
-	//				//	}
-	//				//}
-	//			}
-	//		}
-	//	}
-	//	//if (!animData._times.empty()) {
-	//	//	_animations.push_back(animData);
-	//	//}
-	//}
+				const auto& timeAccessor = model.accessors[sampler.input];
+				const auto& valueAccessor = model.accessors[sampler.output];
+				std::string lerpMethod = sampler.interpolation;
+
+				for (const auto& maxValue : timeAccessor.maxValues)
+					maxTime = std::max(maxTime, static_cast<float>(maxValue));
+
+				std::vector<float> times;
+				if (timeAccessor.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT && timeAccessor.type == TINYGLTF_TYPE_SCALAR)
+					times = getBufferData<float>(model, sampler.input);
+
+				if (valueAccessor.componentType != TINYGLTF_COMPONENT_TYPE_FLOAT)
+					continue;
+
+				enum class AnimationNodeType
+				{
+					TRANSLATION,
+					ROTATION,
+					SCALE,
+					COUNT
+				};
+				AnimationNodeType type = AnimationNodeType::COUNT;
+				if (valueAccessor.type == TINYGLTF_TYPE_VEC3 && targetPath == "translation")
+				{
+					animData._translation._data = getBufferData<Vec3>(model, sampler.output);
+					animData._translation._time = times;
+					type = AnimationNodeType::TRANSLATION;
+				}
+				else if (valueAccessor.type == TINYGLTF_TYPE_VEC4 && targetPath == "rotation")
+				{
+					animData._rotation._data = getBufferData<Vec4>(model, sampler.output);
+					animData._rotation._time = times;
+					type = AnimationNodeType::ROTATION;
+				}
+				else if (valueAccessor.type == TINYGLTF_TYPE_VEC3 && targetPath == "scale")
+				{
+					animData._scale._data = getBufferData<Vec3>(model, sampler.output);
+					for (auto& scale : animData._scale._data)
+					{
+						scale = Vec3(1, 1, 1);
+					}
+					animData._scale._time = times;
+					type = AnimationNodeType::SCALE;
+				}
+
+				const auto iter = animation._animData.find(boneName);
+				if (iter == animation._animData.end())
+				{
+					animation._animData.insert(std::make_pair(boneName, animData));
+				}
+				else
+				{
+					AnimationData& data = iter->second;
+
+					switch (type)
+					{
+					case AnimationNodeType::TRANSLATION:
+					{
+						A3_ASSERT_DEV("LongtimeProdigy", data._translation._data.empty(), "");
+						A3_ASSERT_DEV("LongtimeProdigy", data._translation._time.empty(), "");
+						data._translation = animData._translation;
+						break;
+					}
+					case AnimationNodeType::ROTATION:
+					{
+						A3_ASSERT_DEV("LongtimeProdigy", data._rotation._data.empty(), "");
+						A3_ASSERT_DEV("LongtimeProdigy", data._rotation._time.empty(), "");
+						data._rotation = animData._rotation;
+						break;
+					}
+					case AnimationNodeType::SCALE:
+					{
+						A3_ASSERT_DEV("LongtimeProdigy", data._scale._data.empty(), "");
+						A3_ASSERT_DEV("LongtimeProdigy", data._scale._time.empty(), "");
+						data._scale = animData._scale;
+						break;
+					}
+					}
+				}
+			}
+
+			animation._totalTime = maxTime;
+
+			_animations.push_back(animation);
+		}
+	}
 
     std::cout << "========================================" << std::endl;
     std::cout << "Materials Count: " << model.materials.size() << std::endl;
@@ -310,7 +424,7 @@ void Scene::loadGLTF(const std::string& fileName, VulkanRenderBackend& vulkanBac
 		std::cout << "\n--- Material [" << i << "] ---" << std::endl;
 		std::cout << "Name: " << (material.name.empty() ? "(No Name)" : material.name) << std::endl;
 
-		// PBR Metallic-Roughness 워크플로우 정보 추출
+		// PBR Metallic-Roughness ??怨뚯씩???夷???筌먲퐢沅??怨뺣뾼??
 		const auto& pbr = material.pbrMetallicRoughness;
 
 		// 1. Base Color
@@ -476,6 +590,8 @@ void Scene::loadGLTF(const std::string& fileName, VulkanRenderBackend& vulkanBac
 	std::cout << "\n--- Mesh Data (glm) ---" << std::endl;
 	for (const auto& mesh : model.meshes)
 	{
+		const Skeleton& skeleton = _skeletons[0];
+
 		std::cout << "Mesh: " << mesh.name << std::endl;
 		for (const auto& primitive : mesh.primitives) {
 			std::cout << "  Primitive:" << std::endl;
@@ -516,15 +632,7 @@ void Scene::loadGLTF(const std::string& fileName, VulkanRenderBackend& vulkanBac
 					if (accessorIndex >= 0 && accessorIndex < model.accessors.size()) {
 						const auto& accessor = model.accessors[accessorIndex];
 						if (accessor.type == TINYGLTF_TYPE_VEC4) {
-							/*if (componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE) {
-								std::vector<Vec4> data = getBufferData<Vec4>(model, accessorIndex);
-								std::vector<Vec4> converted(data.size());
-								for (size_t i = 0; i < data.size(); ++i) {
-									converted[i] = Vec4(data[i].x, data[i].y, data[i].z, data[i].w);
-								}
-								return converted;
-							}
-							else */if (componentType == TINYGLTF_COMPONENT_TYPE_FLOAT) {
+							if (componentType == TINYGLTF_COMPONENT_TYPE_FLOAT) {
 								return getBufferData<Vec4>(model, accessorIndex);
 							}
 							else {
@@ -538,12 +646,100 @@ void Scene::loadGLTF(const std::string& fileName, VulkanRenderBackend& vulkanBac
 				}
 				return std::vector<Vec4>();
 				};
+			auto getIVec4Attribute = [&](const std::string& attributeName) {
+				if (primitive.attributes.count(attributeName)) {
+					int accessorIndex = primitive.attributes.at(attributeName);
+					if (accessorIndex >= 0 && accessorIndex < model.accessors.size()) {
+						const auto& accessor = model.accessors[accessorIndex];
+						if (accessor.type == TINYGLTF_TYPE_VEC4) {
+							if (accessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT) {
+								struct ShortVec4
+								{
+									short x;
+									short y;
+									short z;
+									short w;
+								};
+								std::vector<ShortVec4> data = getBufferData<ShortVec4>(model, accessorIndex);
+								std::vector<IVec4> converted(data.size());
+								for (size_t i = 0; i < data.size(); ++i) {
+									converted[i] = IVec4(data[i].x, data[i].y, data[i].z, data[i].w);
+								}
+								return converted;
+							}
+							else if (accessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE) {
+								struct UintByteVec4
+								{
+									uint8 x;
+									uint8 y;
+									uint8 z;
+									uint8 w;
+								};
+								std::vector<UintByteVec4> data = getBufferData<UintByteVec4>(model, accessorIndex);
+								std::vector<IVec4> converted(data.size());
+								for (size_t i = 0; i < data.size(); ++i) {
+									converted[i] = IVec4(data[i].x, data[i].y, data[i].z, data[i].w);
+								}
+								return converted;
+							}
+							else {
+								std::cerr << "    Unsupported component type for " << attributeName << std::endl;
+							}
+						}
+						else {
+							std::cerr << "    Unsupported type for " << attributeName << std::endl;
+						}
+					}
+				}
+				return std::vector<IVec4>();
+				};
 
 			std::vector<Vec3> positions = getVec3Attribute("POSITION");
 			std::vector<Vec3> normals = getVec3Attribute("NORMAL");
 			std::vector<Vec2> uvs = getVec2Attribute("TEXCOORD_0");
-			std::vector<Vec4> jointIndicesData = getVec4Attribute("JOINTS_0", TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE);
 			std::vector<Vec4> weightsData = getVec4Attribute("WEIGHTS_0", TINYGLTF_COMPONENT_TYPE_FLOAT);
+			std::vector<IVec4> jointIndicesData = getIVec4Attribute("JOINTS_0");
+			std::vector<IVec4> skinningBoneIndices;
+			skinningBoneIndices.resize(jointIndicesData.size());
+			for (uint32 vertexIndex = 0; vertexIndex < jointIndicesData.size(); ++vertexIndex)
+			{
+				{
+					const uint32 skeletonJointIndex = jointIndicesData[vertexIndex].x;
+					const uint32 nodeIndex = model.skins[0].joints[skeletonJointIndex];
+					const auto& jointNode = model.nodes[nodeIndex];
+					A3_ASSERT_DEV("LongtimeProdigy", jointNode.name.empty() == false, "");
+					std::string boneName = jointNode.name;
+					const uint32 boneIndex = skeleton._boneNameIndexMapper.find(boneName)->second;
+					skinningBoneIndices[vertexIndex].x = boneIndex;
+				}
+				{
+					const uint32 skeletonJointIndex = jointIndicesData[vertexIndex].y;
+					const uint32 nodeIndex = model.skins[0].joints[skeletonJointIndex];
+					const auto& jointNode = model.nodes[nodeIndex];
+					A3_ASSERT_DEV("LongtimeProdigy", jointNode.name.empty() == false, "");
+					std::string boneName = jointNode.name;
+					const uint32 boneIndex = skeleton._boneNameIndexMapper.find(boneName)->second;
+					skinningBoneIndices[vertexIndex].y = boneIndex;
+				}
+				{
+					const uint32 skeletonJointIndex = jointIndicesData[vertexIndex].z;
+					const uint32 nodeIndex = model.skins[0].joints[skeletonJointIndex];
+					const auto& jointNode = model.nodes[nodeIndex];
+					A3_ASSERT_DEV("LongtimeProdigy", jointNode.name.empty() == false, "");
+					std::string boneName = jointNode.name;
+					const uint32 boneIndex = skeleton._boneNameIndexMapper.find(boneName)->second;
+					skinningBoneIndices[vertexIndex].z = boneIndex;
+				}
+				{
+					const uint32 skeletonJointIndex = jointIndicesData[vertexIndex].w;
+					const uint32 nodeIndex = model.skins[0].joints[skeletonJointIndex];
+					const auto& jointNode = model.nodes[nodeIndex];
+					A3_ASSERT_DEV("LongtimeProdigy", jointNode.name.empty() == false, "");
+					std::string boneName = jointNode.name;
+					const uint32 boneIndex = skeleton._boneNameIndexMapper.find(boneName)->second;
+					skinningBoneIndices[vertexIndex].w = boneIndex;
+				}
+			}
 
 			std::cout << "    Loaded " << positions.size() << " vertices." << std::endl;
 
@@ -578,15 +774,17 @@ void Scene::loadGLTF(const std::string& fileName, VulkanRenderBackend& vulkanBac
 			
 			for (int i = 0; i < positions.size(); ++i)
 			{
-				vPositions.push_back(VertexPosition(positions[i].x * scale, positions[i].y * scale, positions[i].z * scale, 1.0f));
+				vPositions.push_back(VertexPosition(positions[i].x, positions[i].y, positions[i].z, 1.0f));
 				vAttributes.push_back(VertexAttributes({ normals[i].x, normals[i].y, normals[i].z, 0.0f }, { uvs[i].x, uvs[i].y, 0.0f, 0.0f }));
 			}
 
 			if (resources.find(mesh.name) == resources.end()) {
 				MeshResource resource;
-				resource.positions = vPositions;
-				resource.attributes = vAttributes;
-				resource.indices = indices;
+				resource.positions = std::move(vPositions);
+				resource.attributes = std::move(vAttributes);
+				resource.indices = std::move(indices);
+				resource._jointIndicesData = std::move(skinningBoneIndices);
+				resource._weightsData = std::move(weightsData);
 				resource.triangleCount = static_cast<uint32>(resource.indices.size() / 3);
 				resource.cumulativeTriangleArea.resize(resource.triangleCount + 1);
 				resource.cumulativeTriangleArea[0] = 0;
@@ -625,6 +823,8 @@ void Scene::loadGLTF(const std::string& fileName, VulkanRenderBackend& vulkanBac
 			mo->setMetallic(0.0f);
 			mo->setRoughness(1.0f);
 
+			mo->_skeletonIndex = 0;
+			mo->_animationIndex = 0;
 			this->objects.emplace_back(mo);
 		}
 	}
@@ -678,7 +878,6 @@ void Scene::load(const std::string& path, VulkanRenderBackend& vulkanBackend) {
 		this->imgui_param->envmapRotDeg = envmapRotation;
 	}
 
-#if 0
 	auto& materials = data["materials"];
 
 	auto& objects = data["sceneComponets"];
@@ -742,89 +941,290 @@ void Scene::load(const std::string& path, VulkanRenderBackend& vulkanBackend) {
 		}
 	}
 
-	tinygltf::Model model;
-	tinygltf::TinyGLTF loader;
-	std::string err;
-	std::string warn;
-
-	std::string filePath = "C:/Users/dhfla/Desktop/Projects/Universe/asset/phoenix_bird/scene.gltf";
-
-	bool ret = loader.LoadASCIIFromFile(&model, &err, &warn, filePath);
-
-	if (!warn.empty()) {
-		throw std::runtime_error("Warning: " + warn);
-	}
-
-	if (!err.empty()) {
-		throw std::runtime_error("Error: " + err);
-	}
-
-	if (!ret) {
-		throw std::runtime_error("Fail to parsing glTF\nPath: " + filePath);
-	}
-
-	std::cout << "Success to load glTF!" << std::endl;
-
-	const tinygltf::Scene& scene = model.scenes[model.defaultScene];
-
-	for (size_t i = 0; i < scene.nodes.size(); ++i) {
-		const tinygltf::Node& node = model.nodes[scene.nodes[i]];
-		std::cout << "Node Name: " << node.name << std::endl;
-
-		if (node.mesh > -1) {
-			const tinygltf::Mesh& mesh = model.meshes[node.mesh];
-			std::cout << "  - Mesh Name: " << mesh.name << std::endl;
-
-			for (size_t i = 0; i < mesh.primitives.size(); ++i) {
-				const tinygltf::Primitive& primitive = mesh.primitives[i];
-
-				// primitive.attributes is contain attributename and accessor index
-				for (auto const& [name, accessor_idx] : primitive.attributes) {
-					std::cout << "    - Attribute: " << name << std::endl;
-
-					const tinygltf::Accessor& accessor = model.accessors[accessor_idx];
-					const tinygltf::BufferView& bufferView = model.bufferViews[accessor.bufferView];
-					const tinygltf::Buffer& buffer = model.buffers[bufferView.buffer];
-
-					const uint32 vertexCount = accessor.count;
-
-					if (name == "POSITION") {
-						const unsigned char* data_start = &buffer.data[bufferView.byteOffset + accessor.byteOffset];
-						const float* positions = reinterpret_cast<const float*>(data_start);
-
-						for (size_t v = 0; v < vertexCount; ++v) {
-							float x = positions[v * 3 + 0];
-							float y = positions[v * 3 + 1];
-							float z = positions[v * 3 + 2];
-						}
-					}
-				}
-
-				if (primitive.indices > -1) {
-					const tinygltf::Accessor& indexAccessor = model.accessors[primitive.indices];
-					const tinygltf::BufferView& indexBufferView = model.bufferViews[indexAccessor.bufferView];
-					const tinygltf::Buffer& indexBuffer = model.buffers[indexBufferView.buffer];
-
-					// 인덱스 데이터 시작 위치
-					const unsigned char* data_start = &indexBuffer.data[indexBufferView.byteOffset + indexAccessor.byteOffset];
-
-					// 인덱스 타입(unsigned short, unsigned int 등)에 따라 적절히 캐스팅해야 합니다.
-					// indexAccessor.componentType을 확인하여 처리합니다.
-				}
-			}
-		}
-	}
-#else
-	//loadGLTF("../Assets/phoenix_bird/scene.gltf", vulkanBackend);
-	loadGLTF("../Assets/glTF_sample_models/SheenChair/SheenChair/glTF/SheenChair.gltf", vulkanBackend); 
-#endif
+	loadGLTF("../Assets/phoenix_bird/scene.gltf", vulkanBackend);
 }
 
 void Scene::save(const std::string& path) const {}
 
-void Scene::beginFrame()
+void Scene::beginFrame(const float fixedDeltaTime)
 {
+	for (Animation& anim : _animations)
+	{
+		anim.update(fixedDeltaTime);
+	}
 
+	const uint32 objectCount = objects.size();
+	for (uint32 objectIndex = 0; objectIndex < objectCount; ++objectIndex)
+	{
+		std::unique_ptr<SceneObject>& sc = objects[objectIndex];
+
+		//if (sc->isKindOf<MeshObject>() == false)
+		//	continue;
+
+		MeshObject* mo = static_cast<MeshObject*>(sc.get());
+
+		if (mo->getResource()->_jointIndicesData.empty() || mo->getResource()->_weightsData.empty())
+		{
+			// static mesh
+		}
+		else
+		{
+			// skinned mesh
+			Skeleton& skeleton = _skeletons[mo->_skeletonIndex];
+			Animation& animation = _animations[mo->_animationIndex];
+
+			const uint32 boneCount = skeleton._boneArray.size();
+
+			std::vector<Mat4x4> animationMatrices;
+			std::vector<Mat4x4> skinningMatrices;
+			animationMatrices.resize(boneCount);
+			skinningMatrices.resize(boneCount);
+
+			for (uint32 i = 0; i < boneCount; ++i)
+			{
+				const Bone& bone = skeleton._boneArray[i];
+
+				Vec3 translation;
+				Vec3 scale(1, 1, 1);
+				Vec4 rotation;
+				animation.sample(fixedDeltaTime, bone._bonaName, translation, rotation, scale);
+
+				auto makeMat3x3 = [&](Vec4& qua)->Mat3x3
+					{
+						float x = qua.x;
+						float y = qua.y;
+						float z = qua.z;
+						float w = qua.w;
+
+						float xx = x * x;
+						float yy = y * y;
+						float zz = z * z;
+						float xy = x * y;
+						float xz = x * z;
+						float yz = y * z;
+						float wx = w * x;
+						float wy = w * y;
+						float wz = w * z;
+
+						Mat3x3 mat;
+						mat.m00 = 1.0f - 2.0f * (yy + zz); // m00
+						mat.m10 = 2.0f * (xy + wz);        // m10
+						mat.m20 = 2.0f * (xz - wy);        // m20
+
+						mat.m01 = 2.0f * (xy - wz);        // m01
+						mat.m11 = 1.0f - 2.0f * (xx + zz); // m11
+						mat.m21 = 2.0f * (yz + wx);        // m21
+
+						mat.m02 = 2.0f * (xz + wy);        // m02
+						mat.m12 = 2.0f * (yz - wx);        // m12
+						mat.m22 = 1.0f - 2.0f * (xx + yy);// m22
+
+						return mat;
+					};
+				auto makeMatrix = [&]()->Mat4x4
+					{
+						Mat3x3 sca{ scale.x, 0, 0, 0, scale.y, 0, 0, 0, scale.z };
+						Mat3x3 rot = makeMat3x3(rotation);
+
+						Mat3x3 rs = rot * sca;
+
+						Mat4x4 mat;
+						mat.m00 = rs.m00;
+						mat.m01 = rs.m01;
+						mat.m02 = rs.m02;
+						mat.m03 = translation.x;
+
+						mat.m10 = rot.m10;
+						mat.m11 = rot.m11;
+						mat.m12 = rot.m12;
+						mat.m13 = translation.y;
+
+						mat.m20 = rot.m20;
+						mat.m21 = rot.m21;
+						mat.m22 = rot.m22;
+						mat.m23 = translation.z;
+
+						mat.m30 = 0.0f;
+						mat.m31 = 0.0f;
+						mat.m32 = 0.0f;
+						mat.m33 = 1.0f;
+
+						return mat;
+					};
+
+				Mat4x4 animationMatrix = makeMatrix();
+				if (bone._parentBoneIndex >= 0)
+				{
+					const Bone& parentBone = skeleton._boneArray[bone._parentBoneIndex];
+					animationMatrix = mul(animationMatrices[bone._parentBoneIndex], animationMatrix);
+				}
+
+				animationMatrices[i] = animationMatrix;
+			}
+
+			for (uint32 i = 0; i < boneCount; ++i)
+			{
+				const Bone& bone = skeleton._boneArray[i];
+				A3_ASSERT_DEV("LongtimeProdity", skeleton._boneNameIndexMapper.find(bone._bonaName) != skeleton._boneNameIndexMapper.end(), "");
+				A3_ASSERT_DEV("LongtimeProdity", skeleton._boneNameIndexMapper[bone._bonaName] == i, "");
+
+#if 0
+				const Mat4x4& animationMatrix = skeleton._boneDressPoseArray[i];	//  T-Pose 그리기
+#else
+				const Mat4x4& animationMatrix = animationMatrices[i];				// animation pose 그리기
+#endif
+				const Mat4x4& dressPoseInvMatrix = skeleton._boneDressPoseInverseArray[i];
+				skinningMatrices[i] = mul(animationMatrix, dressPoseInvMatrix);
+			}
+
+			std::vector<VertexPosition> skinnedPositions;
+			std::vector<VertexAttributes> skinnedNormals;
+			const uint32 vertexCount = mo->getResource()->positions.size();
+
+			skinnedPositions.resize(vertexCount);
+			skinnedNormals.resize(vertexCount);
+
+			for (uint32 i = 0; i < vertexCount; ++i)
+			{
+				Mat4x4 skinningMatrix = Mat4x4::identity;
+				skinningMatrix.m00 = 0;
+				skinningMatrix.m11 = 0;
+				skinningMatrix.m22 = 0;
+				skinningMatrix.m33 = 0;
+
+				float sumWeight = 0.0f;
+				A3_ASSERT_DEV("LongtimeProdigy", mo->getResource()->_jointIndicesData.size() == mo->getResource()->_weightsData.size(), "");
+				for (uint32 j = 0; j < 4; ++j)
+				{
+					float weight;
+					int boneIndex;
+					switch (j)
+					{
+					case 0:
+						weight = mo->getResource()->_weightsData[i].x;
+						boneIndex = mo->getResource()->_jointIndicesData[i].x;
+						break;
+					case 1:
+						weight = mo->getResource()->_weightsData[i].y;
+						boneIndex = mo->getResource()->_jointIndicesData[i].y;
+						break;
+					case 2:
+						weight = mo->getResource()->_weightsData[i].z;
+						boneIndex = mo->getResource()->_jointIndicesData[i].z;
+						break;
+					case 3:
+						weight = mo->getResource()->_weightsData[i].w;
+						boneIndex = mo->getResource()->_jointIndicesData[i].w;
+						break;
+					default:
+						break;
+					}
+
+					skinningMatrix += skinningMatrices[boneIndex] * weight;
+					sumWeight += weight;
+				}
+
+				A3_ASSERT_DEV("LongtimeProdigy", AreSame(sumWeight, 1.0f, 0.0001f), "Skinning Weight의 합은 반드시 1이어야합니다.");
+
+#if 0			// inverse(transpose사용))
+				auto inverseMatrix = [](const Mat3x3& mat, Mat3x3& inv) -> bool
+					{
+						// Calculate the determinant
+						float det = mat[0][0] * (mat[1][1] * mat[2][2] - mat[2][1] * mat[1][2]) -
+							mat[0][1] * (mat[1][0] * mat[2][2] - mat[1][2] * mat[2][0]) +
+							mat[0][2] * (mat[1][0] * mat[2][1] - mat[1][1] * mat[2][0]);
+
+						// Check if the determinant is non-zero
+						if (det == 0) {
+							std::cout << "Matrix is not invertible (determinant is 0)." << std::endl;
+							return false;
+						}
+
+						float invDet = 1.0f / det;
+
+						// Calculate the adjugate matrix and multiply by the inverse of the determinant
+						inv[0][0] = (mat[1][1] * mat[2][2] - mat[2][1] * mat[1][2]) * invDet;
+						inv[0][1] = (mat[0][2] * mat[2][1] - mat[0][1] * mat[2][2]) * invDet;
+						inv[0][2] = (mat[0][1] * mat[1][2] - mat[0][2] * mat[1][1]) * invDet;
+						inv[1][0] = (mat[1][2] * mat[2][0] - mat[1][0] * mat[2][2]) * invDet;
+						inv[1][1] = (mat[0][0] * mat[2][2] - mat[0][2] * mat[2][0]) * invDet;
+						inv[1][2] = (mat[1][0] * mat[0][2] - mat[0][0] * mat[1][2]) * invDet;
+						inv[2][0] = (mat[1][0] * mat[2][1] - mat[2][0] * mat[1][1]) * invDet;
+						inv[2][1] = (mat[2][0] * mat[0][1] - mat[0][0] * mat[2][1]) * invDet;
+						inv[2][2] = (mat[0][0] * mat[1][1] - mat[1][0] * mat[0][1]) * invDet;
+
+						return true;
+					};
+
+				Mat3x3 tempSkinningMatrix3x3;
+				tempSkinningMatrix3x3.m00 = skinningMatrix.m00;
+				tempSkinningMatrix3x3.m01 = skinningMatrix.m01;
+				tempSkinningMatrix3x3.m02 = skinningMatrix.m02;
+
+				tempSkinningMatrix3x3.m10 = skinningMatrix.m10;
+				tempSkinningMatrix3x3.m11 = skinningMatrix.m11;
+				tempSkinningMatrix3x3.m12 = skinningMatrix.m12;
+
+				tempSkinningMatrix3x3.m20 = skinningMatrix.m20;
+				tempSkinningMatrix3x3.m21 = skinningMatrix.m21;
+				tempSkinningMatrix3x3.m22 = skinningMatrix.m22;
+
+				Mat3x3 skinningMatrixASD;
+				const bool testtt = inverseMatrix(tempSkinningMatrix3x3, skinningMatrixASD);
+				A3_ASSERT_DEV("LongtimeProdigy", testtt, "");
+
+				Mat4x4 temptempSkinningMatrix;
+				temptempSkinningMatrix.m00 = skinningMatrixASD.m00;
+				temptempSkinningMatrix.m01 = skinningMatrixASD.m01;
+				temptempSkinningMatrix.m02 = skinningMatrixASD.m02;
+
+				temptempSkinningMatrix.m10 = skinningMatrixASD.m10;
+				temptempSkinningMatrix.m11 = skinningMatrixASD.m11;
+				temptempSkinningMatrix.m12 = skinningMatrixASD.m12;
+
+				temptempSkinningMatrix.m20 = skinningMatrixASD.m20;
+				temptempSkinningMatrix.m21 = skinningMatrixASD.m21;
+				temptempSkinningMatrix.m22 = skinningMatrixASD.m22;
+
+				temptempSkinningMatrix.m03 = 0;
+				temptempSkinningMatrix.m13 = 0;
+				temptempSkinningMatrix.m23 = 0;
+				temptempSkinningMatrix.m30 = 0;
+				temptempSkinningMatrix.m31 = 0;
+				temptempSkinningMatrix.m32 = 0;
+				temptempSkinningMatrix.m33 = 1;
+
+				temptempSkinningMatrix.transpose();
+
+				temptempSkinningMatrix.m03 = skinningMatrix.m03;
+				temptempSkinningMatrix.m13 = skinningMatrix.m13;
+				temptempSkinningMatrix.m23 = skinningMatrix.m23;
+#endif
+
+				const VertexPosition& position = mo->getResource()->positions[i];
+				const VertexAttributes& attr = mo->getResource()->attributes[i];
+				const float* normal = attr.normals;
+
+				skinnedPositions[i] = skinningMatrix * position;
+				Vec4 skinnedNormal = skinningMatrix * Vec4(normal[0], normal[1], normal[2], 0);
+
+				float len2 = std::sqrt(normal[0] * normal[0] + normal[1] * normal[1] + normal[2] * normal[2]);
+				float len = std::sqrt(skinnedNormal.x * skinnedNormal.x + skinnedNormal.y * skinnedNormal.y + skinnedNormal.z * skinnedNormal.z);
+
+				skinnedNormals[i].normals[0] = skinnedNormal.x;
+				skinnedNormals[i].normals[1] = skinnedNormal.y;
+				skinnedNormals[i].normals[2] = skinnedNormal.z;
+				skinnedNormals[i].normals[3] = 0;
+				skinnedNormals[i].uvs[0] = attr.uvs[0];
+				skinnedNormals[i].uvs[1] = attr.uvs[1];
+				skinnedNormals[i].uvs[2] = attr.uvs[2];
+				skinnedNormals[i].uvs[3] = attr.uvs[3];
+			}
+
+			mo->_skinnedPositions = std::move(skinnedPositions);
+			mo->_skinnedAttributes = std::move(skinnedNormals);
+		}
+	}
 }
 
 void Scene::endFrame()

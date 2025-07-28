@@ -15,8 +15,9 @@ public:
         , handle( nullptr )
     {}
 
-    virtual ~VulkanAccelerationStructure()
-    {}
+    virtual ~VulkanAccelerationStructure();
+
+    virtual void destroy() override;
 
 public:
     VkBuffer                    descriptor;

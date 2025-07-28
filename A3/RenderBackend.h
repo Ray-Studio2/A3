@@ -13,6 +13,7 @@ struct RaytracingPSO;
 struct RaytracingPSODesc;
 struct LightData;
 struct Material;
+struct VulkanPipeline;
 
 struct BLASBuildParams
 {
@@ -41,6 +42,8 @@ public:
     virtual IShaderModuleRef createShaderModule( const ShaderDesc& desc ) = 0;
 
     virtual IRenderPipelineRef createRayTracingPipeline( const RaytracingPSODesc& psoDesc, RaytracingPSO* pso ) = 0;
+
+    virtual void updateDescriptorSet(VulkanPipeline* outPipeline) = 0;
     
     virtual void updateLightBuffer( const std::vector<LightData>& lights ) = 0;
 };

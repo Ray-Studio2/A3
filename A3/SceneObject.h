@@ -23,7 +23,7 @@ public:
 
 	const Mat4x4& getLocalToWorld() { return localToWorld; }
 	const Vec3& getLocalPosition() { return position; }
-	const Vec3& getWorldPosition() { return Vec3( localToWorld.m03, localToWorld.m13, localToWorld.m23 ); }
+	const Vec3 getWorldPosition() { return Vec3( localToWorld.m03, localToWorld.m13, localToWorld.m23 ); }
 	const Vec3& getBaseColor() { return baseColor; }
 	const float getMetallic() const { return metallic; }
 	const float getRoughness() const { return roughness; }

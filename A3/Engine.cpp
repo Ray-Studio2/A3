@@ -8,6 +8,7 @@
 #include <tuple>
 #include <bitset>
 #include <span>
+#include <Windows.h>
 #include "Vulkan.h"
 #include "PathTracingRenderer.h"
 #include "Addon_imgui.h"
@@ -87,6 +88,7 @@ void updateInput(GLFWwindow* window, Scene& scene) {
     }
 }
 
+static int gFrameIndex = 0;
 void Engine::Run()
 {
     glfwSetErrorCallback( glfw_error_callback );
@@ -123,12 +125,16 @@ void Engine::Run()
 
         Addon_imgui imgui( window, &gfxBackend, screenWidth, screenHeight );
 
+        static const float fixedDeltaTime = 0.016f;
         while( !glfwWindowShouldClose( window ) )
         {
+            Sleep(50);
+            ++gFrameIndex;
+
             glfwPollEvents();
             updateInput(window, scene);
 
-            scene.beginFrame();
+            scene.beginFrame(fixedDeltaTime);
 
             renderer.beginFrame( screenWidth, screenHeight );
 

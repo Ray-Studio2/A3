@@ -7,6 +7,7 @@
 #include "MeshResource.h"
 #include "AccelerationStructure.h"
 #include "PipelineStateObject.h"
+#include "VulkanResource.h"
 
 using namespace A3;
 
@@ -26,14 +27,15 @@ void PathTracingRenderer::beginFrame( int32 screenWidth, int32 screenHeight ) co
 
 void PathTracingRenderer::render( Scene& scene )
 {
+    backend->tempScenePointer = &scene;
+    buildAccelerationStructure(scene);    // scene ?袁⑷퍥揶쎛 獄쏅뗀???늺 build ??쇰뻻??곷튊??
+
     if (scene.isBufferUpdated())
     {
         if( scene.isPosUpdated() )
         {
             // TODO: temp
-            backend->tempScenePointer = &scene;
-            buildAccelerationStructure( scene );    // scene 전체가 바뀌면 build 다시해야함
-            buildSamplePSO();                       // 얘도 scene 전체가 바뀌면 빌드 해줘야함
+            buildSamplePSO();                       // ??롫즲 scene ?袁⑷퍥揶쎛 獄쏅뗀???늺 ??슢諭???곸㉭??노맙
 
             scene.cleanPosUpdated();
         }
@@ -44,6 +46,8 @@ void PathTracingRenderer::render( Scene& scene )
 
         scene.cleanBufferUpdated();
     }
+
+    backend->updateDescriptorSet(static_cast<VulkanPipeline*>(samplePSO->pipeline.get()));
 
     // Increment frame count
     frameCount++;

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AutoVisualizer xmlns="http://schemas.microsoft.com/vstudio/debugger/natvis/2010">
+    <Type Name="A3::Vec3">
+        <DisplayString>{x}, {y}, {z}</DisplayString>
+    </Type>
+    <Type Name="A3::Vec4">
+        <DisplayString>{x}, {y}, {z}, {w}</DisplayString>
+    </Type>
+</AutoVisualizer>

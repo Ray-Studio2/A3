@@ -14,6 +14,7 @@
 #define SHADOW_MISS_IDX 1
 #define MIRROR_ROUGH 0.015
 #define INF_CLAMP 1e30
+#define MAX_DISTANCE 1000
 
 #include "shaders/SharedStructs.glsl"
 #include "shaders/Bindings.glsl"
@@ -63,7 +64,7 @@ void main()
        topLevelAS,
        gl_RayFlagsOpaqueEXT, 0xff,
        0, 1, ENV_MISS_IDX,
-       g.cameraPos, 0.0, rayDir, 100.0,
+       g.cameraPos, 0.0, rayDir, MAX_DISTANCE,
        0 );
 
     vec3 currentSample = gPayload.radiance;
@@ -275,7 +276,7 @@ void main()
                 topLevelAS,                         // topLevel
                 gl_RayFlagsOpaqueEXT, 0xff,         // rayFlags, cullMask
                 0, 1, SHADOW_MISS_IDX,              // sbtRecordOffset, sbtRecordStride, missIndex
-                worldPos, 0.0001, rayDir, 100.0,  	// origin, tmin, direction, tmax
+                worldPos, 0.0001, rayDir, MAX_DISTANCE,  	// origin, tmin, direction, tmax
                 0);                                 // payload
             gPayload.depth = tempDepth;
 
@@ -395,7 +396,7 @@ void main()
             gl_RayFlagsNoOpaqueEXT | gl_RayFlagsSkipClosestHitShaderEXT, // rayFlags
             0xff,                                // cullMask
             0, 1, SHADOW_MISS_IDX,               // sbtRecordOffset, sbtRecordStride, missIndex
-            worldPos, 0.001f, shadowRayDir, 100.0,  // origin, tmin, direction, tmax
+            worldPos, 0.001f, shadowRayDir, MAX_DISTANCE,  // origin, tmin, direction, tmax
             0);                                  // payload
 
         float visibility = 0.0;
@@ -477,7 +478,7 @@ void main()
             topLevelAS,                         // topLevel
             gl_RayFlagsOpaqueEXT, 0xff,         // rayFlags, cullMask
             0, 1, SHADOW_MISS_IDX,              // sbtRecordOffset, sbtRecordStride, missIndex
-            worldPos, 0.0001, rayDir, 100.0,  	// origin, tmin, direction, tmax
+            worldPos, 0.0001, rayDir, MAX_DISTANCE,  	// origin, tmin, direction, tmax
             0);                                 // payload
         gPayload.depth = tempDepth;
 
@@ -596,7 +597,7 @@ void main()
                 topLevelAS,                         // topLevel
                 gl_RayFlagsOpaqueEXT, 0xff,         // rayFlags, cullMask
                 0, 1, ENV_MISS_IDX,                 // sbtRecordOffset, sbtRecordStride, missIndex
-                worldPos, 0.0001, rayDir, 100.0,  	// origin, tmin, direction, tmax
+                worldPos, 0.0001, rayDir, MAX_DISTANCE,  	// origin, tmin, direction, tmax
                 0);                                 // payload
             gPayload.depth--;
 
@@ -712,7 +713,7 @@ void main()
 			gl_RayFlagsNoOpaqueEXT | gl_RayFlagsSkipClosestHitShaderEXT,    // rayFlags
             0xff,                               // cullMask
 			0, 1, SHADOW_MISS_IDX,              // sbtRecordOffset, sbtRecordStride, missIndex // miss shader should do nothing
-			worldPos, eps, rayDir, 100.0,  		// origin, tmin, direction, tmax
+			worldPos, eps, rayDir, MAX_DISTANCE,  		// origin, tmin, direction, tmax
 			0);                                 // gPayload
 
         const vec3 emit = getEmitFromEnvmap(rayDir);
@@ -790,7 +791,7 @@ void main()
 			topLevelAS,                         // topLevel
 			gl_RayFlagsOpaqueEXT, 0xff,         // rayFlags, cullMask
 			0, 1, ENV_MISS_IDX,                 // sbtRecordOffset, sbtRecordStride, missIndex
-			worldPos, eps, rayDir, 100.0,  		// origin, tmin, direction, tmax
+			worldPos, eps, rayDir, MAX_DISTANCE,  		// origin, tmin, direction, tmax
 			0);                                 // gPayload
 		gPayload.depth--;
 

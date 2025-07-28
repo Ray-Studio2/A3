@@ -136,7 +136,7 @@ VulkanRenderBackend::VulkanRenderBackend( GLFWwindow* window, std::vector<const 
 
     TextureManager::initialize(*this);
 
-    //// 옮겨야함
+    //// ??????몃쭥
     //createEnvironmentMap(RenderSettings::envMapPath);
 }
 
@@ -253,6 +253,9 @@ void VulkanRenderBackend::endFrame()
     vkQueuePresentKHR(graphicsQueue, &presentInfo);
 
     semaphoreIndex = (semaphoreIndex + 1) % 3;
+
+    vkQueueWaitIdle(graphicsQueue);
+    vkDeviceWaitIdle(device);
 }
 
 void VulkanRenderBackend::beginRaytracingPipeline( IRenderPipeline* inPipeline )
@@ -363,6 +366,7 @@ void VulkanRenderBackend::rebuildAccelerationStructure()
     createEnvironmentMap(RenderSettings::envMapPath);
 }
 
+PFN_vkDestroyAccelerationStructureKHR gvkDestroyAccelerationStructureKHR = nullptr;
 void VulkanRenderBackend::loadDeviceExtensionFunctions( VkDevice device )
 {
     vkGetBufferDeviceAddressKHR = ( PFN_vkGetBufferDeviceAddressKHR )( vkGetDeviceProcAddr( device, "vkGetBufferDeviceAddressKHR" ) );
@@ -374,6 +378,8 @@ void VulkanRenderBackend::loadDeviceExtensionFunctions( VkDevice device )
     vkCreateRayTracingPipelinesKHR = ( PFN_vkCreateRayTracingPipelinesKHR )( vkGetDeviceProcAddr( device, "vkCreateRayTracingPipelinesKHR" ) );
     vkGetRayTracingShaderGroupHandlesKHR = ( PFN_vkGetRayTracingShaderGroupHandlesKHR )( vkGetDeviceProcAddr( device, "vkGetRayTracingShaderGroupHandlesKHR" ) );
     vkCmdTraceRaysKHR = ( PFN_vkCmdTraceRaysKHR )( vkGetDeviceProcAddr( device, "vkCmdTraceRaysKHR" ) );
+
+    gvkDestroyAccelerationStructureKHR = vkDestroyAccelerationStructureKHR;
 
     VkPhysicalDeviceProperties2 deviceProperties2{
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
@@ -643,6 +649,7 @@ void VulkanRenderBackend::createVkPhysicalDevice()
     }
 }
 
+VkDevice gDevice = nullptr;
 void VulkanRenderBackend::createVkQueueFamily()
 {
     uint32_t queueFamilyCount = 0;
@@ -747,6 +754,8 @@ void VulkanRenderBackend::createVkQueueFamily()
     {
         throw std::runtime_error("failed to create logical device!");
     }
+
+    gDevice = device;
 
     vkGetDeviceQueue(device, queueFamilyIndex, 0, &graphicsQueue);
 
@@ -1184,7 +1193,7 @@ void VulkanRenderBackend::createEnvironmentMapImportanceSampling(float* pixels, 
 
     float luminanceSum = 0.0f;
 
-    // 1. Luminance × sin(theta) 계산 (soften: gamma 적용)
+    // 1. Luminance ??sin(theta) ??ｌ뫒亦?(soften: gamma ??⑤챷??
     const float gamma = 0.9f;
     for (int y = 0; y < height; ++y) {
         float theta = 3.14159265f * (y + 0.5f) / float(height);
@@ -1202,7 +1211,7 @@ void VulkanRenderBackend::createEnvironmentMapImportanceSampling(float* pixels, 
 
     if (luminanceSum <= 0.0f) luminanceSum = 1e-6f; // TODO: throw an exception instead
 
-    // 2. Marginal PDF & CDF (y 방향)
+    // 2. Marginal PDF & CDF (y ?꾩렮維싧젆?
     float marginalAccum = 0.0f;
     for (int y = 0; y < height; ++y) {
         float rowSum = 0.0f;
@@ -1210,7 +1219,7 @@ void VulkanRenderBackend::createEnvironmentMapImportanceSampling(float* pixels, 
             rowSum += luminances[y * width + x];
         }
         float pdf = rowSum / luminanceSum;
-        //pdf = std::max(pdf, 1e-6f); // clamp 최소값
+        //pdf = std::max(pdf, 1e-6f); // clamp 嶺뚣끉裕??붿쾸?
         marginalPdf[y] = pdf;
         marginalAccum += pdf;
         marginalCdf[y] = marginalAccum;
@@ -1220,9 +1229,9 @@ void VulkanRenderBackend::createEnvironmentMapImportanceSampling(float* pixels, 
     for (int y = 0; y < height; ++y) {
         marginalCdf[y] /= marginalAccum;
     }
-    marginalCdf[height - 1] = 1.0f; // 강제 클램프
+    marginalCdf[height - 1] = 1.0f; // ?띠룆踰????????
 
-    // 3. Conditional PDF & CDF (x 방향 per row)
+    // 3. Conditional PDF & CDF (x ?꾩렮維싧젆?per row)
     for (int y = 0; y < height; ++y) {
         float rowSum = 0.0f;
         for (int x = 0; x < width; ++x) {
@@ -1232,7 +1241,7 @@ void VulkanRenderBackend::createEnvironmentMapImportanceSampling(float* pixels, 
         rowSum = std::max(rowSum, 1e-6f);
         float accum = 0.0f;
 
-        // CDF 작성
+        // CDF ??얜???
         for (int x = 0; x < width; ++x) {
             int i = y * width + x;
             float conditionalPdf = luminances[i] / rowSum;
@@ -1249,14 +1258,14 @@ void VulkanRenderBackend::createEnvironmentMapImportanceSampling(float* pixels, 
             conditionalCdf[ i ] /= accum;
         }
 
-        // 마지막 CDF 클램프
+        // 嶺뚮씭??嶺?CDF ??????
         int last = y * width + (width - 1);
         conditionalCdf[ last ] = 1.0f;
     }
 
     constexpr float pi = 3.1415926535897932384626433832795;
 
-    // ---- Marginal CDF 이진 탐색 (Y 방향) ----
+    // ---- Marginal CDF ??怨몄땟 ?????(Y ?꾩렮維싧젆? ----
     for( uint32 indexY = 0; indexY < height; ++indexY )
     {
         const float indexYNormalized = (float(indexY) + 0.5) / height;
@@ -1273,7 +1282,7 @@ void VulkanRenderBackend::createEnvironmentMapImportanceSampling(float* pixels, 
         }
         const uint32 y = yLow;
 
-        // ---- Conditional CDF 이진 탐색 (X 방향) ----
+        // ---- Conditional CDF ??怨몄땟 ?????(X ?꾩렮維싧젆? ----
         for( uint32 indexX = 0; indexX < width; ++indexX )
         {
             const uint32 indexXY = indexX + indexY * width;
@@ -1306,7 +1315,7 @@ void VulkanRenderBackend::createEnvironmentMapImportanceSampling(float* pixels, 
         }
     }
 
-    // 4. Vulkan Buffer 업로드
+    // 4. Vulkan Buffer ???놁Ŧ??
     // Envmap Sampling Image
     VkDeviceSize imageSize = sizeof( EnvImportanceSampleData ) * EnvData.size();
 
@@ -1377,7 +1386,7 @@ void VulkanRenderBackend::createEnvironmentMapImportanceSampling(float* pixels, 
     beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
     vkBeginCommandBuffer(cmd, &beginInfo);
 
-    // Importance(RGBA32F) 업로드 -------------------------------------------------
+    // Importance(RGBA32F) ???놁Ŧ??-------------------------------------------------
     setImageLayout(cmd, envImportanceImage, VK_IMAGE_LAYOUT_UNDEFINED,
         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, subresourceRange,
         VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
@@ -1395,7 +1404,7 @@ void VulkanRenderBackend::createEnvironmentMapImportanceSampling(float* pixels, 
     vkCmdCopyBufferToImage(cmd, stagingBuffer, envImportanceImage,
         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
 
-    // HitPdf(R32F) 업로드 --------------------------------------------------------
+    // HitPdf(R32F) ???놁Ŧ??--------------------------------------------------------
     setImageLayout(cmd, envHitImage, VK_IMAGE_LAYOUT_UNDEFINED,
         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, subresourceRange,
         VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
@@ -1413,7 +1422,7 @@ void VulkanRenderBackend::createEnvironmentMapImportanceSampling(float* pixels, 
     vkCmdCopyBufferToImage(cmd, hitStagingBuffer, envHitImage,
         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &hitRegion);
 
-    // Shader-read 전환 ----------------------------------------------------------
+    // Shader-read ?熬곥굦??----------------------------------------------------------
     setImageLayout(cmd, envImportanceImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, subresourceRange,
         VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
@@ -1421,7 +1430,7 @@ void VulkanRenderBackend::createEnvironmentMapImportanceSampling(float* pixels, 
         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, subresourceRange,
         VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
 
-    // 커맨드버퍼 종료 & Submit ----------------------------------------------------
+    // ??ｋ걞???類ㅼ뮅????リ턁筌?& Submit ----------------------------------------------------
     vkEndCommandBuffer(cmd);
 
     VkSubmitInfo submitInfo{ .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO };
@@ -1791,6 +1800,15 @@ struct ObjectDesc
 // @TODO: Support more than 1 instance
 void VulkanRenderBackend::createTLAS( const std::vector<BLASBatch*>& batches )
 {
+    //vkFreeMemory(device, objectBufferMem, nullptr);
+    //vkDestroyBuffer(device, objectBuffer, nullptr);
+    //if (tlasBufferMem != nullptr)
+    //{
+    //    vkFreeMemory(device, tlasBufferMem, nullptr);
+    //    vkDestroyBuffer(device, tlasBuffer, nullptr);
+    //}
+    //vkDestroyAccelerationStructureKHR(device, tlas, nullptr);
+
     std::vector<VkAccelerationStructureInstanceKHR> instanceData;
     void* dst;
 
@@ -1801,7 +1819,6 @@ void VulkanRenderBackend::createTLAS( const std::vector<BLASBatch*>& batches )
         objectBufferCount += batch->transforms.size();
     }
     const uint64 objectDescBufferSize = objectBufferCount * sizeof(ObjectDesc);
-    VkDeviceMemory objectBufferMem;
     std::tie(objectBuffer, objectBufferMem) = createBuffer(
         objectDescBufferSize,
         VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
@@ -1828,7 +1845,7 @@ void VulkanRenderBackend::createTLAS( const std::vector<BLASBatch*>& batches )
             instance.instanceCustomIndex = objectIndex;
             instance.instanceShaderBindingTableRecordOffset = instanceData.size();
 
-            instanceData.push_back( instance );
+            instanceData.push_back( std::move(instance) );
             ObjectDesc objectDesc
             {
 				.vertexPositionDeviceAddress = getDeviceAddressOf(blas->vertexPositionBuffer),
@@ -2249,7 +2266,7 @@ IRenderPipelineRef VulkanRenderBackend::createRayTracingPipeline( const Raytraci
     //==========================================================
     // Pipeline layout
     //==========================================================
-    std::vector<VkDescriptorSetLayoutBinding> bindings( 12 );
+    bindings.resize(12);
     for( const ShaderDesc& shaderDesc : psoDesc.shaders )
     {
         for( const ShaderResourceDescriptor& descriptor : shaderDesc.descriptors )
@@ -2367,148 +2384,6 @@ IRenderPipelineRef VulkanRenderBackend::createRayTracingPipeline( const Raytraci
 	};
     result = vkAllocateDescriptorSets( device, &allocateInfo, &outPipeline->descriptorSet );
 
-    {
-        struct ScopedWriteDescriptorSets
-        {
-            std::vector<VkWriteDescriptorSet> descriptors;
-
-            std::vector<VkWriteDescriptorSetAccelerationStructureKHR> accelerationStructures;
-            std::vector<VkDescriptorImageInfo> images;
-            std::vector<VkDescriptorBufferInfo> buffers;
-
-            std::vector<VkDescriptorImageInfo> texture_image_infos;
-            std::vector<VkDescriptorImageInfo> sampler_infos;
-        };
-
-        ScopedWriteDescriptorSets writeDescriptorSets;
-
-        { // @TODO: Deterministic resize
-            writeDescriptorSets.descriptors.resize( bindings.size() );
-            writeDescriptorSets.accelerationStructures.reserve( bindings.size() );
-            writeDescriptorSets.images.reserve( bindings.size() );
-            writeDescriptorSets.buffers.reserve( bindings.size() );
-            writeDescriptorSets.texture_image_infos.reserve(TextureManager::gTextureArray.size());
-            writeDescriptorSets.sampler_infos.reserve(bindings.size());
-        }
-
-        // @TODO: Move to scene level
-        std::vector<VkBuffer> storageBuffers =
-        {
-            nullptr, nullptr,
-            cameraBuffer, objectBuffer,
-            lightBuffer, nullptr, nullptr, imguiBuffer
-        };
-
-        std::vector<VkWriteDescriptorSet> validDescriptors;
-
-        for( int32 index = 0; index < bindings.size(); ++index )
-        {
-            const VkDescriptorSetLayoutBinding& binding = bindings[ index ];
-
-            VkWriteDescriptorSet descriptor{};
-            descriptor.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            descriptor.dstSet = outPipeline->descriptorSet;
-            descriptor.descriptorCount = 1;
-            descriptor.dstBinding = index;
-            descriptor.descriptorType = binding.descriptorType;
-
-            if( binding.descriptorType == VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR )
-            {
-                writeDescriptorSets.accelerationStructures.emplace_back(
-                    VkWriteDescriptorSetAccelerationStructureKHR
-                    {
-                        .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR,
-                        .accelerationStructureCount = 1,
-                        .pAccelerationStructures = &tlas
-                    }
-                );
-
-                descriptor.pNext = &writeDescriptorSets.accelerationStructures.back();
-            }
-            else if( binding.descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE )
-            {
-                // binding 1 is output image, binding 5 is accumulation image
-                VkImageView imageView = (index == 1) ? outImageView : accumulationImageView;
-
-                writeDescriptorSets.images.emplace_back(
-                    VkDescriptorImageInfo
-                    {
-                        .imageView = imageView,
-                        .imageLayout = VK_IMAGE_LAYOUT_GENERAL
-                    }
-                );
-
-                descriptor.pImageInfo = &writeDescriptorSets.images.back();
-            }
-            else if( binding.descriptorType == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER || binding.descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER )
-            {
-                VkBuffer buffer = storageBuffers[ index ];
-                if (buffer == nullptr) {
-                    printf("WARNING: Storage buffer at index %d is null (binding %d)\n", index, binding.binding);
-                    // Skip this descriptor for now
-                    continue;
-                }
-
-                writeDescriptorSets.buffers.emplace_back(
-                    VkDescriptorBufferInfo
-                    {
-                        .buffer = buffer,
-                        .offset = 0,
-                        .range = VK_WHOLE_SIZE
-                    }
-                );
-
-                descriptor.pBufferInfo = &writeDescriptorSets.buffers.back();
-            }
-            else if (binding.descriptorType == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
-            {
-                writeDescriptorSets.images.emplace_back(
-                    VkDescriptorImageInfo{
-                        .sampler = envSampler,
-                        .imageView = index == 6 ? envImageView : index == 8 ? envImportanceView : envHitView, // @TODO: decouple index based logic
-                        .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
-                    }
-                );
-
-                descriptor.pImageInfo = &writeDescriptorSets.images.back();
-            }
-            else if (binding.descriptorType == VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE)
-            {
-                for (uint32 i = 0; i < TextureManager::gTextureArray.size(); ++i)
-                {
-                    const TextureManager::TextureView& view = TextureManager::gTextureArray[i];
-                    writeDescriptorSets.texture_image_infos.emplace_back(
-                        VkDescriptorImageInfo{
-                            .sampler = VK_NULL_HANDLE,
-                            .imageView = view._view,
-                            .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                        }
-                        );
-                }
-
-                descriptor.dstBinding = TEXTUREBINDLESS_BINDING_LOCATION;
-                descriptor.descriptorCount = writeDescriptorSets.texture_image_infos.size();
-                descriptor.pImageInfo = writeDescriptorSets.texture_image_infos.data();
-            }
-            else if (binding.descriptorType == VK_DESCRIPTOR_TYPE_SAMPLER)
-            {
-                VkDescriptorImageInfo sampler_infos;
-                sampler_infos.sampler = TextureManager::gLinearSampler;
-                sampler_infos.imageView = VK_NULL_HANDLE;
-                writeDescriptorSets.sampler_infos.push_back(std::move(sampler_infos));
-
-                descriptor.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-                descriptor.pImageInfo = writeDescriptorSets.sampler_infos.data();
-            }
-            
-            validDescriptors.push_back(descriptor);
-        }
-
-        if (!validDescriptors.empty()) {
-            vkUpdateDescriptorSets( device, validDescriptors.size(), validDescriptors.data(), 0, VK_NULL_HANDLE );
-        }
-    }
-
     //==========================================================
     // Shader binding table
     //==========================================================
@@ -2590,6 +2465,149 @@ IRenderPipelineRef VulkanRenderBackend::createRayTracingPipeline( const Raytraci
     vkUnmapMemory( device, sbtBufferMem );
 
     return IRenderPipelineRef( outPipeline );
+}
+
+void A3::VulkanRenderBackend::updateDescriptorSet(VulkanPipeline* outPipeline)
+{
+    struct ScopedWriteDescriptorSets
+    {
+        std::vector<VkWriteDescriptorSet> descriptors;
+
+        std::vector<VkWriteDescriptorSetAccelerationStructureKHR> accelerationStructures;
+        std::vector<VkDescriptorImageInfo> images;
+        std::vector<VkDescriptorBufferInfo> buffers;
+
+        std::vector<VkDescriptorImageInfo> texture_image_infos;
+        std::vector<VkDescriptorImageInfo> sampler_infos;
+    };
+
+    ScopedWriteDescriptorSets writeDescriptorSets;
+
+    { // @TODO: Deterministic resize
+        writeDescriptorSets.descriptors.resize(bindings.size());
+        writeDescriptorSets.accelerationStructures.reserve(bindings.size());
+        writeDescriptorSets.images.reserve(bindings.size());
+        writeDescriptorSets.buffers.reserve(bindings.size());
+        writeDescriptorSets.texture_image_infos.reserve(TextureManager::gTextureArray.size());
+        writeDescriptorSets.sampler_infos.reserve(bindings.size());
+    }
+
+    // @TODO: Move to scene level
+    std::vector<VkBuffer> storageBuffers =
+    {
+        nullptr, nullptr,
+        cameraBuffer, objectBuffer,
+        lightBuffer, nullptr, nullptr, imguiBuffer
+    };
+
+    std::vector<VkWriteDescriptorSet> validDescriptors;
+
+    for (int32 index = 0; index < bindings.size(); ++index)
+    {
+        const VkDescriptorSetLayoutBinding& binding = bindings[index];
+
+        VkWriteDescriptorSet descriptor{};
+        descriptor.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptor.dstSet = outPipeline->descriptorSet;
+        descriptor.descriptorCount = 1;
+        descriptor.dstBinding = index;
+        descriptor.descriptorType = binding.descriptorType;
+
+        if (binding.descriptorType == VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR)
+        {
+            writeDescriptorSets.accelerationStructures.emplace_back(
+                VkWriteDescriptorSetAccelerationStructureKHR
+                {
+                    .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR,
+                    .accelerationStructureCount = 1,
+                    .pAccelerationStructures = &tlas
+                }
+            );
+
+            descriptor.pNext = &writeDescriptorSets.accelerationStructures.back();
+        }
+        else if (binding.descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
+        {
+            // binding 1 is output image, binding 5 is accumulation image
+            VkImageView imageView = (index == 1) ? outImageView : accumulationImageView;
+
+            writeDescriptorSets.images.emplace_back(
+                VkDescriptorImageInfo
+                {
+                    .imageView = imageView,
+                    .imageLayout = VK_IMAGE_LAYOUT_GENERAL
+                }
+            );
+
+            descriptor.pImageInfo = &writeDescriptorSets.images.back();
+        }
+        else if (binding.descriptorType == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER || binding.descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+        {
+            VkBuffer buffer = storageBuffers[index];
+            if (buffer == nullptr) {
+                printf("WARNING: Storage buffer at index %d is null (binding %d)\n", index, binding.binding);
+                // Skip this descriptor for now
+                continue;
+            }
+
+            writeDescriptorSets.buffers.emplace_back(
+                VkDescriptorBufferInfo
+                {
+                    .buffer = buffer,
+                    .offset = 0,
+                    .range = VK_WHOLE_SIZE
+                }
+            );
+
+            descriptor.pBufferInfo = &writeDescriptorSets.buffers.back();
+        }
+        else if (binding.descriptorType == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
+        {
+            writeDescriptorSets.images.emplace_back(
+                VkDescriptorImageInfo{
+                    .sampler = envSampler,
+                    .imageView = index == 6 ? envImageView : index == 8 ? envImportanceView : envHitView, // @TODO: decouple index based logic
+                    .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+                }
+            );
+
+            descriptor.pImageInfo = &writeDescriptorSets.images.back();
+        }
+        else if (binding.descriptorType == VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE)
+        {
+            for (uint32 i = 0; i < TextureManager::gTextureArray.size(); ++i)
+            {
+                const TextureManager::TextureView& view = TextureManager::gTextureArray[i];
+                writeDescriptorSets.texture_image_infos.emplace_back(
+                    VkDescriptorImageInfo{
+                        .sampler = VK_NULL_HANDLE,
+                        .imageView = view._view,
+                        .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                    }
+                    );
+            }
+
+            descriptor.dstBinding = TEXTUREBINDLESS_BINDING_LOCATION;
+            descriptor.descriptorCount = writeDescriptorSets.texture_image_infos.size();
+            descriptor.pImageInfo = writeDescriptorSets.texture_image_infos.data();
+        }
+        else if (binding.descriptorType == VK_DESCRIPTOR_TYPE_SAMPLER)
+        {
+            VkDescriptorImageInfo sampler_infos;
+            sampler_infos.sampler = TextureManager::gLinearSampler;
+            sampler_infos.imageView = VK_NULL_HANDLE;
+            writeDescriptorSets.sampler_infos.push_back(std::move(sampler_infos));
+
+            descriptor.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            descriptor.pImageInfo = writeDescriptorSets.sampler_infos.data();
+        }
+
+        validDescriptors.push_back(descriptor);
+    }
+
+    if (!validDescriptors.empty()) {
+        vkUpdateDescriptorSets(device, validDescriptors.size(), validDescriptors.data(), 0, VK_NULL_HANDLE);
+    }
 }
 
 /*

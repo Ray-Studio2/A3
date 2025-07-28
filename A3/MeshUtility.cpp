@@ -34,7 +34,7 @@ void Utility::loadMeshFile( MeshResource& outMesh, const std::string& filePath )
     uint32 sumIdx = 1;
     for( const auto& shape : shapes )
     {
-        outMesh.triangleCount = shape.mesh.num_face_vertices.size();
+        outMesh.triangleCount = static_cast<uint32>(shape.mesh.num_face_vertices.size());
 
         outMesh.positions.reserve( shape.mesh.indices.size() + outMesh.positions.size() );
         outMesh.indices.reserve( shape.mesh.indices.size() + outMesh.indices.size() );

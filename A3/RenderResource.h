@@ -7,6 +7,8 @@ namespace A3
 struct IAccelerationStructure
 {
 	virtual ~IAccelerationStructure() {}
+
+	virtual void destroy() = 0;
 };
 using IAccelerationStructureRef = std::unique_ptr<IAccelerationStructure>;
 

@@ -21,13 +21,16 @@ public:
 
 	void createRenderResources( IRenderBackend* backend )
 	{
+		if(blasBatch.blas.get() != nullptr)
+			blasBatch.blas->destroy();
+
 		BLASBuildParams params = {
-			.positionData = resource->positions,
-			.attributeData = resource->attributes,
+			.positionData = resource->_jointIndicesData.empty() || resource->_weightsData.empty() ? resource->positions : _skinnedPositions,
+			.attributeData = resource->_jointIndicesData.empty() || resource->_weightsData.empty() ? resource->attributes : _skinnedAttributes,
 			.indexData = resource->indices,
 			.cumulativeTriangleAreaData = resource->cumulativeTriangleArea,
 			.material = *_material,
-			.transformData = Mat3x4::identity
+			.transformData = resource->_jointIndicesData.empty() || resource->_weightsData.empty() ? Mat3x4::identity : Mat3x4{0.2f, 0, 0, 0, 0, 0.2f, 0, 0, 0, 0, 0.2f, 0 }, 
 		};
 		blasBatch.blas = backend->createBLAS( params );
 		blasBatch.transforms = { localToWorld };
@@ -56,6 +59,13 @@ public:
 			resource->cumulativeTriangleArea[sumIdx++] = resource->cumulativeTriangleArea[sumIdx - 1] + magnitude;
 		}
 	}
+
+public:
+	uint32 _skeletonIndex = 0;
+	uint32 _animationIndex = 0;
+
+	std::vector<VertexPosition> _skinnedPositions;
+	std::vector<VertexAttributes> _skinnedAttributes;
 
 private:
 	MeshResource* resource;

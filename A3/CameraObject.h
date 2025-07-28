@@ -5,15 +5,6 @@
 namespace A3
 {
 
-inline Vec3 operator*(const Mat3x3& m, const Vec3& v)
-{
-	return Vec3{
-		m.m00 * v.x + m.m01 * v.y + m.m02 * v.z,
-		m.m10 * v.x + m.m11 * v.y + m.m12 * v.z,
-		m.m20 * v.x + m.m21 * v.y + m.m22 * v.z
-	};
-}
-
 class CameraObject : public SceneObject
 {
 public:
@@ -27,7 +18,7 @@ public:
 	Vec3 getFront() { return front; }
 
 	void move(int key) {
-		static const float camSpeed = 0.05f;
+		static const float camSpeed = 1.0f;
 		static const Vec3 upVector(0.0f, 1.0f, 0.0f);
 
 		if (key == GLFW_KEY_W) position += (front * camSpeed);

@@ -232,7 +232,6 @@ void Scene::loadGLTF(const std::string& fileName, VulkanRenderBackend& vulkanBac
 				Mat4x4 bindPoseLocalMatrix = getNodeLocalTransform(jointNode);
 
 				bindPoseLocalMatrix.transpose();
-				//inverseBindMatrices[i].transpose();
 
 				Mat4x4 bindPoseWorldMatrix = bindPoseLocalMatrix;
 				int tempNodeIndex = jointIndex;
@@ -242,34 +241,8 @@ void Scene::loadGLTF(const std::string& fileName, VulkanRenderBackend& vulkanBac
 					Mat4x4 parentLocalMatrix = getNodeLocalTransform(model.nodes[parentNodeIndex]);
 					parentLocalMatrix.transpose();
 					bindPoseWorldMatrix = mul(parentLocalMatrix, bindPoseWorldMatrix);
-					//Mat4x4 trueInv = glm::inverse(bindPoseLocalMatrix);
 					tempNodeIndex = parentNodeIndex;
 				}
-
-				//Mat4x4 trueInv = glm::inverse(bindPoseLocalMatrix);
-
-				Mat4x4 test = mul(inverseBindMatrices[i], bindPoseWorldMatrix);
-				Mat4x4 test2 = mul(bindPoseWorldMatrix, inverseBindMatrices[i]);
-
-				//A3_ASSERT_DEV("Long", AreSame(test[0][0], 1.0f, 0.00001f), "");
-				//A3_ASSERT_DEV("Long", AreSame(test[0][1], 0.0f, 0.00001f), "");
-				//A3_ASSERT_DEV("Long", AreSame(test[0][2], 0.0f, 0.00001f), "");
-				//A3_ASSERT_DEV("Long", AreSame(test[0][3], 0.0f, 0.00001f), "");
-
-				//A3_ASSERT_DEV("Long", AreSame(test[1][0], 0.0f, 0.00001f), "");
-				//A3_ASSERT_DEV("Long", AreSame(test[1][1], 1.0f, 0.00001f), "");
-				//A3_ASSERT_DEV("Long", AreSame(test[1][2], 0.0f, 0.00001f), "");
-				//A3_ASSERT_DEV("Long", AreSame(test[1][3], 0.0f, 0.00001f), "");
-
-				//A3_ASSERT_DEV("Long", AreSame(test[2][0], 0.0f, 0.00001f), "");
-				//A3_ASSERT_DEV("Long", AreSame(test[2][1], 0.0f, 0.00001f), "");
-				//A3_ASSERT_DEV("Long", AreSame(test[2][2], 1.0f, 0.00001f), "");
-				//A3_ASSERT_DEV("Long", AreSame(test[2][3], 0.0f, 0.00001f), "");
-
-				//A3_ASSERT_DEV("Long", AreSame(test[3][0], 0.0f, 0.00001f), "");
-				//A3_ASSERT_DEV("Long", AreSame(test[3][1], 0.0f, 0.00001f), "");
-				//A3_ASSERT_DEV("Long", AreSame(test[3][2], 0.0f, 0.00001f), "");
-				//A3_ASSERT_DEV("Long", AreSame(test[3][3], 1.0f, 0.00001f), "");
 
 				Bone bone;
 				bone._bonaName = boneName;
@@ -282,9 +255,6 @@ void Scene::loadGLTF(const std::string& fileName, VulkanRenderBackend& vulkanBac
 
 				skeleton._boneDressPoseArray.push_back(bindPoseWorldMatrix);
 				if (i < inverseBindMatrices.size()) {
-					//std::swap(inverseBindMatrices[i].m30, inverseBindMatrices[i].m03);
-					//std::swap(inverseBindMatrices[i].m31, inverseBindMatrices[i].m13);
-					//std::swap(inverseBindMatrices[i].m32, inverseBindMatrices[i].m23);
 					skeleton._boneDressPoseInverseArray.push_back(inverseBindMatrices[i]);
 				}
 				else {
@@ -312,29 +282,6 @@ void Scene::loadGLTF(const std::string& fileName, VulkanRenderBackend& vulkanBac
 				skeleton._boneArray[childBoneIndex]._parentBoneIndex = i;
 				skeleton._boneArray[i]._childBoneIndexArr[j] = childBoneIndex;
 			}
-		}
-
-		std::vector<Mat4x4> testTransformWorld = skeleton._boneDressPoseArray;
-		for (int i = 0; i < skeleton._boneArray.size(); ++i)
-		{
-			Bone& bone = skeleton._boneArray[i];
-			Mat4x4 pose = skeleton._boneDressPoseArray[i];
-			//Mat4x4 pose2 = skeleton._boneDressPoseArray[i];
-			Mat4x4& inv = skeleton._boneDressPoseInverseArray[i];
-
-			if (bone._parentBoneIndex >= 0)
-			{
-				pose = mul(pose, testTransformWorld[bone._parentBoneIndex]);
-				//pose2 = mul(pose2, testTransformWorld[bone._parentBoneIndex]);
-			}
-
-			Mat4x4 test = mul(pose, inv);
-			Mat4x4 test2 = mul(inv, pose);
-
-			//Mat4x4 test3 = mul(pose2, inv);
-			//Mat4x4 test4 = mul(inv, pose2);
-
-			testTransformWorld[i] = pose;
 		}
 
 		{
@@ -423,13 +370,6 @@ void Scene::loadGLTF(const std::string& fileName, VulkanRenderBackend& vulkanBac
 					animData._scale._time = times;
 					type = AnimationNodeType::SCALE;
 				}
-
-				//if(animData._translation._time.empty() == false)
-				//	maxTime = std::max(maxTime, animData._translation._time[animData._translation._time.size() - 1]);
-				//if (animData._rotation._time.empty() == false)
-				//	maxTime = std::max(maxTime, animData._rotation._time[animData._rotation._time.size() - 1]);
-				//if (animData._scale._time.empty() == false)
-				//	maxTime = std::max(maxTime, animData._scale._time[animData._scale._time.size() - 1]);
 
 				const auto iter = animation._animData.find(boneName);
 				if (iter == animation._animData.end())
@@ -930,82 +870,8 @@ void Scene::load(const std::string& path, VulkanRenderBackend& vulkanBackend) {
 			index++;
 		}
 	}
-#if 0
-	tinygltf::Model model;
-	tinygltf::TinyGLTF loader;
-	std::string err;
-	std::string warn;
 
-	std::string filePath = "C:/Users/dhfla/Desktop/Projects/Universe/asset/phoenix_bird/scene.gltf";
-
-	bool ret = loader.LoadASCIIFromFile(&model, &err, &warn, filePath);
-
-	if (!warn.empty()) {
-		throw std::runtime_error("Warning: " + warn);
-	}
-
-	if (!err.empty()) {
-		throw std::runtime_error("Error: " + err);
-	}
-
-	if (!ret) {
-		throw std::runtime_error("Fail to parsing glTF\nPath: " + filePath);
-	}
-
-	std::cout << "Success to load glTF!" << std::endl;
-
-	const tinygltf::Scene& scene = model.scenes[model.defaultScene];
-
-	for (size_t i = 0; i < scene.nodes.size(); ++i) {
-		const tinygltf::Node& node = model.nodes[scene.nodes[i]];
-		std::cout << "Node Name: " << node.name << std::endl;
-
-		if (node.mesh > -1) {
-			const tinygltf::Mesh& mesh = model.meshes[node.mesh];
-			std::cout << "  - Mesh Name: " << mesh.name << std::endl;
-
-			for (size_t i = 0; i < mesh.primitives.size(); ++i) {
-				const tinygltf::Primitive& primitive = mesh.primitives[i];
-
-				// primitive.attributes is contain attributename and accessor index
-				for (auto const& [name, accessor_idx] : primitive.attributes) {
-					std::cout << "    - Attribute: " << name << std::endl;
-
-					const tinygltf::Accessor& accessor = model.accessors[accessor_idx];
-					const tinygltf::BufferView& bufferView = model.bufferViews[accessor.bufferView];
-					const tinygltf::Buffer& buffer = model.buffers[bufferView.buffer];
-
-					const uint32 vertexCount = accessor.count;
-
-					if (name == "POSITION") {
-						const unsigned char* data_start = &buffer.data[bufferView.byteOffset + accessor.byteOffset];
-						const float* positions = reinterpret_cast<const float*>(data_start);
-
-						for (size_t v = 0; v < vertexCount; ++v) {
-							float x = positions[v * 3 + 0];
-							float y = positions[v * 3 + 1];
-							float z = positions[v * 3 + 2];
-						}
-					}
-				}
-
-				if (primitive.indices > -1) {
-					const tinygltf::Accessor& indexAccessor = model.accessors[primitive.indices];
-					const tinygltf::BufferView& indexBufferView = model.bufferViews[indexAccessor.bufferView];
-					const tinygltf::Buffer& indexBuffer = model.buffers[indexBufferView.buffer];
-
-					// ?筌뤾퍓?????⑥щ턄????戮곗굚 ?熬곣뫚??
-					const unsigned char* data_start = &indexBuffer.data[indexBufferView.byteOffset + indexAccessor.byteOffset];
-
-					// ?筌뤾퍓???????unsigned short, unsigned int ??????⑤벡逾???⑤챷???嶺?흮????뽱돵????紐껊퉵??
-					// indexAccessor.componentType???筌먦끉逾??琉우뿰 嶺뚳퐣瑗???紐껊퉵??
-				}
-			}
-		}
-	}
-#else
 	loadGLTF("../Assets/phoenix_bird/scene.gltf", vulkanBackend);
-#endif
 }
 
 void Scene::save(const std::string& path) const {}
@@ -1116,48 +982,14 @@ void Scene::beginFrame(const float fixedDeltaTime)
 						return mat;
 					};
 
-				Vec4 test = Vec4(0, 0.707f, 0, 0.707f);
-				Mat3x3 tttt = makeMat3x3(test);
-				Vec3 temp(1, 1, 3);
-				temp.normalize();
-				Vec3 final = tttt * temp;
-
-				Mat4x4 boneLocalAnimationMatrix = makeMatrix();
-				Mat4x4 animationMatrixt = boneLocalAnimationMatrix;
+				Mat4x4 animationMatrix = makeMatrix();
 				if (bone._parentBoneIndex >= 0)
 				{
 					const Bone& parentBone = skeleton._boneArray[bone._parentBoneIndex];
-					animationMatrixt = mul(animationMatrices[bone._parentBoneIndex], animationMatrixt);
+					animationMatrix = mul(animationMatrices[bone._parentBoneIndex], animationMatrix);
 				}
 
-				//if (i == 28)
-				//	animationMatrixt = skeleton._boneDressPoseArray[28];
-
-				{
-					Vec4 asdasd(1, 0, 0, 0);
-					Vec4 aadd = animationMatrixt * asdasd;
-					float len = std::sqrt(aadd.x * aadd.x + aadd.y * aadd.y + aadd.z * aadd.z);
-
-					int a = 10;
-				}
-				{
-					Vec4 asdasd(0, 1, 0, 0);
-					Vec4 aadd = animationMatrixt * asdasd;
-					float len = std::sqrt(aadd.x * aadd.x + aadd.y * aadd.y + aadd.z * aadd.z);
-
-					int a = 10;
-				}
-				{
-					Vec4 asdasd(0, 0, 1, 0);
-					Vec4 aadd = animationMatrixt * asdasd;
-					float len = std::sqrt(aadd.x * aadd.x + aadd.y * aadd.y + aadd.z * aadd.z);
-
-					int a = 10;
-				}
-
-				animationMatrices[i] = animationMatrixt;
-
-				int a = 10;
+				animationMatrices[i] = animationMatrix;
 			}
 
 			for (uint32 i = 0; i < boneCount; ++i)
@@ -1165,49 +997,14 @@ void Scene::beginFrame(const float fixedDeltaTime)
 				const Bone& bone = skeleton._boneArray[i];
 				A3_ASSERT_DEV("LongtimeProdity", skeleton._boneNameIndexMapper.find(bone._bonaName) != skeleton._boneNameIndexMapper.end(), "");
 				A3_ASSERT_DEV("LongtimeProdity", skeleton._boneNameIndexMapper[bone._bonaName] == i, "");
-				//const uint32 boneIndex = skeleton._boneNameIndexMapper[bone._bonaName];
 
-				Mat4x4 test;
-				//if (bone._parentBoneIndex >= 0)
-				//{
-				//	test = mul(skeleton._boneDressPoseArray[bone._parentBoneIndex], skeleton._boneDressPoseArray[i]);
-				//}
-				//else
-				{
-					test = skeleton._boneDressPoseArray[i];
-				}
-
-				//std::swap(test.m30, test.m03);
-				//std::swap(test.m31, test.m13);
-				//std::swap(test.m32, test.m23);
-
-				const Mat4x4& animationMatrix = animationMatrices[i];
+#if 0
+				const Mat4x4& animationMatrix = skeleton._boneDressPoseArray[i];	//  T-Pose 그리기
+#else
+				const Mat4x4& animationMatrix = animationMatrices[i];				// animation pose 그리기
+#endif
 				const Mat4x4& dressPoseInvMatrix = skeleton._boneDressPoseInverseArray[i];
-				const Mat4x4 skinningMatrix = mul(animationMatrix, dressPoseInvMatrix);
-
-				{
-					Vec4 asdasd(1, 0, 0, 0);
-					Vec4 aadd = skinningMatrix * asdasd;
-					float len = std::sqrt(aadd.x * aadd.x + aadd.y * aadd.y + aadd.z * aadd.z);
-
-					int a = 10;
-				}
-				{
-					Vec4 asdasd(0, 1, 0, 0);
-					Vec4 aadd = skinningMatrix * asdasd;
-					float len = std::sqrt(aadd.x * aadd.x + aadd.y * aadd.y + aadd.z * aadd.z);
-
-					int a = 10;
-				}
-				{
-					Vec4 asdasd(0.321633160f, -0.368517727f, -0.872207999f, 0);
-					Vec4 aadd = skinningMatrix * asdasd;
-					float len = std::sqrt(aadd.x * aadd.x + aadd.y * aadd.y + aadd.z * aadd.z);
-
-					int a = 10;
-				}
-
-				skinningMatrices[i] = skinningMatrix;
+				skinningMatrices[i] = mul(animationMatrix, dressPoseInvMatrix);
 			}
 
 			std::vector<VertexPosition> skinnedPositions;
@@ -1219,11 +1016,11 @@ void Scene::beginFrame(const float fixedDeltaTime)
 
 			for (uint32 i = 0; i < vertexCount; ++i)
 			{
-				Mat4x4 tempSkinningMatrix = Mat4x4::identity;
-				tempSkinningMatrix.m00 = 0;
-				tempSkinningMatrix.m11 = 0;
-				tempSkinningMatrix.m22 = 0;
-				tempSkinningMatrix.m33 = 0;
+				Mat4x4 skinningMatrix = Mat4x4::identity;
+				skinningMatrix.m00 = 0;
+				skinningMatrix.m11 = 0;
+				skinningMatrix.m22 = 0;
+				skinningMatrix.m33 = 0;
 
 				float sumWeight = 0.0f;
 				A3_ASSERT_DEV("LongtimeProdigy", mo->getResource()->_jointIndicesData.size() == mo->getResource()->_weightsData.size(), "");
@@ -1253,10 +1050,13 @@ void Scene::beginFrame(const float fixedDeltaTime)
 						break;
 					}
 
-					tempSkinningMatrix += skinningMatrices[boneIndex] * weight;
+					skinningMatrix += skinningMatrices[boneIndex] * weight;
 					sumWeight += weight;
 				}
 
+				A3_ASSERT_DEV("LongtimeProdigy", AreSame(sumWeight, 1.0f, 0.0001f), "Skinning Weight의 합은 반드시 1이어야합니다."));
+
+#if 0			// inverse(transpose사용))
 				auto inverseMatrix = [](const Mat3x3& mat, Mat3x3& inv) -> bool
 					{
 						// Calculate the determinant
@@ -1287,83 +1087,59 @@ void Scene::beginFrame(const float fixedDeltaTime)
 					};
 
 				Mat3x3 tempSkinningMatrix3x3;
-				tempSkinningMatrix3x3.m00 = tempSkinningMatrix.m00;
-				tempSkinningMatrix3x3.m01 = tempSkinningMatrix.m01;
-				tempSkinningMatrix3x3.m02 = tempSkinningMatrix.m02;
+				tempSkinningMatrix3x3.m00 = skinningMatrix.m00;
+				tempSkinningMatrix3x3.m01 = skinningMatrix.m01;
+				tempSkinningMatrix3x3.m02 = skinningMatrix.m02;
 
-				tempSkinningMatrix3x3.m10 = tempSkinningMatrix.m10;
-				tempSkinningMatrix3x3.m11 = tempSkinningMatrix.m11;
-				tempSkinningMatrix3x3.m12 = tempSkinningMatrix.m12;
+				tempSkinningMatrix3x3.m10 = skinningMatrix.m10;
+				tempSkinningMatrix3x3.m11 = skinningMatrix.m11;
+				tempSkinningMatrix3x3.m12 = skinningMatrix.m12;
 
-				tempSkinningMatrix3x3.m20 = tempSkinningMatrix.m20;
-				tempSkinningMatrix3x3.m21 = tempSkinningMatrix.m21;
-				tempSkinningMatrix3x3.m22 = tempSkinningMatrix.m22;
+				tempSkinningMatrix3x3.m20 = skinningMatrix.m20;
+				tempSkinningMatrix3x3.m21 = skinningMatrix.m21;
+				tempSkinningMatrix3x3.m22 = skinningMatrix.m22;
 
 				Mat3x3 skinningMatrixASD;
 				const bool testtt = inverseMatrix(tempSkinningMatrix3x3, skinningMatrixASD);
 				A3_ASSERT_DEV("LongtimeProdigy", testtt, "");
 
-				Mat4x4 skinningMatrix;
-				skinningMatrix.m00 = skinningMatrixASD.m00;
-				skinningMatrix.m01 = skinningMatrixASD.m01;
-				skinningMatrix.m02 = skinningMatrixASD.m02;
+				Mat4x4 temptempSkinningMatrix;
+				temptempSkinningMatrix.m00 = skinningMatrixASD.m00;
+				temptempSkinningMatrix.m01 = skinningMatrixASD.m01;
+				temptempSkinningMatrix.m02 = skinningMatrixASD.m02;
 
-				skinningMatrix.m10 = skinningMatrixASD.m10;
-				skinningMatrix.m11 = skinningMatrixASD.m11;
-				skinningMatrix.m12 = skinningMatrixASD.m12;
+				temptempSkinningMatrix.m10 = skinningMatrixASD.m10;
+				temptempSkinningMatrix.m11 = skinningMatrixASD.m11;
+				temptempSkinningMatrix.m12 = skinningMatrixASD.m12;
 
-				skinningMatrix.m20 = skinningMatrixASD.m20;
-				skinningMatrix.m21 = skinningMatrixASD.m21;
-				skinningMatrix.m22 = skinningMatrixASD.m22;
+				temptempSkinningMatrix.m20 = skinningMatrixASD.m20;
+				temptempSkinningMatrix.m21 = skinningMatrixASD.m21;
+				temptempSkinningMatrix.m22 = skinningMatrixASD.m22;
 
-				skinningMatrix.m03 = 0;
-				skinningMatrix.m13 = 0;
-				skinningMatrix.m23 = 0;
-				skinningMatrix.m30 = 0;
-				skinningMatrix.m31 = 0;
-				skinningMatrix.m32 = 0;
-				skinningMatrix.m33 = 1;
+				temptempSkinningMatrix.m03 = 0;
+				temptempSkinningMatrix.m13 = 0;
+				temptempSkinningMatrix.m23 = 0;
+				temptempSkinningMatrix.m30 = 0;
+				temptempSkinningMatrix.m31 = 0;
+				temptempSkinningMatrix.m32 = 0;
+				temptempSkinningMatrix.m33 = 1;
 
-				skinningMatrix.transpose();
+				temptempSkinningMatrix.transpose();
 
-				skinningMatrix.m03 = tempSkinningMatrix.m03;
-				skinningMatrix.m13 = tempSkinningMatrix.m13;
-				skinningMatrix.m23 = tempSkinningMatrix.m23;
-				{
-					Vec4 asdasd(1, 0, 0, 0);
-					Vec4 aadd = skinningMatrix * asdasd;
-					float len = std::sqrt(aadd.x * aadd.x + aadd.y * aadd.y + aadd.z * aadd.z);
-
-					int a = 10;
-				}
-				{
-					Vec4 asdasd(0, 1, 0, 0);
-					Vec4 aadd = skinningMatrix * asdasd;
-					float len = std::sqrt(aadd.x * aadd.x + aadd.y * aadd.y + aadd.z * aadd.z);
-
-					int a = 10;
-				}
-				{
-					Vec4 asdasd(0, 0, 1, 0);
-					Vec4 aadd = skinningMatrix * asdasd;
-					float len = std::sqrt(aadd.x * aadd.x + aadd.y * aadd.y + aadd.z * aadd.z);
-
-					int a = 10;
-				}
+				temptempSkinningMatrix.m03 = skinningMatrix.m03;
+				temptempSkinningMatrix.m13 = skinningMatrix.m13;
+				temptempSkinningMatrix.m23 = skinningMatrix.m23;
+#endif
 
 				const VertexPosition& position = mo->getResource()->positions[i];
 				const VertexAttributes& attr = mo->getResource()->attributes[i];
 				const float* normal = attr.normals;
 
-				skinnedPositions[i] = tempSkinningMatrix * position;
-				Vec4 skinnedNormal = tempSkinningMatrix * Vec4(normal[0], normal[1], normal[2], 0);
+				skinnedPositions[i] = skinningMatrix * position;
+				Vec4 skinnedNormal = skinningMatrix * Vec4(normal[0], normal[1], normal[2], 0);
 
 				float len2 = std::sqrt(normal[0] * normal[0] + normal[1] * normal[1] + normal[2] * normal[2]);
 				float len = std::sqrt(skinnedNormal.x * skinnedNormal.x + skinnedNormal.y * skinnedNormal.y + skinnedNormal.z * skinnedNormal.z);
-				//if (len <= 0.9999f || len > 1.0001f)
-				//{
-				//	DebugBreak();
-				//}
 
 				skinnedNormals[i].normals[0] = skinnedNormal.x;
 				skinnedNormals[i].normals[1] = skinnedNormal.y;

@@ -41,6 +41,22 @@ struct EnvImportanceSampleData {
     float pdf;
 };
 
+struct DisneyMaterial
+{
+    vec3 baseColor;
+    float metallic;
+    float roughness;
+    
+    float subsurface;
+    float specular;
+    float specularTint;
+    float anisotropic;
+    float sheen;
+    float sheenTint;
+    float clearcoat;
+    float clearcoatGloss;
+};
+
 #define TextureParameter uint
 struct MaterialParameter
 {

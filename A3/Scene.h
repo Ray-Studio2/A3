@@ -17,6 +17,7 @@ struct MeshResource;
 class VulkanRenderBackend;
 struct Material;
 struct Skeleton;
+struct DisneyMaterial;
 
 struct imguiParam // TODO: right for being part of scene? 
 {

@@ -100,37 +100,6 @@ void main()
 }
 #endif
 
-// ======== using sheen material ========
-// ======================================
-void GetSheenMaterial(MaterialParameter material, vec2 uv, out vec3 sheenColor, out float sheenRoughness)
-{
-    if(length(material._sheenColorFactor) > 0.0 || material._sheenRoughnessFactor > 0.0)
-    {
-        const TextureParameter sheenColorTexture = material._sheenColorTexture;
-        const vec4 sheenColorTextureRGB = texture(sampler2D(textures[nonuniformEXT(sheenColorTexture)], linearSampler), uv);
-
-        if(length(sheenColorTextureRGB.rgb) <= 0)
-        sheenColor = material._sheenColorFactor;
-        else
-        sheenColor = material._sheenColorFactor * sheenColorTextureRGB.rgb;
-
-        const TextureParameter sheenRoughnessTexture = material._sheenRoughnessTexture;
-        const vec4 sheenRoughnsheenRoughnessTextureRGB = texture(sampler2D(textures[nonuniformEXT(sheenRoughnessTexture)], linearSampler), uv);
-
-
-        if(length(sheenRoughnsheenRoughnessTextureRGB.rgb) <= 0)
-        sheenRoughness = material._sheenRoughnessFactor;
-        else
-        sheenRoughness = material._sheenRoughnessFactor * sheenRoughnsheenRoughnessTextureRGB.a;
-    }
-    else
-    {
-        sheenColor = vec3(0);
-        sheenRoughness = 0;
-    }
-}
-// ======================================
-
 #if BRUTE_FORCE_LIGHT_ONLY_CLOSEST_HIT_SHADER
 //=========================
 //   BRUTE FORCE LIGHT ONLY CLOSEST HIT SHADER
@@ -694,6 +663,24 @@ void main()
     const float metallic = mrSample.r * material._metallicFactor;
     const float roughness = mrSample.b * material._roughnessFactor;
     const float alpha = roughness * roughness; // for microfacet models
+    // ======== using sheen material ========
+    vec3 sheenColor = vec3(0);
+    float sheenRoughness = 0;
+    GetSheenMaterial(material, uv, sheenColor, sheenRoughness);
+    // ======================================
+    // 2) RGB → (sheen intensity, sheenTint) 변환
+    // ‑ Disney sheen 은 ‘흰색~baseTint’ 를 lerp 하므로
+    //   색상을 분해:  강도 = 밝기,  tint = 색상 계열 유사도
+    const vec3 kLuma = vec3(0.2126, 0.7152, 0.0722);          // Rec. 709
+    float sheen = clamp(dot(sheenColor, kLuma), 0.0, 1.0);
+
+    float sheenTint = 0.0;
+    if (sheen > 1e-4) {
+        vec3 shearNorm = sheenColor / sheen;               // 0‑1 범위 색상
+        vec3 baseTint  = normalize(color);         // 베이스컬러 틴트
+        sheenTint      = clamp(dot(shearNorm, baseTint), 0.0, 1.0);
+    }
+    // ======================================
 
     // for Disney BRDF
     DisneyMaterial disMat;
@@ -704,21 +691,14 @@ void main()
     disMat.specular = clamp(gCustomData.specular, 0.0, 1.0);
     disMat.specularTint = clamp(gCustomData.specularTint, 0.0, 1.0);
     disMat.anisotropic = clamp(gCustomData.anisotropic, 0.0, 1.0);
-    disMat.sheen = clamp(gCustomData.roughness, 0.0, 1.0);
-    disMat.sheenTint = clamp(gCustomData.sheenTint, 0.0, 1.0);
+    disMat.sheen = sheen;
+    disMat.sheenTint = sheenTint;
     disMat.clearcoat = clamp(gCustomData.clearcoat, 0.0, 1.0);
     disMat.clearcoatGloss = clamp(gCustomData.clearcoatGloss, 0.0, 1.0);
 
     const float prob = mix(0.2, 0.8, roughness);
     const float probGGX = (1 - prob);
     const float probCos = prob;
-
-    // ======== using sheen material ========
-    // ======================================
-    vec3 sheenColor = vec3(0);
-    float sheenRoughness = 0;
-    GetSheenMaterial(material, uv, sheenColor, sheenRoughness);
-    // ======================================
 
     const vec3 viewDir = -gPayload.rayDirection;
 
@@ -747,8 +727,8 @@ void main()
         float cos_p = max(dot(worldNormal, rayDir), 1e-6);
         // Cook-Torrance BRDF
         vec3 halfDir = normalize(viewDir + rayDir);
-        vec3 brdf = disneyBRDF(rayDir, viewDir, worldNormal, tangent, bitangent, disMat);
-        // vec3 brdf = calculateBRDF(worldNormal, viewDir, rayDir, halfDir, color, metallic, alpha, sheenColor, sheenRoughness);
+        // vec3 brdf = disneyBRDF(rayDir, viewDir, worldNormal, tangent, bitangent, disMat);
+        vec3 brdf = calculateBRDF(worldNormal, viewDir, rayDir, halfDir, color, metallic, alpha, sheenColor, sheenRoughness);
 
         float pdfGGX = pdfGGXVNDF(worldNormal, viewDir, halfDir, alpha);
         float pdfCos = cos_p / PI;
@@ -804,8 +784,8 @@ void main()
         if (dot(rayDir, worldNormal) <= 0.0) continue;
 
         const float pdfBRDF = probGGX * pdfGGXVal + probCos * pdfCosineVal;
-        const vec3 brdf = disneyBRDF(rayDir, viewDir, worldNormal, tangent, bitangent, disMat);
-        // const vec3 brdf = calculateBRDF(worldNormal, viewDir, rayDir, halfDir, color, metallic, alpha, sheenColor, sheenRoughness);
+        // const vec3 brdf = disneyBRDF(rayDir, viewDir, worldNormal, tangent, bitangent, disMat);
+        const vec3 brdf = calculateBRDF(worldNormal, viewDir, rayDir, halfDir, color, metallic, alpha, sheenColor, sheenRoughness);
 
 		gPayload.rayDirection = rayDir;
         gPayload.pdfBRDF = pdfBRDF;

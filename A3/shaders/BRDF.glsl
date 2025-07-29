@@ -65,12 +65,12 @@ float CharlieV(float dotNV, float dotNL, float alpha_g)
 }
 
 float CharlieD(float alpha_g, float dotNH) { // imageworks의 sheen 분포
-                                             float inv_r = 1 / alpha_g;
-                                             float cos2h = dotNH * dotNH;
-                                             float sin2h = 1 - cos2h; // half vector가 normal에서 얼마나 떨어졌는가?
+    float inv_r = 1 / alpha_g;
+    float cos2h = dotNH * dotNH;
+    float sin2h = 1 - cos2h; // half vector가 normal에서 얼마나 떨어졌는가?
 
-                                             // sheen 재질의 실린더 크기를 정함
-                                             return (2 + inv_r) * pow(sin2h, inv_r * 0.5) / (2 * PI);
+    // sheen 재질의 실린더 크기를 정함
+    return (2 + inv_r) * pow(sin2h, inv_r * 0.5) / (2 * PI);
 }
 
 float Ashikhmin(float dotNV, float dotNL, float alpha_g)
@@ -105,14 +105,14 @@ vec3 calculateBRDF(vec3 normal, vec3 viewDir, vec3 lightDir, vec3 halfDir, vec3 
     float denom = 4.0 * dotNV * dotNL;
     vec3 f_spec = num / max(denom, 1e-6);
 
-    vec3 f_diff = (1.0 - metallic) * color * (1/PI);
+    vec3 f_diff = (1 - fresnel) * (1.0 - metallic) * color * (1/PI);    // according to gltf spec
     
     vec3 baseBRDF = f_diff + f_spec; 
 
     // ======== using sheen material ========
     // ======================================
     if(length(sheenColor) <= 0.0 || sheenRoughness <= 0)
-            return baseBRDF;
+        return baseBRDF;
     
     float sheenBRDF = 0; 
     float dotNH = max(dot(normal, halfDir), 1e-5); // half vector과 normal이 얼마나 가까운가?
@@ -208,3 +208,33 @@ mat3 computeTBN(vec3 worldNormal)
 
     return mat3(T, B, N);
 }
+
+// ======== using sheen material ========
+void GetSheenMaterial(MaterialParameter material, vec2 uv, out vec3 sheenColor, out float sheenRoughness)
+{
+    if(length(material._sheenColorFactor) > 0.0 || material._sheenRoughnessFactor > 0.0)
+    {
+        const TextureParameter sheenColorTexture = material._sheenColorTexture;
+        const vec4 sheenColorTextureRGB = texture(sampler2D(textures[nonuniformEXT(sheenColorTexture)], linearSampler), uv);
+
+        if(length(sheenColorTextureRGB.rgb) <= 0)
+        sheenColor = material._sheenColorFactor;
+        else
+        sheenColor = material._sheenColorFactor * sheenColorTextureRGB.rgb;
+
+        const TextureParameter sheenRoughnessTexture = material._sheenRoughnessTexture;
+        const vec4 sheenRoughnsheenRoughnessTextureRGB = texture(sampler2D(textures[nonuniformEXT(sheenRoughnessTexture)], linearSampler), uv);
+
+
+        if(length(sheenRoughnsheenRoughnessTextureRGB.rgb) <= 0)
+        sheenRoughness = material._sheenRoughnessFactor;
+        else
+        sheenRoughness = material._sheenRoughnessFactor * sheenRoughnsheenRoughnessTextureRGB.a;
+    }
+    else
+    {
+        sheenColor = vec3(0);
+        sheenRoughness = 0;
+    }
+}
+// ======================================

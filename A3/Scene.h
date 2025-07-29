@@ -8,6 +8,8 @@
 #include "EngineTypes.h"
 #include "Vector.h"
 
+#define ENABLE_ANIMATION 0
+
 namespace A3
 {
 class SceneObject;
@@ -24,7 +26,7 @@ struct imguiParam // TODO: right for being part of scene?
 	uint32 maxDepth = 5;
 	uint32 numSamples = 1;
 	uint32 isProgressive = 0;
-	float envmapRotDeg = 0.0f; // ???깃꼍???嶺?GPU?????삳낵繞?
+	float envmapRotDeg = 0.0f;
 	// TODO: separate CPU side and GPU side
 
 	Vec3 lightPos = Vec3(0.0f);
@@ -46,8 +48,8 @@ struct imguiParam // TODO: right for being part of scene?
 
 enum class SceneDirty : uint8 {
 	None		= 0,
-	Geometry	= 1 << 0,	// mesh ?怨뺣뼺?, ????
-	Transform	= 1 << 1,	// ?熬곣뫚?? ????? ??????곌떠???
+	Geometry	= 1 << 0,
+	Transform	= 1 << 1,
 	GpuBuffer	= 1 << 2,
 };
 

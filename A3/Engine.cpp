@@ -128,7 +128,6 @@ void Engine::Run()
         static const float fixedDeltaTime = 0.016f;
         while( !glfwWindowShouldClose( window ) )
         {
-            Sleep(50);
             ++gFrameIndex;
 
             glfwPollEvents();

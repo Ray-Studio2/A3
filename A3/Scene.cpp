@@ -135,7 +135,7 @@ Mat4x4 getNodeLocalTransform(const tinygltf::Node& node) {
 	}
 	return local;
 }
-// ???ロ깵????貫??(glm::vec ?リ옇?↑??怨쀬Ŧ ??瑜곸젧)
+
 template <typename T>
 std::vector<T> getBufferData(const tinygltf::Model& model, int accessorIndex) {
 	std::vector<T> data;
@@ -427,7 +427,7 @@ void Scene::loadGLTF(const std::string& fileName, VulkanRenderBackend& vulkanBac
 		std::cout << "\n--- Material [" << i << "] ---" << std::endl;
 		std::cout << "Name: " << (material.name.empty() ? "(No Name)" : material.name) << std::endl;
 
-		// PBR Metallic-Roughness ??怨뚯씩???夷???筌먲퐢沅??怨뺣뾼??
+		// PBR Metallic-Roughness
 		const auto& pbr = material.pbrMetallicRoughness;
 
 		// 1. Base Color
@@ -776,9 +776,6 @@ void Scene::loadGLTF(const std::string& fileName, VulkanRenderBackend& vulkanBac
 			std::vector<VertexAttributes> vAttributes;
 			vPositions.reserve(positions.size());
 			vAttributes.reserve(positions.size());
-
-			static float scale = 7.0f;
-			static Vec3 pos = Vec3(0, -5, 0);
 			
 			for (int i = 0; i < positions.size(); ++i)
 			{
@@ -813,24 +810,13 @@ void Scene::loadGLTF(const std::string& fileName, VulkanRenderBackend& vulkanBac
 				resources[mesh.name] = new MeshResource(resource);
 			}
 
+			// TODO: change scale & pos in IMGUI
+			static const float scale = 7.0f;
+			static const Vec3 pos = Vec3(0, -5, 0);
+
 			MeshObject* mo = new MeshObject(resources[mesh.name], &materialArr[primitive.material]);
 			mo->setPosition(pos);
-			//mo->setRotation(Vec3(rotation[0], rotation[1], rotation[2]));
-			//mo->setScale(Vec3(scale[0], scale[1], scale[2]));
-
-			mo->setBaseColor(Vec3(1.0f, 1.0f, 1.0f));
-			//if (materialName == "light") {
-			//	lightIndex.push_back(index);
-			//	auto& emittance = material["emittance"];
-			//	mo->setEmittance(emittance);
-			//}
-			//else {
-			//	mo->setMetallic(metallic.get<float>());
-			//	mo->setRoughness(roughness.get<float>());
-			//}
-			mo->setMetallic(0.0f);
-			mo->setRoughness(1.0f);
-
+			mo->setScale(scale);
 			mo->_skeletonIndex = 0;
 			mo->_animationIndex = 0;
 			this->objects.emplace_back(mo);
@@ -886,6 +872,7 @@ void Scene::load(const std::string& path, VulkanRenderBackend& vulkanBackend) {
 		this->imgui_param->envmapRotDeg = envmapRotation;
 	}
 
+#if 0 // Will be deprecated: only read gltf models
 	auto& materials = data["materials"];
 
 	auto& objects = data["sceneComponets"];
@@ -969,13 +956,16 @@ void Scene::load(const std::string& path, VulkanRenderBackend& vulkanBackend) {
 		}
 	}
 
+#endif	// Will be deprecated: only read gltf models
 	loadGLTF("../Assets/glTF_sample_models/SheenChair/SheenChair/glTF/SheenChair.gltf", vulkanBackend);
+	//loadGLTF("../Assets/phoenix_bird/scene.gltf", vulkanBackend);
 }
 
 void Scene::save(const std::string& path) const {}
 
 void Scene::beginFrame(const float fixedDeltaTime)
 {
+#if ENABLE_ANIMATION
 	for (Animation& anim : _animations)
 	{
 		anim.update(fixedDeltaTime);
@@ -1253,6 +1243,7 @@ void Scene::beginFrame(const float fixedDeltaTime)
 			mo->_skinnedAttributes = std::move(skinnedNormals);
 		}
 	}
+#endif // ENABLE_ANIMATION
 }
 
 void Scene::endFrame()
@@ -1286,7 +1277,6 @@ A3::MaterialParameter::MaterialParameter()
 
 	_emissiveFactor = Vec3(0);
 	_emissiveTexture = TextureManager::gWhiteParameter;
-
 	
 	// ======== using sheen material ========
 	// ======================================
@@ -1295,4 +1285,28 @@ A3::MaterialParameter::MaterialParameter()
 	_sheenColorTexture = TextureManager::gWhiteParameter;
 	_sheenRoughnessTexture = TextureManager::gWhiteParameter;
 	// ======================================
+
+	//// ================== Disney BRDF 호환 ===============================
+	//// Subsurface (대응: KHR_materials_volume.thicknessFactor)
+	//float _subsurfaceFactor = 0.0f;
+	//TextureParameter _subsurfaceTexture = TextureManager::gWhiteParameter;
+
+	//// Specular & SpecularTint (대응: KHR_materials_specular)
+	//float _specularFactor = 0.5f;          // Disney default=0.5
+	//Vec3  _specularColorFactor = Vec3(1.0);     // tint용
+	//TextureParameter _specularTexture = TextureManager::gWhiteParameter;
+	//TextureParameter _specularColorTexture = TextureManager::gWhiteParameter;
+
+	//// Anisotropy (대응: KHR_materials_anisotropy)
+	//float _anisotropicFactor = 0.0f;
+	//Vec2  _anisotropyDirection = Vec2(1.0, 0.0);
+	//TextureParameter _anisotropyTexture = TextureManager::gWhiteParameter;
+
+	//// Clearcoat (대응: KHR_materials_clearcoat)
+	//float _clearcoatFactor = 0.0f;
+	//float _clearcoatRoughnessFactor = 0.0f;
+	//TextureParameter _clearcoatTexture = TextureManager::gWhiteParameter;
+	//TextureParameter _clearcoatRoughTex = TextureManager::gWhiteParameter;
+	//TextureParameter _clearcoatNormalTex = TextureManager::gWhiteParameter;
+	//// =================================================================
 }

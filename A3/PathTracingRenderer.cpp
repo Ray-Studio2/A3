@@ -27,15 +27,19 @@ void PathTracingRenderer::beginFrame( int32 screenWidth, int32 screenHeight ) co
 
 void PathTracingRenderer::render( Scene& scene )
 {
+#if ENABLE_ANIMATION
     backend->tempScenePointer = &scene;
-    buildAccelerationStructure(scene);    // scene ?袁⑷퍥揶쎛 獄쏅뗀???늺 build ??쇰뻻??곷튊??
-
+    buildAccelerationStructure(scene);
+#endif  // ENABLE_ANIMATION
     if (scene.isBufferUpdated())
     {
         if( scene.isPosUpdated() )
         {
-            // TODO: temp
-            buildSamplePSO();                       // ??롫즲 scene ?袁⑷퍥揶쎛 獄쏅뗀???늺 ??슢諭???곸㉭??노맙
+#if !ENABLE_ANIMATION
+            backend->tempScenePointer = &scene;
+            buildAccelerationStructure(scene);
+#endif  // !ENABLE_ANIMATION
+            buildSamplePSO();
 
             scene.cleanPosUpdated();
         }

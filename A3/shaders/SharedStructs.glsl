@@ -41,6 +41,17 @@ struct EnvImportanceSampleData {
     float pdf;
 };
 
+struct BasicMaterial
+{
+    vec3 baseColor;
+    float metallic;
+    float alpha;    // roughness * roughness
+
+    vec3 sheenColor;
+    float sheenRoughness;
+    // more parameters to be added...
+};
+
 struct DisneyMaterial
 {
     vec3 baseColor;

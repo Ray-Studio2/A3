@@ -25,8 +25,9 @@ struct imguiParam // TODO: right for being part of scene?
 {
 	uint32 maxDepth = 5;
 	uint32 numSamples = 1;
-	uint32 isProgressive = 0;
+	uint32 isProgressive = 1;
 	float envmapRotDeg = 0.0f;
+	uint32 brdfMode = 0;
 	// TODO: separate CPU side and GPU side
 
 	Vec3 lightPos = Vec3(0.0f);

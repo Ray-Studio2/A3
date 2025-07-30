@@ -90,8 +90,14 @@ float E(float dotNV, float sheenRoughness)
 }
 // ======================================
 
-vec3 calculateBRDF(vec3 normal, vec3 viewDir, vec3 lightDir, vec3 halfDir, vec3 color, float metallic, float alpha, vec3 sheenColor, float sheenRoughness) // Cook-Torrence
+vec3 calculateBRDF(vec3 normal, vec3 viewDir, vec3 lightDir, vec3 halfDir, BasicMaterial material, bool isGLTF) // Cook-Torrence
 {
+    const vec3 color            = material.baseColor;
+    const float metallic        = material.metallic;
+    const float alpha           = material.alpha;
+    const vec3 sheenColor       = material.sheenColor;
+    const float sheenRoughness  = material.sheenRoughness;
+
     float dotNV = max(dot(normal, viewDir), 1e-5);
     float dotNL = max(dot(normal, lightDir), 1e-5);
 
@@ -107,28 +113,31 @@ vec3 calculateBRDF(vec3 normal, vec3 viewDir, vec3 lightDir, vec3 halfDir, vec3 
 
     vec3 f_diff = (1 - fresnel) * (1.0 - metallic) * color * (1/PI);    // according to gltf spec
     
-    vec3 baseBRDF = f_diff + f_spec; 
+    vec3 brdf = f_diff + f_spec; 
 
-    // ======== using sheen material ========
-    // ======================================
-    if(length(sheenColor) <= 0.0 || sheenRoughness <= 0)
-        return baseBRDF;
-    
-    float sheenBRDF = 0; 
-    float dotNH = max(dot(normal, halfDir), 1e-5); // half vector과 normal이 얼마나 가까운가?
-    float alpha_g = sheenRoughness * sheenRoughness; // roughness의 선형적 제어를 위함
-    float Ds = CharlieD(alpha_g, dotNH);
-    float Vs = CharlieV(dotNV, dotNL, alpha_g);
+    if (isGLTF) {
+        // ======== using sheen material ========
+        if(length(sheenColor) <= 0.0 || sheenRoughness <= 0)
+            return brdf;
+        
+        float sheenBRDF = 0; 
+        float dotNH = max(dot(normal, halfDir), 1e-5); // half vector과 normal이 얼마나 가까운가?
+        float alpha_g = sheenRoughness * sheenRoughness; // roughness의 선형적 제어를 위함
+        float Ds = CharlieD(alpha_g, dotNH);
+        float Vs = CharlieV(dotNV, dotNL, alpha_g);
 
-    sheenBRDF = Vs * Ds;
+        sheenBRDF = Vs * Ds;
 
-    float sheenAldedoScaling = min(1.0 - Max3(sheenColor) * E(alpha_g, dotNV)
-                                , 1.0 - Max3(sheenColor) * E(alpha_g, dotNL));
+        float sheenAldedoScaling = min(1.0 - Max3(sheenColor) * E(alpha_g, dotNV)
+                                    , 1.0 - Max3(sheenColor) * E(alpha_g, dotNL));
 
-    //float sheenAldedoScaling = 1.0 - Max3(sheenColorFactor) * E(dotNV, alpha_g);
+        //float sheenAldedoScaling = 1.0 - Max3(sheenColorFactor) * E(dotNV, alpha_g);
+        // ======================================
 
-    return sheenColor * sheenBRDF + baseBRDF * sheenAldedoScaling;
-    // ======================================
+        brdf = sheenColor * sheenBRDF + brdf * sheenAldedoScaling;
+    }
+
+    return brdf;
 }
 
 // vec3 calculateW(vec3 normal, vec3 viewDir, vec3 lightDir, vec3 halfDir, vec3 color, float metallic, float alpha)

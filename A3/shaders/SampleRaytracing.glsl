@@ -668,7 +668,15 @@ void main()
     float sheenRoughness = 0;
     GetSheenMaterial(material, uv, sheenColor, sheenRoughness);
     // ======================================
-    // 2) RGB → (sheen intensity, sheenTint) 변환
+    BasicMaterial basicMaterial;
+    basicMaterial.baseColor = color;
+    basicMaterial.metallic = metallic;
+    basicMaterial.alpha = alpha;
+    basicMaterial.sheenColor = sheenColor;
+    basicMaterial.sheenRoughness = sheenRoughness;
+
+    // ======================================
+    // RGB → (sheen intensity, sheenTint) 변환
     // ‑ Disney sheen 은 ‘흰색~baseTint’ 를 lerp 하므로
     //   색상을 분해:  강도 = 밝기,  tint = 색상 계열 유사도
     const vec3 kLuma = vec3(0.2126, 0.7152, 0.0722);          // Rec. 709
@@ -687,8 +695,8 @@ void main()
     disMat.baseColor = color;
     disMat.metallic = metallic;
     disMat.roughness = roughness;
-    disMat.subsurface = clamp(gCustomData.subsurface, 0.0, 1.0);
-    disMat.specular = clamp(gCustomData.specular, 0.0, 1.0);
+    disMat.subsurface = clamp(gCustomData.subsurface, 0.0, 1.0);    // TODO: stop getting parsed from customData
+    disMat.specular = clamp(gCustomData.specular, 0.0, 1.0);        // needs to be parsed from gltf "Material" struct
     disMat.specularTint = clamp(gCustomData.specularTint, 0.0, 1.0);
     disMat.anisotropic = clamp(gCustomData.anisotropic, 0.0, 1.0);
     disMat.sheen = sheen;
@@ -707,7 +715,7 @@ void main()
 	vec3 tempRadianceD = vec3(0.0);
 	uint numSampleByDepth = (gPayload.depth == 0 ? gImguiParam.numSamples : 1);
 
-	for (uint i=0; i < numSampleByDepth; ++i)
+	for (uint i=0; i < numSampleByDepth; ++i)   // TODO: numSampleByDepth needs to be deprecated, has to be always 1
 	{
         float pdfEnv;
         vec3 rayDir = sampleEnvDirection(gPayload.rngState, pdfEnv);
@@ -727,8 +735,23 @@ void main()
         float cos_p = max(dot(worldNormal, rayDir), 1e-6);
         // Cook-Torrance BRDF
         vec3 halfDir = normalize(viewDir + rayDir);
-        // vec3 brdf = disneyBRDF(rayDir, viewDir, worldNormal, tangent, bitangent, disMat);
-        vec3 brdf = calculateBRDF(worldNormal, viewDir, rayDir, halfDir, color, metallic, alpha, sheenColor, sheenRoughness);
+
+        vec3 brdf = vec3(0.0);
+        switch (gImguiParam.brdfMode) {
+            case 0:     // basic metallic-roughness model
+                brdf = calculateBRDF(worldNormal, viewDir, rayDir, halfDir, basicMaterial, false);
+                break;
+            case 1:     // gltf
+                brdf = calculateBRDF(worldNormal, viewDir, rayDir, halfDir, basicMaterial, true);
+                break;
+            case 2:     // disney
+                brdf = disneyBRDF(rayDir, viewDir, worldNormal, tangent, bitangent, disMat);
+                break;
+            case 3:     // unreal
+                // TODO: add unreal brdf logics
+                brdf = disneyBRDF(rayDir, viewDir, worldNormal, tangent, bitangent, disMat);
+                break;
+        }
 
         float pdfGGX = pdfGGXVNDF(worldNormal, viewDir, halfDir, alpha);
         float pdfCos = cos_p / PI;
@@ -784,8 +807,23 @@ void main()
         if (dot(rayDir, worldNormal) <= 0.0) continue;
 
         const float pdfBRDF = probGGX * pdfGGXVal + probCos * pdfCosineVal;
-        // const vec3 brdf = disneyBRDF(rayDir, viewDir, worldNormal, tangent, bitangent, disMat);
-        const vec3 brdf = calculateBRDF(worldNormal, viewDir, rayDir, halfDir, color, metallic, alpha, sheenColor, sheenRoughness);
+
+        vec3 brdf = vec3(0.0);
+        switch (gImguiParam.brdfMode) {
+            case 0:     // basic metallic-roughness model
+                brdf = calculateBRDF(worldNormal, viewDir, rayDir, halfDir, basicMaterial, false);
+                break;
+            case 1:     // gltf
+                brdf = calculateBRDF(worldNormal, viewDir, rayDir, halfDir, basicMaterial, true);
+                break;
+            case 2:     // disney
+                brdf = disneyBRDF(rayDir, viewDir, worldNormal, tangent, bitangent, disMat);
+                break;
+            case 3:     // unreal
+                // TODO: add unreal brdf logics
+                brdf = disneyBRDF(rayDir, viewDir, worldNormal, tangent, bitangent, disMat);
+                break;
+        }
 
 		gPayload.rayDirection = rayDir;
         gPayload.pdfBRDF = pdfBRDF;

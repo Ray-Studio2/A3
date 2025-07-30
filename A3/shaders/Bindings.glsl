@@ -38,7 +38,7 @@ layout( binding = 7 ) uniform imguiParam {
 	uint numSamples;
     uint isProgressive;
     float envmapRotDeg;
-    // uint brdfMode; // 0: basic metallic-roughness, 1: gltf, 2: disney, 3: unreal
+    uint brdfMode; // 0: basic metallic-roughness, 1: gltf, 2: disney, 3: unreal
 } gImguiParam;
 
 layout(binding = 8) uniform sampler2D envImportanceData;

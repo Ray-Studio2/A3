@@ -253,6 +253,22 @@ void Addon_imgui::renderFrame( GLFWwindow* window, VulkanRenderBackend* vulkan, 
             }
         }
 
+        ImGui::SeparatorText("BRDF");
+        {
+            int brdfMode = static_cast<int>(scene->getImguiParam()->brdfMode);
+
+            const char* items[] = { "Basic MR", "GLTF", "Disney", "Unreal" };
+            for (int i = 0; i < IM_ARRAYSIZE(items); i++) {
+                if (ImGui::RadioButton(items[i], &brdfMode, i)) {
+                    brdfMode = i;
+                    scene->getImguiParam()->brdfMode = static_cast<uint32>(brdfMode);
+                    scene->markBufferUpdated();
+                }
+                if (i + 1 == IM_ARRAYSIZE(items)) break;
+                ImGui::SameLine();
+            }
+        }
+
         bool lightExists = scene->getLightIndex().size();
         ImGui::BeginDisabled(!lightExists);
         ImGui::SeparatorText("Light");

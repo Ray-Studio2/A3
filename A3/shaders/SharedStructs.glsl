@@ -4,6 +4,7 @@ struct RayPayload
     vec3 radiance;
     vec3 desiredPosition;
     uint depth;
+    uint transmissionDepth;
     uint rngState;
     float pdfBRDF;
     float visibility;
@@ -80,8 +81,9 @@ struct MaterialParameter
 
 	float _roughnessFactor;
 	TextureParameter _metallicRoughnessTexture;
-	float _padding1;
-	float _padding2;
+	float _transmissionFactor;
+	TextureParameter _transmissionTexture;
+	float _ior;
 
 	vec3 _emissiveFactor;
 	TextureParameter _emissiveTexture;

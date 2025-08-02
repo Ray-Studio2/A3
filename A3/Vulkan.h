@@ -113,8 +113,9 @@ namespace A3
 
         float _roughnessFactor;
         TextureParameter _metallicRoughnessTexture;
-        float _padding1;
-        float _padding2;
+        float _transmissionFactor;
+        TextureParameter _transmissionTexture;
+        float _ior;
 
         Vec3 _emissiveFactor;
         TextureParameter _emissiveTexture;

@@ -37,6 +37,142 @@ float GGX_D(vec3 normal, vec3 halfDir, float alpha)
     return a2 / (PI * denom * denom);
 }
 
+vec3 calculateRefractedDirection(vec3 incidentDir, vec3 normal, float ior)
+{
+    float eta = 1.0 / ior; // Relative IOR (air to material)
+    
+    // Check if we're exiting the material (dot product < 0 means inside)
+    if (dot(incidentDir, normal) > 0.0) {
+        eta = ior; // Material to air
+        normal = -normal; // Flip normal for exit
+    }
+    
+    vec3 refracted = refract(incidentDir, normal, eta);
+    
+    // Handle total internal reflection
+    if (length(refracted) == 0.0) {
+        return reflect(incidentDir, normal);
+    }
+    
+    return refracted;
+}
+
+float calculateFresnelReflectance(vec3 viewDir, vec3 normal, float ior)
+{
+    float cosTheta = abs(dot(viewDir, normal));
+    float F0 = pow((1.0 - ior) / (1.0 + ior), 2.0);
+    return F0 + (1.0 - F0) * pow(1.0 - cosTheta, 5.0);
+}
+
+float calculateTransmissionCoeff(vec3 viewDir, vec3 normal, float ior)
+{
+    return 1.0 - calculateFresnelReflectance(viewDir, normal, ior);
+}
+
+// Separate alpha blending and transmission handling
+bool shouldUseAlphaBlending(float alpha, float transmissionFactor)
+{
+    // Use alpha blending if alpha < 1.0 and no transmission
+    return alpha < 1.0 && transmissionFactor <= 0.0;
+}
+
+bool shouldUseTransmission(float transmissionFactor)
+{
+    return transmissionFactor > 0.0;
+}
+
+// Alpha blending for traditional transparency
+vec3 calculateAlphaBlending(vec3 surfaceColor, vec3 backgroundColor, float alpha)
+{
+    return mix(backgroundColor, surfaceColor, alpha);
+}
+
+// Precomputed transmission properties
+struct TransmissionProperties
+{
+    float factor;
+    float ior;
+    float fresnelReflectance;
+    float transmissionCoeff;
+    bool isActive;
+};
+
+// Get precomputed transmission properties
+TransmissionProperties getTransmissionProperties(MaterialParameter material, vec2 uv, vec3 viewDir, vec3 normal, float globalFactor)
+{
+    TransmissionProperties props;
+    
+    // Calculate effective transmission factor
+    props.factor = material._transmissionFactor;
+    if (material._transmissionTexture != 0xfffffff) {
+        vec4 transmissionTexture = texture(sampler2D(textures[nonuniformEXT(material._transmissionTexture)], linearSampler), uv);
+        props.factor *= transmissionTexture.r; // Use red channel for transmission
+    }
+    props.factor *= globalFactor;
+    
+    props.isActive = props.factor > 0.0;
+    
+    if (props.isActive) {
+        // Use material's IOR
+        props.ior = material._ior;
+        
+        // Precompute Fresnel values once
+        props.fresnelReflectance = calculateFresnelReflectance(viewDir, normal, props.ior);
+        props.transmissionCoeff = calculateTransmissionCoeff(viewDir, normal, props.ior);
+    } else {
+        props.ior = 1.0;
+        props.fresnelReflectance = 0.0;
+        props.transmissionCoeff = 0.0;
+    }
+    
+    return props;
+}
+
+// Get transmission factor (simplified version without texture)
+float getTransmissionFactor(MaterialParameter material, float globalFactor)
+{
+    // If global factor is set, use it as override (for debugging/testing)
+    if (globalFactor > 0.0) {
+        return globalFactor;
+    }
+    
+    // Otherwise use material properties
+    return material._transmissionFactor;
+}
+
+// Get transmission factor with texture support
+float getTransmissionFactor(MaterialParameter material, vec2 uv)
+{
+    // // If global factor is set, use it as override (for debugging/testing)
+    // if (globalFactor > 0.0) {
+    //     return globalFactor;
+    // }
+    
+    // Otherwise use material properties
+    float transmissionFactor = material._transmissionFactor;
+    
+    // Sample transmission texture if available (assumes white texture has specific index)
+    if (material._transmissionTexture != 0xfffffff) {
+        vec4 transmissionTexture = texture(sampler2D(textures[nonuniformEXT(material._transmissionTexture)], linearSampler), uv);
+        transmissionFactor *= transmissionTexture.r; // Use red channel for transmission
+    }
+    
+    return transmissionFactor;
+}
+
+// Transmission BRDF for thin-surface materials (KHR_materials_transmission)
+vec3 calculateTransmissionBRDF(vec3 normal, vec3 viewDir, vec3 color, float transmission)
+{
+    // For thin-surface transmission, reduce the surface reflection
+    // The actual transmission is handled in the ray tracing logic
+    float dotNV = abs(dot(normal, viewDir));
+    vec3 F0 = vec3(0.04);
+    vec3 fresnel = Schlick_F(viewDir, normal, F0);
+    
+    // Reduce surface contribution, allowing more light to pass through
+    return color * (1.0 - fresnel) * transmission * 0.1; // Reduced surface contribution
+}
+
 // ======== using sheen material ========
 // ======================================
 

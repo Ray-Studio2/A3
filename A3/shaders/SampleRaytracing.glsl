@@ -51,9 +51,9 @@ void main()
     const vec2 ndc = screenCoord / vec2( gl_LaunchSizeEXT.xy ) * 2.0 - 1.0;
     vec3 rayDir = ndc.x * aspect_x * cameraX + ndc.y * aspect_y * cameraY + cameraZ;
 
-    // Initialize payload for path tracing
     gPayload.radiance = vec3( 0.0 );
     gPayload.depth = 0;
+    gPayload.transmissionDepth = 0;
     gPayload.desiredPosition = vec3( 0.0 );
     gPayload.rngState = rngState;
     gPayload.rayDirection = normalize(rayDir);
@@ -191,7 +191,6 @@ void main()
     if (gl_InstanceCustomIndexEXT == gLightBuffer.lightIndex[0])
         emit = lightEmittance;
 
-    uint tempDepth = gPayload.depth;
     uint numSampleByDepth = (gPayload.depth == 0 ? gImguiParam.numSamples : 1);
 
     vec3 temp = vec3(0.0);
@@ -237,9 +236,8 @@ void main()
             weight = isGGX ? powerHeuristic(pdfGGXVal, pdfCosineVal)
                             : powerHeuristic(pdfCosineVal, pdfGGXVal);
             pdfSel = isGGX ? pdfGGXVal : pdfCosineVal;
-            // Cook-Torrance BRDF
             brdf = calculateBRDF(worldNormal, viewDir, rayDir, halfDir, color, metallic, alpha, sheenColor, sheenRoughness);
-
+            
             gPayload.rayDirection = rayDir;
             gPayload.depth++;
             traceRayEXT(
@@ -248,10 +246,45 @@ void main()
                 0, 1, SHADOW_MISS_IDX,              // sbtRecordOffset, sbtRecordStride, missIndex
                 worldPos, 0.0001, rayDir, MAX_DISTANCE,  	// origin, tmin, direction, tmax
                 0);                                 // payload
-            gPayload.depth = tempDepth;
+            gPayload.depth--;
+            
+            vec3 reflectedRadiance = gPayload.radiance;
+
+            float transmissionFactor = getTransmissionFactor(material, gImguiParam.transmissionFactor);
+            vec3 transmittedRadiance = vec3(0.0);
+            
+            if (transmissionFactor > 0.0) {
+                if (gPayload.transmissionDepth >= 12) {
+                    vec3 refractedDir = calculateRefractedDirection(-viewDir, worldNormal, material._ior);
+                    transmittedRadiance = getEmitFromEnvmap(refractedDir) * color * transmissionFactor * 0.3;
+                } else {
+                    float ior = material._ior;
+                    if (ior <= 0.0) ior = 1.5;
+                    
+                    vec3 refractedDir = calculateRefractedDirection(-viewDir, worldNormal, ior);
+                
+                float fresnelReflectance = calculateFresnelReflectance(viewDir, worldNormal, ior);
+                float transmissionCoeff = calculateTransmissionCoeff(viewDir, worldNormal, ior);
+                
+                                gPayload.rayDirection = refractedDir;
+                gPayload.depth++;
+                gPayload.transmissionDepth++;
+                traceRayEXT(
+                    topLevelAS,
+                    gl_RayFlagsOpaqueEXT, 0xff,
+                    0, 1, SHADOW_MISS_IDX,
+                    worldPos, 0.0001, refractedDir, 100.0,
+                    0);
+                gPayload.depth--;
+                gPayload.transmissionDepth--;
+                
+                    transmittedRadiance = gPayload.radiance * color * transmissionFactor * transmissionCoeff;
+                }
+            }
 
             const float cos_p = max(dot(worldNormal, rayDir), 1e-6);
-            temp += brdf * gPayload.radiance * cos_p * weight / pdfSel;
+            temp += brdf * reflectedRadiance * cos_p * weight / pdfSel;
+            temp += transmittedRadiance;
         }
         temp *= 1.0 / float(numSampleByDepth);
     }
@@ -342,6 +375,9 @@ void main()
 
     const vec3 viewDir = -gPayload.rayDirection;
 
+
+    MaterialParameter material = MaterialBuffer(objDesc.materialAddress).mat;
+
 	//////////////////////////////////////////////////////////////// Direct Light
 
 	vec3 tempRadianceD = vec3(0.0);
@@ -378,7 +414,6 @@ void main()
         const float cos_p = max(dot(worldNormal, shadowRayDir), 1e-6);
         const float pdfLight = dot(r, r) / (cos_q * lightArea);
 
-        // Cook-Torrance BRDF
         vec3 halfDir = normalize(viewDir + shadowRayDir);
         vec3 brdf = calculateBRDF(worldNormal, viewDir, shadowRayDir, halfDir, color, metallic, alpha, sheenColor, sheenRoughness);
 
@@ -394,7 +429,6 @@ void main()
 
 	//////////////////////////////////////////////////////////////// Indirect Light
 
-	uint tempDepth = gPayload.depth;
 	vec3 tempRadianceI = vec3(0.0);
 
 	for (uint i=0; i < numSampleByDepth; ++i)
@@ -450,10 +484,37 @@ void main()
             0, 1, SHADOW_MISS_IDX,              // sbtRecordOffset, sbtRecordStride, missIndex
             worldPos, 0.0001, rayDir, MAX_DISTANCE,  	// origin, tmin, direction, tmax
             0);                                 // payload
-        gPayload.depth = tempDepth;
+        gPayload.depth--;
+        
+        vec3 reflectedRadiance = gPayload.radiance;
+
+        float transmissionFactor = getTransmissionFactor(material, gImguiParam.transmissionFactor);
+        vec3 transmittedRadiance = vec3(0.0);
+        
+        if (transmissionFactor > 0.0) {
+            float ior = material._ior;
+            if (ior <= 0.0) ior = 1.5;
+            
+            vec3 refractedDir = calculateRefractedDirection(-viewDir, worldNormal, ior);
+            
+            float transmissionCoeff = calculateTransmissionCoeff(viewDir, worldNormal, ior);
+            
+                        gPayload.rayDirection = refractedDir;
+            gPayload.depth++;
+            traceRayEXT(
+                topLevelAS,
+                gl_RayFlagsOpaqueEXT, 0xff,
+                0, 1, SHADOW_MISS_IDX,
+                worldPos, 0.0001, refractedDir, 100.0,
+                0);
+            gPayload.depth--;
+            
+            transmittedRadiance = gPayload.radiance * color * transmissionFactor * transmissionCoeff;
+        }
 
         const float cos_p = max(dot(worldNormal, rayDir), 1e-6);
-        tempRadianceI += brdf * gPayload.radiance * cos_p * weight / pdfSel;
+        tempRadianceI += brdf * reflectedRadiance * cos_p * weight / pdfSel;
+        tempRadianceI += transmittedRadiance;
 	}
 	tempRadianceI *= (1.0 / float(numSampleByDepth));
 
@@ -523,6 +584,8 @@ void main()
     //GetSheenMaterial(material, uv, sheenColor, sheenRoughness);
     // ======================================
 
+    MaterialParameter material = MaterialBuffer(objDesc.materialAddress).mat;
+
     vec3 temp = vec3(0.0);
     uint numSampleByDepth = (gPayload.depth == 0 ? gImguiParam.numSamples : 1);
     if (gPayload.depth < gImguiParam.maxDepth) {
@@ -570,9 +633,41 @@ void main()
                 worldPos, 0.0001, rayDir, MAX_DISTANCE,  	// origin, tmin, direction, tmax
                 0);                                 // payload
             gPayload.depth--;
+            
+            vec3 reflectedRadiance = gPayload.radiance;
+
+            float transmissionFactor = getTransmissionFactor(material, gImguiParam.transmissionFactor);
+            vec3 transmittedRadiance = vec3(0.0);
+            
+            if (transmissionFactor > 0.0) {
+                if (gPayload.transmissionDepth >= 12) {
+                    vec3 refractedDir = calculateRefractedDirection(-viewDir, worldNormal, material._ior);
+                    transmittedRadiance = getEmitFromEnvmap(refractedDir) * color * transmissionFactor * 0.3;
+                } else {
+                    float ior = material._ior;
+                    if (ior <= 0.0) ior = 1.5;
+                    
+                    vec3 refractedDir = calculateRefractedDirection(-viewDir, worldNormal, ior);
+                
+                    float transmissionCoeff = calculateTransmissionCoeff(viewDir, worldNormal, ior);
+                
+                                gPayload.rayDirection = refractedDir;
+                gPayload.depth++;
+                traceRayEXT(
+                    topLevelAS,
+                    gl_RayFlagsOpaqueEXT, 0xff,
+                    0, 1, ENV_MISS_IDX,
+                    worldPos, 0.0001, refractedDir, 100.0,
+                    0);
+                gPayload.depth--;
+                
+                    transmittedRadiance = gPayload.radiance * color * transmissionFactor * transmissionCoeff;
+                }
+            }
 
             const float cos_p = max(dot(worldNormal, rayDir), 1e-6);
-            temp += brdf * gPayload.radiance * cos_p / pdfBRDF;
+            temp += brdf * reflectedRadiance * cos_p / pdfBRDF;
+            temp += transmittedRadiance;
         }
         temp *= 1.0 / float(numSampleByDepth);
     }
@@ -733,7 +828,6 @@ void main()
         const vec3 emit = getEmitFromEnvmap(rayDir);
 
         float cos_p = max(dot(worldNormal, rayDir), 1e-6);
-        // Cook-Torrance BRDF
         vec3 halfDir = normalize(viewDir + rayDir);
 
         vec3 brdf = vec3(0.0);
@@ -752,7 +846,7 @@ void main()
                 brdf = disneyBRDF(rayDir, viewDir, worldNormal, tangent, bitangent, disMat);
                 break;
         }
-
+        
         float pdfGGX = pdfGGXVNDF(worldNormal, viewDir, halfDir, alpha);
         float pdfCos = cos_p / PI;
         float pdfBRDF = probGGX * pdfGGX + probCos * pdfCos;
@@ -761,6 +855,16 @@ void main()
 
         float charFunc = 0.0;
         if (dot(rayDir, worldNormal) > 0.0) charFunc = 1.0;
+        
+        float transmissionFactor = getTransmissionFactor(material, uv);
+        if (transmissionFactor > 0.0) {
+            vec3 transmissionDir = -viewDir;
+            vec3 transmittedEnvColor = getEmitFromEnvmap(transmissionDir);
+            vec3 transmittedRadiance = transmittedEnvColor * color * transmissionFactor;
+            
+            brdf = mix(brdf, vec3(0.1), transmissionFactor);
+            tempRadianceD += transmittedRadiance * gPayload.visibility * charFunc * w / pdfEnv;
+        }
 
         tempRadianceD += brdf * emit * cos_p * gPayload.visibility * charFunc * w / pdfEnv;
 	}
@@ -835,8 +939,35 @@ void main()
 			worldPos, eps, rayDir, MAX_DISTANCE,  		// origin, tmin, direction, tmax
 			0);                                 // gPayload
 		gPayload.depth--;
+		
+		vec3 reflectedRadiance = gPayload.radiance;
 
-        tempRadianceI += brdf * gPayload.radiance * cos_p / pdfBRDF; // radiance weighted for the last bounce
+        float transmissionFactor = getTransmissionFactor(material, uv);
+        vec3 transmittedRadiance = vec3(0.0);
+        
+        if (transmissionFactor > 0.0) {
+            float ior = material._ior;
+            if (ior <= 0.0) ior = 1.5;
+            
+            vec3 refractedDir = calculateRefractedDirection(-viewDir, worldNormal, ior);
+            
+            float transmissionCoeff = calculateTransmissionCoeff(viewDir, worldNormal, ior);
+            
+            gPayload.rayDirection = refractedDir;
+            gPayload.depth++;
+            traceRayEXT(
+                topLevelAS,
+                gl_RayFlagsOpaqueEXT, 0xff,
+                0, 1, ENV_MISS_IDX,
+                worldPos, eps, refractedDir, 100.0,
+                0);
+            gPayload.depth--;
+            
+            transmittedRadiance = gPayload.radiance * color * transmissionFactor * transmissionCoeff;
+        }
+
+        tempRadianceI += brdf * reflectedRadiance * cos_p / pdfBRDF;
+        tempRadianceI += transmittedRadiance; // radiance weighted for the last bounce
 	}
 	tempRadianceI *= (1.0 / float(numSampleByDepth));
 

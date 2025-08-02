@@ -21,10 +21,19 @@ namespace A3
         //VkBuffer cumulativeTriangleAreaBuffer;
         //VkBuffer materialBuffer;
 
+        //VkDeviceMemory vertexPositionBufferMem;
+        //VkDeviceMemory vertexAttributeBufferMem;
+        //VkDeviceMemory indexBufferMem;
+        //VkDeviceMemory cumulativeTriangleAreaMem;
+
         vkDestroyBuffer(gDevice, descriptor, nullptr);
         vkFreeMemory(gDevice, memory, nullptr);
         gvkDestroyAccelerationStructureKHR(gDevice, handle, nullptr);
 
+        vkFreeMemory(gDevice, vertexPositionBufferMem, nullptr);
+        vkFreeMemory(gDevice, vertexAttributeBufferMem, nullptr);
+        vkFreeMemory(gDevice, indexBufferMem, nullptr);
+        vkFreeMemory(gDevice, cumulativeTriangleAreaMem, nullptr);
         vkDestroyBuffer(gDevice, vertexPositionBuffer, nullptr);
         vkDestroyBuffer(gDevice, vertexAttributeBuffer, nullptr);
         vkDestroyBuffer(gDevice, indexBuffer, nullptr);

@@ -992,8 +992,11 @@ void Scene::load(const std::string& path, VulkanRenderBackend& vulkanBackend) {
 	}
 
 #endif	// Will be deprecated: only read gltf models
+#if ENABLE_ANIMATION
+	loadGLTF("../Assets/phoenix_bird/scene.gltf", vulkanBackend);
+#else
 	loadGLTF("../Assets/glTF_sample_models/SheenChair/SheenChair/glTF/SheenChair.gltf", vulkanBackend);
-	//loadGLTF("../Assets/phoenix_bird/scene.gltf", vulkanBackend);
+#endif
 }
 
 void Scene::save(const std::string& path) const {}

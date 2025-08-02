@@ -254,8 +254,8 @@ void VulkanRenderBackend::endFrame()
 
     semaphoreIndex = (semaphoreIndex + 1) % 3;
 
-    vkQueueWaitIdle(graphicsQueue);
-    vkDeviceWaitIdle(device);
+    //vkQueueWaitIdle(graphicsQueue);
+    //vkDeviceWaitIdle(device);
 }
 
 void VulkanRenderBackend::beginRaytracingPipeline( IRenderPipeline* inPipeline )
@@ -1619,10 +1619,6 @@ inline VkDeviceAddress VulkanRenderBackend::getDeviceAddressOf( VkAccelerationSt
 IAccelerationStructureRef VulkanRenderBackend::createBLAS( const BLASBuildParams params )
 {
     VulkanAccelerationStructure* outBlas = new VulkanAccelerationStructure();
-    VkDeviceMemory vertexPositionBufferMem;
-    VkDeviceMemory vertexAttributeBufferMem;
-    VkDeviceMemory indexBufferMem;
-    VkDeviceMemory cumulativeTriangleAreaMem;
 
     auto& positionData = params.positionData;
     auto& attributeData = params.attributeData;
@@ -1630,7 +1626,7 @@ IAccelerationStructureRef VulkanRenderBackend::createBLAS( const BLASBuildParams
     auto& cumulativeTriangleAreaData = params.cumulativeTriangleAreaData;
     auto& transformData = params.transformData;
 
-    std::tie(outBlas->vertexPositionBuffer, vertexPositionBufferMem ) = createBuffer(
+    std::tie(outBlas->vertexPositionBuffer, outBlas->vertexPositionBufferMem ) = createBuffer(
         positionData.size() * sizeof( VertexPosition ),
         VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
         VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR |
@@ -1638,7 +1634,7 @@ IAccelerationStructureRef VulkanRenderBackend::createBLAS( const BLASBuildParams
         VK_BUFFER_USAGE_TRANSFER_DST_BIT,
         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT );
 
-    std::tie(outBlas->vertexAttributeBuffer, vertexAttributeBufferMem ) = createBuffer(
+    std::tie(outBlas->vertexAttributeBuffer, outBlas->vertexAttributeBufferMem ) = createBuffer(
         attributeData.size() * sizeof( VertexAttributes ),
         VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
         VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR |
@@ -1646,7 +1642,7 @@ IAccelerationStructureRef VulkanRenderBackend::createBLAS( const BLASBuildParams
         VK_BUFFER_USAGE_TRANSFER_DST_BIT,
         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT );
 
-    std::tie(outBlas->indexBuffer, indexBufferMem ) = createBuffer(
+    std::tie(outBlas->indexBuffer, outBlas->indexBufferMem ) = createBuffer(
         indexData.size() * sizeof( uint32 ),
         VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
         VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR |
@@ -1654,7 +1650,7 @@ IAccelerationStructureRef VulkanRenderBackend::createBLAS( const BLASBuildParams
         VK_BUFFER_USAGE_TRANSFER_DST_BIT,
         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT );
 
-    std::tie(outBlas->cumulativeTriangleAreaBuffer, cumulativeTriangleAreaMem) = createBuffer(
+    std::tie(outBlas->cumulativeTriangleAreaBuffer, outBlas->cumulativeTriangleAreaMem) = createBuffer(
         cumulativeTriangleAreaData.size() * sizeof(float),
         VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
         VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR |
@@ -1671,21 +1667,21 @@ IAccelerationStructureRef VulkanRenderBackend::createBLAS( const BLASBuildParams
 
     void* dst;
 
-    vkMapMemory( device, vertexPositionBufferMem, 0, positionData.size() * sizeof( VertexPosition ), 0, &dst );
+    vkMapMemory( device, outBlas->vertexPositionBufferMem, 0, positionData.size() * sizeof( VertexPosition ), 0, &dst );
     memcpy( dst, positionData.data(), positionData.size() * sizeof( VertexPosition ));
-    vkUnmapMemory( device, vertexPositionBufferMem );
+    vkUnmapMemory( device, outBlas->vertexPositionBufferMem );
 
-    vkMapMemory( device, vertexAttributeBufferMem, 0, attributeData.size() * sizeof( VertexAttributes ), 0, &dst );
+    vkMapMemory( device, outBlas->vertexAttributeBufferMem, 0, attributeData.size() * sizeof( VertexAttributes ), 0, &dst );
     memcpy( dst, attributeData.data(), attributeData.size() * sizeof( VertexAttributes ) );
-    vkUnmapMemory( device, vertexAttributeBufferMem );
+    vkUnmapMemory( device, outBlas->vertexAttributeBufferMem );
 
-    vkMapMemory( device, indexBufferMem, 0, indexData.size() * sizeof( uint32 ), 0, &dst );
+    vkMapMemory( device, outBlas->indexBufferMem, 0, indexData.size() * sizeof( uint32 ), 0, &dst );
     memcpy( dst, indexData.data(), indexData.size() * sizeof( uint32 ) );
-    vkUnmapMemory( device, indexBufferMem );
+    vkUnmapMemory( device, outBlas->indexBufferMem );
 
-    vkMapMemory(device, cumulativeTriangleAreaMem, 0, cumulativeTriangleAreaData.size() * sizeof(float), 0, &dst);
+    vkMapMemory(device, outBlas->cumulativeTriangleAreaMem, 0, cumulativeTriangleAreaData.size() * sizeof(float), 0, &dst);
     memcpy(dst, cumulativeTriangleAreaData.data(), cumulativeTriangleAreaData.size() * sizeof(float));
-    vkUnmapMemory(device, cumulativeTriangleAreaMem);
+    vkUnmapMemory(device, outBlas->cumulativeTriangleAreaMem);
 
     vkMapMemory( device, geoTransformBufferMem, 0, sizeof( Mat3x4 ), 0, &dst );
     memcpy( dst, &transformData, sizeof( Mat3x4 ) );
@@ -1800,14 +1796,11 @@ struct ObjectDesc
 // @TODO: Support more than 1 instance
 void VulkanRenderBackend::createTLAS( const std::vector<BLASBatch*>& batches )
 {
-    //vkFreeMemory(device, objectBufferMem, nullptr);
-    //vkDestroyBuffer(device, objectBuffer, nullptr);
-    //if (tlasBufferMem != nullptr)
-    //{
-    //    vkFreeMemory(device, tlasBufferMem, nullptr);
-    //    vkDestroyBuffer(device, tlasBuffer, nullptr);
-    //}
-    //vkDestroyAccelerationStructureKHR(device, tlas, nullptr);
+    vkFreeMemory(device, objectBufferMem, nullptr);
+    vkDestroyBuffer(device, objectBuffer, nullptr);
+    vkFreeMemory(device, tlasBufferMem, nullptr);
+    vkDestroyBuffer(device, tlasBuffer, nullptr);
+    vkDestroyAccelerationStructureKHR(device, tlas, nullptr);
 
     std::vector<VkAccelerationStructureInstanceKHR> instanceData;
     void* dst;
